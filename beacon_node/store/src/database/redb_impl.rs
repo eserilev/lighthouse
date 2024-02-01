@@ -12,6 +12,8 @@ use parking_lot::{Mutex, MutexGuard};
 
 use super::interface::WriteOptions;
 
+const TABLE_NAME: &str = "TABLE";
+
 pub struct Redb<E: EthSpec> {
     db: redb::Database,
     transaction_mutex: Mutex<()>,
@@ -33,9 +35,7 @@ impl<E: EthSpec> Redb<E> {
         let db = redb::Database::create(path)?;
         let transaction_mutex = Mutex::new(());
 
-        for column in DBColumn::iter() {
-            Redb::<E>::create_table(&db, column.into())?;
-        }
+        Redb::<E>::create_table(&db, TABLE_NAME)?;
 
         Ok(Self {
             db,
@@ -79,13 +79,13 @@ impl<E: EthSpec> Redb<E> {
         metrics::inc_counter(&metrics::DISK_DB_WRITE_COUNT);
         metrics::inc_counter_by(&metrics::DISK_DB_WRITE_BYTES, val.len() as u64);
         let timer = metrics::start_timer(&metrics::DISK_DB_WRITE_TIMES);
-
-        let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(col);
+        let column_key = get_key_for_col(col, key);
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(TABLE_NAME);
         let mut tx = self.db.begin_write()?;
         tx.set_durability(opts.into());
         let mut table = tx.open_table(table_definition)?;
 
-        table.insert(key, val).map(|_| {
+        table.insert(column_key.as_slice(), val).map(|_| {
             metrics::stop_timer(timer);
         })?;
         drop(table);
@@ -110,12 +110,13 @@ impl<E: EthSpec> Redb<E> {
         println!("get_bytes");
         metrics::inc_counter(&metrics::DISK_DB_READ_COUNT);
         let timer = metrics::start_timer(&metrics::DISK_DB_READ_TIMES);
+        let column_key = get_key_for_col(col, key);
 
-        let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(col);
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(TABLE_NAME);
         let tx = self.db.begin_read()?;
         let table = tx.open_table(table_definition)?;
 
-        let result = table.get(key)?;
+        let result = table.get(column_key.as_slice())?;
 
         // TODO: clean this up
         if let Some(access_guard) = result {
@@ -139,26 +140,28 @@ impl<E: EthSpec> Redb<E> {
     /// Return `true` if `key` exists in `column`.
     pub fn key_exists(&self, col: &str, key: &[u8]) -> Result<bool, Error> {
         metrics::inc_counter(&metrics::DISK_DB_EXISTS_COUNT);
+        let column_key = get_key_for_col(col, key);
 
-        let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(col);
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(TABLE_NAME);
         let tx = self.db.begin_read()?;
         let table = tx.open_table(table_definition)?;
 
         table
-            .get(key)
+            .get(column_key.as_slice())
             .map_err(Into::into)
             .map(|access_guard| access_guard.is_some())
     }
 
     /// Removes `key` from `column`.
     pub fn key_delete(&self, col: &str, key: &[u8]) -> Result<(), Error> {
-        let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(col);
+        let column_key = get_key_for_col(col, key);
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(TABLE_NAME);
         let tx = self.db.begin_write()?;
         let mut table = tx.open_table(table_definition)?;
 
         metrics::inc_counter(&metrics::DISK_DB_DELETE_COUNT);
 
-        table.remove(key).map(|_| ())?;
+        table.remove(column_key.as_slice()).map(|_| ())?;
         drop(table);
         tx.commit().map_err(Into::into)
     }
@@ -166,31 +169,28 @@ impl<E: EthSpec> Redb<E> {
     // TODO we need some way to fetch the correct table
     pub fn do_atomically(&self, ops_batch: Vec<KeyValueStoreOp>) -> Result<(), Error> {
         println!("do_atomically");
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> =
+                        TableDefinition::new(TABLE_NAME);
+        let tx = self.db.begin_write()?;
+        let mut table = tx.open_table(table_definition)?;
         for op in ops_batch {
             match op {
                 KeyValueStoreOp::PutKeyValue(column, key, value) => {
-                    let table_definition: TableDefinition<'_, &[u8], &[u8]> =
-                        TableDefinition::new(&column);
-                    let tx = self.db.begin_write()?;
-                    let mut table = tx.open_table(table_definition)?;
-                    table.insert(key.as_slice(), value.as_slice())?;
+                    let column_key = get_key_for_col(&column, &key);
+                    table.insert(column_key.as_slice(), value.as_slice())?;
                     println!("{}", column);
                     println!("{:?}", key);
-                    drop(table);
-                    tx.commit()?;
+            
                 }
 
                 KeyValueStoreOp::DeleteKey(column, key) => {
-                    let table_definition: TableDefinition<'_, &[u8], &[u8]> =
-                        TableDefinition::new(&column);
-                    let tx = self.db.begin_write()?;
-                    let mut table = tx.open_table(table_definition)?;
-                    table.remove(key.as_slice())?;
-                    drop(table);
-                    tx.commit()?;
+                    let column_key = get_key_for_col(&column, &key);
+                    table.remove(column_key.as_slice())?;
                 }
             }
         }
+        drop(table);
+        tx.commit()?;
         Ok(())
     }
 
