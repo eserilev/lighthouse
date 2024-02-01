@@ -179,8 +179,7 @@ impl<E: EthSpec> Redb<E> {
                     let column_key = get_key_for_col(&column, &key);
                     table.insert(column_key.as_slice(), value.as_slice())?;
                     println!("{}", column);
-                    println!("{:?}", key);
-            
+                    println!("{:?}", key);  
                 }
 
                 KeyValueStoreOp::DeleteKey(column, key) => {
