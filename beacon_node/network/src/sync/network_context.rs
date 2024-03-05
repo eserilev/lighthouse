@@ -1,7 +1,7 @@
 //! Provides network functionality for the Syncing thread. This fundamentally wraps a network
 //! channel and stores a global RPC ID to perform requests.
 
-use super::block_sidecar_coupling::BlocksAndBlobsRequestInfo;
+use super::block_sidecar_coupling::{BlocksAndBlobsRequestInfo, BlocksAndDataColumnsRequestInfo};
 use super::manager::{Id, RequestId as SyncRequestId};
 use super::range_sync::{BatchId, ByRangeRequestType, ChainId};
 use crate::network_beacon_processor::NetworkBeaconProcessor;
@@ -12,14 +12,14 @@ use crate::sync::manager::SingleLookupReqId;
 use beacon_chain::block_verification_types::RpcBlock;
 use beacon_chain::{BeaconChain, BeaconChainTypes, EngineState};
 use fnv::FnvHashMap;
-use lighthouse_network::rpc::methods::{BlobsByRangeRequest, BlobsByRootRequest};
+use lighthouse_network::rpc::methods::{BlobsByRangeRequest, BlobsByRootRequest, DataColumnsByRangeRequest};
 use lighthouse_network::rpc::{BlocksByRangeRequest, BlocksByRootRequest, GoodbyeReason};
 use lighthouse_network::{Client, NetworkGlobals, PeerAction, PeerId, ReportSource, Request};
 use slog::{debug, trace, warn};
 use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use types::{BlobSidecar, EthSpec, SignedBeaconBlock};
+use types::{BlobSidecar, DataColumnSidecar, EthSpec, SignedBeaconBlock};
 
 pub struct BlocksAndBlobsByRangeResponse<T: EthSpec> {
     pub batch_id: BatchId,
@@ -30,6 +30,12 @@ pub struct BlocksAndBlobsByRangeRequest<T: EthSpec> {
     pub chain_id: ChainId,
     pub batch_id: BatchId,
     pub block_blob_info: BlocksAndBlobsRequestInfo<T>,
+}
+
+pub struct BlocksAndDataColumnsByRangeRequest<E: EthSpec> {
+    pub chain_id: ChainId,
+    pub batch_id: BatchId,
+    pub block_data_column_info: BlocksAndDataColumnsRequestInfo<E>,
 }
 
 /// Wraps a Network channel to employ various RPC related network functionality for the Sync manager. This includes management of a global RPC request Id.
@@ -53,6 +59,10 @@ pub struct SyncNetworkContext<T: BeaconChainTypes> {
     backfill_blocks_and_blobs_requests:
         FnvHashMap<Id, (BatchId, BlocksAndBlobsRequestInfo<T::EthSpec>)>,
 
+    /// BlocksByRange requests paired with DataColumnsByRange requests made by the backfill sync.
+    backfill_blocks_and_data_columns_requests:
+        FnvHashMap<Id, (BatchId, BlocksAndDataColumnsByRangeRequest<T::EthSpec>)>,
+
     /// Whether the ee is online. If it's not, we don't allow access to the
     /// `beacon_processor_send`.
     execution_engine_state: EngineState,
@@ -65,6 +75,25 @@ pub struct SyncNetworkContext<T: BeaconChainTypes> {
     /// Logger for the `SyncNetworkContext`.
     pub log: slog::Logger,
 }
+
+/// Small enumeration to make dealing with block and data column requests easier.
+pub enum BlockOrDataColumn<T: EthSpec> {
+    Block(Option<Arc<SignedBeaconBlock<T>>>),
+    DataColumn(Option<Arc<DataColumnSidecar<T>>>),
+}
+
+impl<T: EthSpec> From<Option<Arc<SignedBeaconBlock<T>>>> for BlockOrDataColumn<T> {
+    fn from(block: Option<Arc<SignedBeaconBlock<T>>>) -> Self {
+        BlockOrDataColumn::Block(block)
+    }
+}
+
+impl<T: EthSpec> From<Option<Arc<DataColumnSidecar<T>>>> for BlockOrDataColumn<T> {
+    fn from(data_column_sidecar: Option<Arc<DataColumnSidecar<T>>>) -> Self {
+        BlockOrBlob::DataColumn(data_column_sidecar)
+    }
+}
+
 
 /// Small enumeration to make dealing with block and blob requests easier.
 pub enum BlockOrBlob<T: EthSpec> {
@@ -99,6 +128,7 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
             backfill_requests: FnvHashMap::default(),
             range_blocks_and_blobs_requests: FnvHashMap::default(),
             backfill_blocks_and_blobs_requests: FnvHashMap::default(),
+            backfill_blocks_and_data_columns_requests: FnvHashMap::default(),
             network_beacon_processor,
             chain,
             log,
@@ -214,6 +244,48 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
                 );
                 Ok(id)
             }
+            ByRangeRequestType::BlocksAndDataColumns => {
+                debug!(
+                    self.log,
+                    "Sending BlocksByRange and DataColumnsByRange requests";
+                    "method" => "Mixed by range request",
+                    "count" => request.count(),
+                    "peer" => %peer_id,
+                );
+
+                // create the shared request id. This is fine since the rpc handles substream ids.
+                let id = self.next_id();
+                let request_id = RequestId::Sync(SyncRequestId::RangeBlockAndDataColumns { id });
+
+                // Create the blob request based on the blob request.
+                let blobs_request = Request::BlobsByRange(BlobsByRangeRequest {
+                    start_slot: *request.start_slot(),
+                    count: *request.count(),
+                });
+                let blocks_request = Request::BlocksByRange(request);
+
+                // Send both requests. Make sure both can be sent.
+                self.send_network_msg(NetworkMessage::SendRequest {
+                    peer_id,
+                    request: blocks_request,
+                    request_id,
+                })?;
+                self.send_network_msg(NetworkMessage::SendRequest {
+                    peer_id,
+                    request: blobs_request,
+                    request_id,
+                })?;
+                let block_blob_info = BlocksAndBlobsRequestInfo::default();
+                self.range_blocks_and_blobs_requests.insert(
+                    id,
+                    BlocksAndBlobsByRangeRequest {
+                        chain_id,
+                        batch_id,
+                        block_blob_info,
+                    },
+                );
+                Ok(id)
+            }
         }
     }
 
@@ -262,6 +334,43 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
                 let blobs_request = Request::BlobsByRange(BlobsByRangeRequest {
                     start_slot: *request.start_slot(),
                     count: *request.count(),
+                });
+                let blocks_request = Request::BlocksByRange(request);
+
+                // Send both requests. Make sure both can be sent.
+                self.send_network_msg(NetworkMessage::SendRequest {
+                    peer_id,
+                    request: blocks_request,
+                    request_id,
+                })?;
+                self.send_network_msg(NetworkMessage::SendRequest {
+                    peer_id,
+                    request: blobs_request,
+                    request_id,
+                })?;
+                let block_blob_info = BlocksAndBlobsRequestInfo::default();
+                self.backfill_blocks_and_blobs_requests
+                    .insert(id, (batch_id, block_blob_info));
+                Ok(id)
+            }
+            ByRangeRequestType::BlocksAndDataColumns => {
+                debug!(
+                    self.log,
+                    "Sending backfill BlocksByRange and DataColumnsByRange requests";
+                    "method" => "Mixed by range request",
+                    "count" => request.count(),
+                    "peer" => %peer_id,
+                );
+
+                // create the shared request id. This is fine since the rpc handles substream ids.
+                let id = self.next_id();
+                let request_id = RequestId::Sync(SyncRequestId::BackFillBlockAndDataColumns { id });
+
+                // Create the blob request based on the blob request.
+                let data_columns_request = Request::DataColumnsByRange(DataColumnsByRangeRequest {
+                    start_slot: *request.start_slot(),
+                    count: *request.count(),
+                    data_column_ids: *request.column_indices(),
                 });
                 let blocks_request = Request::BlocksByRange(request);
 
@@ -344,6 +453,10 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
                 .remove(&request_id)
                 .map(|req| (req.chain_id, req.batch_id)),
             ByRangeRequestType::Blocks => self.range_requests.remove(&request_id),
+            ByRangeRequestType::BlocksAndDataCOlumns => self
+                .range_blocks_and_data_columns
+                .remove(&request_id)
+                .map(|req| (req.chain_id, req.batch_id)),
         };
         if let Some(req) = req {
             debug!(

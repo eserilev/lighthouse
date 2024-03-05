@@ -104,6 +104,10 @@ pub enum RequestId {
     RangeBlocks { id: Id },
     /// Range request that is composed by both a block range request and a blob range request.
     RangeBlockAndBlobs { id: Id },
+    /// Range request that is composed by both a block range request and data column range requests.
+    RangeBlockAndDataColumns { id: Id },
+    /// Backfill request that is composed by both a block range request and a data column range request.
+    BackFillBlockAndDataColumns { id: Id },
 }
 
 #[derive(Debug)]
@@ -394,6 +398,21 @@ impl<T: BeaconChainTypes> SyncManager<T> {
                         id,
                     );
                     self.update_sync_state()
+                }
+            }
+            RequestId::RangeBlockAndDataColumns { id } => {
+                if let Some((chain_id, batch_id)) = self
+                    .network
+                    .range_sync_request_failed(id, ByRangeRequestType::BlocksAndDataColumns)
+                {
+                    self.range_sync.inject_error(
+                        &mut self.network,
+                        peer_id,
+                        batch_id,
+                        chain_id,
+                        id,
+                    );
+                    self.update_sy0nc_state()
                 }
             }
         }
@@ -902,6 +921,9 @@ impl<T: BeaconChainTypes> SyncManager<T> {
             RequestId::RangeBlockAndBlobs { id } => {
                 self.range_block_and_blobs_response(id, peer_id, block.into())
             }
+            RequestId::RangeBlockAndDataColumns { id } => {
+                self.range_block_and_data_columns(id, peer_id, )
+            }
         }
     }
 
@@ -976,6 +998,67 @@ impl<T: BeaconChainTypes> SyncManager<T> {
         id: Id,
         peer_id: PeerId,
         block_or_blob: BlockOrBlob<T::EthSpec>,
+    ) {
+        if let Some((chain_id, resp)) = self
+            .network
+            .range_sync_block_and_blob_response(id, block_or_blob)
+        {
+            match resp.responses {
+                Ok(blocks) => {
+                    for block in blocks
+                        .into_iter()
+                        .map(Some)
+                        // chain the stream terminator
+                        .chain(vec![None])
+                    {
+                        self.range_sync.blocks_by_range_response(
+                            &mut self.network,
+                            peer_id,
+                            chain_id,
+                            resp.batch_id,
+                            id,
+                            block,
+                        );
+                        self.update_sync_state();
+                    }
+                }
+                Err(e) => {
+                    // Re-insert the request so we can retry
+                    let new_req = BlocksAndBlobsByRangeRequest {
+                        chain_id,
+                        batch_id: resp.batch_id,
+                        block_blob_info: <_>::default(),
+                    };
+                    self.network
+                        .insert_range_blocks_and_blobs_request(id, new_req);
+                    // inform range that the request needs to be treated as failed
+                    // With time we will want to downgrade this log
+                    warn!(
+                        self.log,
+                        "Blocks and blobs request for range received invalid data";
+                        "peer_id" => %peer_id,
+                        "batch_id" => resp.batch_id,
+                        "error" => e.clone()
+                    );
+                    let id = RequestId::RangeBlockAndBlobs { id };
+                    self.network.report_peer(
+                        peer_id,
+                        PeerAction::MidToleranceError,
+                        "block_blob_faulty_batch",
+                    );
+                    self.inject_error(peer_id, id, RPCError::InvalidData(e))
+                }
+            }
+        }
+    }
+
+    // Handles receiving a response for a range sync request that should have both blocks and
+    /// blobs.
+    fn range_block_and_blobs_response(
+        &mut self,
+        id: Id,
+        peer_id: PeerId,
+        block_or_data_column: BlockOrDataColumn<T::EthSpec>,
     ) {
         if let Some((chain_id, resp)) = self
             .network

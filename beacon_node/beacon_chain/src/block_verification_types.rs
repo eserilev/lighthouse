@@ -9,7 +9,7 @@ use ssz_types::VariableList;
 use state_processing::ConsensusContext;
 use std::sync::Arc;
 use types::blob_sidecar::{BlobIdentifier, BlobSidecarError, FixedBlobSidecarList};
-use types::data_column_sidecar::DataColumnSidecarList;
+use types::data_column_sidecar::{self, DataColumnSidecarList, FixedDataColumnSidecarList};
 use types::{
     BeaconBlockRef, BeaconState, BlindedPayload, BlobSidecarList, Epoch, EthSpec, Hash256,
     SignedBeaconBlock, SignedBeaconBlockHeader, Slot,
@@ -101,12 +101,13 @@ impl<E: EthSpec> RpcBlock<E> {
         block_root: Option<Hash256>,
         block: Arc<SignedBeaconBlock<E>>,
         blobs: Option<BlobSidecarList<E>>,
+        data_columns: Option<DataColumnSidecarList<E>>,
     ) -> Result<Self, AvailabilityCheckError> {
         let block_root = block_root.unwrap_or_else(|| get_block_root(&block));
 
         if let (Some(blobs), Ok(block_commitments)) = (
             blobs.as_ref(),
-            block.message().body().blob_kzg_commitments(),
+            block.clone().message().body().blob_kzg_commitments(),
         ) {
             if blobs.len() != block_commitments.len() {
                 return Err(AvailabilityCheckError::MissingBlobs);
@@ -121,10 +122,23 @@ impl<E: EthSpec> RpcBlock<E> {
                 }
             }
         }
-        let inner = match blobs {
-            Some(blobs) => RpcBlockInner::BlockAndBlobs(block, blobs),
+        let _ = match blobs {
+            Some(blobs) => RpcBlockInner::BlockAndBlobs(block.clone(), blobs),
+            None => RpcBlockInner::Block(block.clone()),
+        };
+
+        if let (Some(_), Ok(_)) = (
+            data_columns.as_ref(),
+            block.message().body().blob_kzg_commitments()
+        ) {
+            // TODO check that we have enough data columns to perform sampling
+            // and then perform sampling?
+        }
+        let inner = match data_columns {
+            Some(data_columns) => RpcBlockInner::BlockAndDataColumns(block, data_columns),
             None => RpcBlockInner::Block(block),
         };
+
         Ok(Self {
             block_root,
             block: inner,
@@ -135,6 +149,7 @@ impl<E: EthSpec> RpcBlock<E> {
         block_root: Hash256,
         block: Arc<SignedBeaconBlock<E>>,
         blobs: FixedBlobSidecarList<E>,
+        data_columns: FixedDataColumnSidecarList<E>,
     ) -> Result<Self, AvailabilityCheckError> {
         let filtered = blobs
             .into_iter()
@@ -145,7 +160,16 @@ impl<E: EthSpec> RpcBlock<E> {
         } else {
             Some(VariableList::from(filtered))
         };
-        Self::new(Some(block_root), block, blobs)
+        let filtered_data_columns = data_columns
+            .into_iter()
+            .filter_map(|b| b.clone())
+            .collect::<Vec<_>>();
+        let data_columns = if filtered_data_columns.is_empty() {
+            None
+        } else {
+            Some(VariableList::from(filtered_data_columns))
+        };
+        Self::new(Some(block_root), block, blobs, data_columns)
     }
 
     #[allow(clippy::type_complexity)]
