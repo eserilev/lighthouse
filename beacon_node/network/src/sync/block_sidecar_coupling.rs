@@ -3,8 +3,6 @@ use ssz_types::VariableList;
 use std::{collections::VecDeque, sync::Arc};
 use types::{BlobSidecar, DataColumnSidecar, EthSpec, SignedBeaconBlock};
 
-const MAX_DATA_COLUMNS: u64 = 128;
-
 #[derive(Debug, Default)]
 pub struct BlocksAndDataColumnsRequestInfo<T: EthSpec> {
     /// Blocks we have received awaiting for their corresponding sidecar.
@@ -25,7 +23,7 @@ impl<E: EthSpec> BlocksAndDataColumnsRequestInfo<E> {
         }
     }
 
-    pub fn add_column_response(
+    pub fn add_data_column_sidecar_response(
         &mut self,
         data_column_sidecar_opt: Option<Arc<DataColumnSidecar<E>>>,
     ) {

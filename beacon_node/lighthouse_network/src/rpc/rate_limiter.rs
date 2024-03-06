@@ -310,7 +310,7 @@ impl RPCRateLimiter {
             Protocol::BlobsByRange => &mut self.blbrange_rl,
             Protocol::BlobsByRoot => &mut self.blbroot_rl,
             Protocol::DataColumnsByRoot => &mut self.dcbroot_rl,
-            Protocol::DataColumnsByRange => &mut self.dcbroot_rl,
+            Protocol::DataColumnsByRange => &mut self.dcbrange_rl,
             Protocol::LightClientBootstrap => &mut self.lcbootstrap_rl,
         };
         check(limiter)

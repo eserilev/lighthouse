@@ -9,7 +9,7 @@ use ssz_types::VariableList;
 use state_processing::ConsensusContext;
 use std::sync::Arc;
 use types::blob_sidecar::{BlobIdentifier, BlobSidecarError, FixedBlobSidecarList};
-use types::data_column_sidecar::{self, DataColumnSidecarList, FixedDataColumnSidecarList};
+use types::data_column_sidecar::{DataColumnSidecarList, FixedDataColumnSidecarList};
 use types::{
     BeaconBlockRef, BeaconState, BlindedPayload, BlobSidecarList, Epoch, EthSpec, Hash256,
     SignedBeaconBlock, SignedBeaconBlockHeader, Slot,
@@ -122,22 +122,21 @@ impl<E: EthSpec> RpcBlock<E> {
                 }
             }
         }
-        let _ = match blobs {
+        let inner = match blobs {
             Some(blobs) => RpcBlockInner::BlockAndBlobs(block.clone(), blobs),
             None => RpcBlockInner::Block(block.clone()),
         };
 
-        if let (Some(_), Ok(_)) = (
-            data_columns.as_ref(),
-            block.message().body().blob_kzg_commitments()
-        ) {
-            // TODO check that we have enough data columns to perform sampling
-            // and then perform sampling?
-        }
-        let inner = match data_columns {
-            Some(data_columns) => RpcBlockInner::BlockAndDataColumns(block, data_columns),
-            None => RpcBlockInner::Block(block),
-        };
+        // TODO(das) handle data columns
+        // if let (Some(_), Ok(_)) = (
+        //     data_columns.as_ref(),
+        //     block.message().body().blob_kzg_commitments()
+        // ) {
+        // }
+        // let inner = match data_columns {
+        //     Some(data_columns) => RpcBlockInner::BlockAndDataColumns(block, data_columns),
+        //     None => RpcBlockInner::Block(block),
+        // };
 
         Ok(Self {
             block_root,

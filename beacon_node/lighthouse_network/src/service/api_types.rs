@@ -76,8 +76,8 @@ impl<TSpec: EthSpec> std::convert::From<Request> for OutboundRequest<TSpec> {
             Request::BlobsByRange(r) => OutboundRequest::BlobsByRange(r),
             Request::BlobsByRoot(r) => OutboundRequest::BlobsByRoot(r),
             Request::DataColumnsByRoot(r) => OutboundRequest::DataColumnsByRoot(r),
+            Request::DataColumnsByRange(r) => OutboundRequest::DataColumnsByRange(r),
             Request::Status(s) => OutboundRequest::Status(s),
-            Request::DataColumnsByRange(r) => todo!(),
         }
     }
 }
