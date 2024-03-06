@@ -471,7 +471,7 @@ async fn assert_invalid_signature(
                 None,
                 snapshots[block_index].beacon_block.clone(),
                 chain_segment_blobs[block_index].clone(),
-                None
+                None,
             )
             .unwrap(),
             NotifyExecutionLayer::Yes,
