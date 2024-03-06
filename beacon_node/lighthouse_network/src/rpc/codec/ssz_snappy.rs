@@ -511,9 +511,7 @@ fn handle_rpc_request<T: EthSpec>(
             },
         ))),
         SupportedProtocol::DataColumnsByRangeV1 => Ok(Some(InboundRequest::DataColumnsByRange(
-            DataColumnsByRangeRequest::from_ssz_bytes(
-                decoded_buffer
-            )?,
+            DataColumnsByRangeRequest::from_ssz_bytes(decoded_buffer)?,
         ))),
         SupportedProtocol::PingV1 => Ok(Some(InboundRequest::Ping(Ping {
             data: u64::from_ssz_bytes(decoded_buffer)?,
@@ -633,7 +631,7 @@ fn handle_rpc_response<T: EthSpec>(
                     versioned_protocol
                 ),
             )),
-        }
+        },
         SupportedProtocol::PingV1 => Ok(Some(RPCResponse::Pong(Ping {
             data: u64::from_ssz_bytes(decoded_buffer)?,
         }))),

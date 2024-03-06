@@ -269,11 +269,19 @@ pub struct BlocksByRangeRequest {
 impl BlocksByRangeRequest {
     /// The default request is V2
     pub fn new(start_slot: u64, count: u64) -> Self {
-        Self::V2(BlocksByRangeRequestV2 { start_slot, count, column_indices: None })
+        Self::V2(BlocksByRangeRequestV2 {
+            start_slot,
+            count,
+            column_indices: None,
+        })
     }
 
     pub fn new_v1(start_slot: u64, count: u64) -> Self {
-        Self::V1(BlocksByRangeRequestV1 { start_slot, count, column_indices: None })
+        Self::V1(BlocksByRangeRequestV1 {
+            start_slot,
+            count,
+            column_indices: None,
+        })
     }
 }
 

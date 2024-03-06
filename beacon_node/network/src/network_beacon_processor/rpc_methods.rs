@@ -6,7 +6,7 @@ use beacon_chain::{BeaconChainError, BeaconChainTypes, HistoricalBlockError, Whe
 use beacon_processor::SendOnDrop;
 use itertools::process_results;
 use lighthouse_network::rpc::methods::{
-    BlobsByRangeRequest, BlobsByRootRequest, DataColumnsByRootRequest, DataColumnsByRangeRequest,
+    BlobsByRangeRequest, BlobsByRootRequest, DataColumnsByRangeRequest, DataColumnsByRootRequest,
 };
 use lighthouse_network::rpc::StatusMessage;
 use lighthouse_network::rpc::*;
@@ -886,7 +886,9 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
         );
 
         // Should not send more than max request data columns
-        if req.max_data_columns_requested::<T::EthSpec>() > self.chain.spec.max_request_data_column_sidecars {
+        if req.max_data_columns_requested::<T::EthSpec>()
+            > self.chain.spec.max_request_data_column_sidecars
+        {
             return self.send_error_response(
                 peer_id,
                 RPCResponseErrorCode::InvalidRequest,
@@ -1018,7 +1020,7 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
         // remove all skip slots
         let block_roots = block_roots.into_iter().flatten();
 
-        let mut data_columns_sent= 0;
+        let mut data_columns_sent = 0;
         let mut send_response = true;
 
         for root in block_roots {
@@ -1030,7 +1032,9 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
                                 data_columns_sent += 1;
                                 self.send_network_message(NetworkMessage::SendResponse {
                                     peer_id,
-                                    response: Response::DataColumnsByRange(Some(data_column_sidecar.clone())),
+                                    response: Response::DataColumnsByRange(Some(
+                                        data_column_sidecar.clone(),
+                                    )),
                                     id: request_id,
                                 });
                             }

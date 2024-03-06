@@ -12,7 +12,9 @@ use crate::sync::manager::SingleLookupReqId;
 use beacon_chain::block_verification_types::RpcBlock;
 use beacon_chain::{BeaconChain, BeaconChainTypes, EngineState};
 use fnv::FnvHashMap;
-use lighthouse_network::rpc::methods::{BlobsByRangeRequest, BlobsByRootRequest, DataColumnsByRangeRequest};
+use lighthouse_network::rpc::methods::{
+    BlobsByRangeRequest, BlobsByRootRequest, DataColumnsByRangeRequest,
+};
 use lighthouse_network::rpc::{BlocksByRangeRequest, BlocksByRootRequest, GoodbyeReason};
 use lighthouse_network::{Client, NetworkGlobals, PeerAction, PeerId, ReportSource, Request};
 use slog::{debug, trace, warn};
@@ -61,7 +63,8 @@ pub struct SyncNetworkContext<T: BeaconChainTypes> {
     range_blocks_and_blobs_requests: FnvHashMap<Id, BlocksAndBlobsByRangeRequest<T::EthSpec>>,
 
     /// BlocksByRange requests paired with BlobsByRange requests made by the range.
-    range_blocks_and_data_columns_requests: FnvHashMap<Id, BlocksAndDataColumnsByRangeRequest<T::EthSpec>>,
+    range_blocks_and_data_columns_requests:
+        FnvHashMap<Id, BlocksAndDataColumnsByRangeRequest<T::EthSpec>>,
 
     /// BlocksByRange requests paired with BlobsByRange requests made by the backfill sync.
     backfill_blocks_and_blobs_requests:
@@ -101,7 +104,6 @@ impl<T: EthSpec> From<Option<Arc<DataColumnSidecar<T>>>> for BlockOrDataColumn<T
         BlockOrDataColumn::DataColumn(data_column_sidecar)
     }
 }
-
 
 /// Small enumeration to make dealing with block and blob requests easier.
 pub enum BlockOrBlob<T: EthSpec> {
@@ -452,19 +454,24 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
         }
     }
 
-     /// Received a blocks by range response for a request that couples blocks and data columns.
-     pub fn range_sync_block_and_data_column_response(
+    /// Received a blocks by range response for a request that couples blocks and data columns.
+    pub fn range_sync_block_and_data_column_response(
         &mut self,
         request_id: Id,
         block_or_data_column: BlockOrDataColumn<T::EthSpec>,
     ) -> Option<(ChainId, BlocksAndDataColumnsByRangeResponse<T::EthSpec>)> {
-        match self.range_blocks_and_data_columns_requests.entry(request_id) {
+        match self
+            .range_blocks_and_data_columns_requests
+            .entry(request_id)
+        {
             Entry::Occupied(mut entry) => {
                 let req = entry.get_mut();
                 let info = &mut req.block_data_column_info;
                 match block_or_data_column {
                     BlockOrDataColumn::Block(maybe_block) => info.add_block_response(maybe_block),
-                    BlockOrDataColumn::DataColumn(maybe_data_column_sidecar) => info.add_data_column_sidecar_response(maybe_data_column_sidecar),
+                    BlockOrDataColumn::DataColumn(maybe_data_column_sidecar) => {
+                        info.add_data_column_sidecar_response(maybe_data_column_sidecar)
+                    }
                 }
                 if info.is_finished() {
                     // If the request is finished, dequeue everything
@@ -602,12 +609,17 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
         request_id: Id,
         block_or_data_column: BlockOrDataColumn<T::EthSpec>,
     ) -> Option<BlocksAndDataColumnsByRangeResponse<T::EthSpec>> {
-        match self.backfill_blocks_and_data_columns_requests.entry(request_id) {
+        match self
+            .backfill_blocks_and_data_columns_requests
+            .entry(request_id)
+        {
             Entry::Occupied(mut entry) => {
                 let (_, info) = entry.get_mut();
                 match block_or_data_column {
                     BlockOrDataColumn::Block(maybe_block) => info.add_block_response(maybe_block),
-                    BlockOrDataColumn::DataColumn(maybe_data_column_sidecar) => info.add_data_column_sidecar_response(maybe_data_column_sidecar),
+                    BlockOrDataColumn::DataColumn(maybe_data_column_sidecar) => {
+                        info.add_data_column_sidecar_response(maybe_data_column_sidecar)
+                    }
                 }
                 if info.is_finished() {
                     // If the request is finished, dequeue everything
@@ -805,7 +817,8 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
         id: Id,
         request: BlocksAndDataColumnsByRangeRequest<T::EthSpec>,
     ) {
-        self.range_blocks_and_data_columns_requests.insert(id, request);
+        self.range_blocks_and_data_columns_requests
+            .insert(id, request);
     }
 
     pub fn insert_backfill_blocks_and_blobs_requests(

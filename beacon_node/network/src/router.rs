@@ -584,9 +584,9 @@ impl<T: BeaconChainTypes> Router<T> {
                 SyncId::BackFillBlocks { .. }
                 | SyncId::RangeBlocks { .. }
                 | SyncId::RangeBlockAndBlobs { .. }
-                | SyncId::BackFillBlockAndBlobs { .. } 
+                | SyncId::BackFillBlockAndBlobs { .. }
                 | SyncId::BackFillBlockAndDataColumns { .. }
-                | SyncId::RangeBlockAndDataColumns { ..} => {
+                | SyncId::RangeBlockAndDataColumns { .. } => {
                     crit!(self.log, "Batch syncing do not request BBRoot requests"; "peer_id" => %peer_id);
                     return;
                 }
@@ -631,7 +631,7 @@ impl<T: BeaconChainTypes> Router<T> {
                 SyncId::BackFillBlocks { .. }
                 | SyncId::RangeBlocks { .. }
                 | SyncId::RangeBlockAndBlobs { .. }
-                | SyncId::BackFillBlockAndBlobs { .. } 
+                | SyncId::BackFillBlockAndBlobs { .. }
                 | SyncId::BackFillBlockAndDataColumns { .. }
                 | SyncId::RangeBlockAndDataColumns { .. } => {
                     crit!(self.log, "Batch syncing does not request BBRoot requests"; "peer_id" => %peer_id);
@@ -667,8 +667,8 @@ impl<T: BeaconChainTypes> Router<T> {
         // TODO(das) implement `DataColumnsByRoot` response handling
     }
 
-       /// Handle a `DataColumnsByRange` response from the peer.
-       pub fn on_data_columns_by_range_response(
+    /// Handle a `DataColumnsByRange` response from the peer.
+    pub fn on_data_columns_by_range_response(
         &mut self,
         _peer_id: PeerId,
         _request_id: RequestId,

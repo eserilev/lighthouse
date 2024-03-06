@@ -43,7 +43,9 @@ use crate::service::NetworkMessage;
 use crate::status::ToStatusMessage;
 use crate::sync::block_lookups::common::{Current, Parent};
 use crate::sync::block_lookups::{BlobRequestState, BlockRequestState};
-use crate::sync::network_context::{BlocksAndBlobsByRangeRequest, BlocksAndDataColumnsByRangeRequest};
+use crate::sync::network_context::{
+    BlocksAndBlobsByRangeRequest, BlocksAndDataColumnsByRangeRequest,
+};
 use crate::sync::range_sync::ByRangeRequestType;
 use beacon_chain::block_verification_types::AsBlock;
 use beacon_chain::block_verification_types::RpcBlock;
@@ -1009,7 +1011,7 @@ impl<T: BeaconChainTypes> SyncManager<T> {
             }
             RequestId::RangeBlockAndDataColumns { id: _ } => {
                 crit!(self.log, "Data column received during range block request"; "peer_id" => %peer_id  );
-            },
+            }
         }
     }
 
@@ -1139,61 +1141,61 @@ impl<T: BeaconChainTypes> SyncManager<T> {
         &mut self,
         id: Id,
         peer_id: PeerId,
-        block_or_data_column: BlockOrDataColumn<T::EthSpec>
+        block_or_data_column: BlockOrDataColumn<T::EthSpec>,
     ) {
         if let Some(resp) = self
-        .network
-        .backfill_sync_block_and_data_column_response(id, block_or_data_column)
-    {
-        match resp.responses {
-            Ok(blocks) => {
-                for block in blocks
-                    .into_iter()
-                    .map(Some)
-                    // chain the stream terminator
-                    .chain(vec![None])
-                {
-                    match self.backfill_sync.on_block_response(
-                        &mut self.network,
-                        resp.batch_id,
-                        &peer_id,
-                        id,
-                        block,
-                    ) {
-                        Ok(ProcessResult::SyncCompleted) => self.update_sync_state(),
-                        Ok(ProcessResult::Successful) => {}
-                        Err(_error) => {
-                            // The backfill sync has failed, errors are reported
-                            // within.
-                            self.update_sync_state();
+            .network
+            .backfill_sync_block_and_data_column_response(id, block_or_data_column)
+        {
+            match resp.responses {
+                Ok(blocks) => {
+                    for block in blocks
+                        .into_iter()
+                        .map(Some)
+                        // chain the stream terminator
+                        .chain(vec![None])
+                    {
+                        match self.backfill_sync.on_block_response(
+                            &mut self.network,
+                            resp.batch_id,
+                            &peer_id,
+                            id,
+                            block,
+                        ) {
+                            Ok(ProcessResult::SyncCompleted) => self.update_sync_state(),
+                            Ok(ProcessResult::Successful) => {}
+                            Err(_error) => {
+                                // The backfill sync has failed, errors are reported
+                                // within.
+                                self.update_sync_state();
+                            }
                         }
                     }
                 }
-            }
-            Err(e) => {
-                // Re-insert the request so we can retry
-                self.network.insert_backfill_blocks_and_blobs_requests(
-                    id,
-                    resp.batch_id,
-                    <_>::default(),
-                );
+                Err(e) => {
+                    // Re-insert the request so we can retry
+                    self.network.insert_backfill_blocks_and_blobs_requests(
+                        id,
+                        resp.batch_id,
+                        <_>::default(),
+                    );
 
-                // inform backfill that the request needs to be treated as failed
-                // With time we will want to downgrade this log
-                warn!(
-                    self.log, "Blocks and blobs request for backfill received invalid data";
-                    "peer_id" => %peer_id, "batch_id" => resp.batch_id, "error" => e.clone()
-                );
-                let id = RequestId::BackFillBlockAndBlobs { id };
-                self.network.report_peer(
-                    peer_id,
-                    PeerAction::MidToleranceError,
-                    "block_blob_faulty_backfill_batch",
-                );
-                self.inject_error(peer_id, id, RPCError::InvalidData(e))
+                    // inform backfill that the request needs to be treated as failed
+                    // With time we will want to downgrade this log
+                    warn!(
+                        self.log, "Blocks and blobs request for backfill received invalid data";
+                        "peer_id" => %peer_id, "batch_id" => resp.batch_id, "error" => e.clone()
+                    );
+                    let id = RequestId::BackFillBlockAndBlobs { id };
+                    self.network.report_peer(
+                        peer_id,
+                        PeerAction::MidToleranceError,
+                        "block_blob_faulty_backfill_batch",
+                    );
+                    self.inject_error(peer_id, id, RPCError::InvalidData(e))
+                }
             }
         }
-    } 
     }
 
     /// Handles receiving a response for a Backfill sync request that should have both blocks and

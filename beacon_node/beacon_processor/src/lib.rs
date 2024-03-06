@@ -1503,7 +1503,7 @@ impl<E: EthSpec> BeaconProcessor<E> {
             }),
             Work::BlobsByRangeRequest(process_fn)
             | Work::BlobsByRootsRequest(process_fn)
-            | Work::DataColumnsByRootsRequest(process_fn) 
+            | Work::DataColumnsByRootsRequest(process_fn)
             | Work::DataColumnsByRangeRequest(process_fn) => {
                 task_spawner.spawn_blocking(process_fn)
             }

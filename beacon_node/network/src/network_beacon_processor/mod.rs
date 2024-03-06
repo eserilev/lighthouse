@@ -14,7 +14,7 @@ use beacon_processor::{
 };
 use environment::null_logger;
 use lighthouse_network::rpc::methods::{
-    BlobsByRangeRequest, BlobsByRootRequest, DataColumnsByRootRequest, DataColumnsByRangeRequest,
+    BlobsByRangeRequest, BlobsByRootRequest, DataColumnsByRangeRequest, DataColumnsByRootRequest,
 };
 use lighthouse_network::{
     rpc::{BlocksByRangeRequest, BlocksByRootRequest, LightClientBootstrapRequest, StatusMessage},
@@ -637,8 +637,8 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
         })
     }
 
-     /// Create a new work event to process `DataColumnsByRange`s from the RPC network.
-     pub fn send_data_columns_by_range_request(
+    /// Create a new work event to process `DataColumnsByRange`s from the RPC network.
+    pub fn send_data_columns_by_range_request(
         self: &Arc<Self>,
         peer_id: PeerId,
         request_id: PeerRequestId,

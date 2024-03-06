@@ -76,7 +76,10 @@ impl<E: EthSpec> BlocksAndDataColumnsRequestInfo<E> {
             }
             let data_columns =
                 VariableList::from(data_column_buffer.into_iter().flatten().collect::<Vec<_>>());
-            responses.push(RpcBlock::new(None, block, None, Some(data_columns)).map_err(|e| format!("{e:?}"))?)
+            responses.push(
+                RpcBlock::new(None, block, None, Some(data_columns))
+                    .map_err(|e| format!("{e:?}"))?,
+            )
         }
 
         // if accumulated sidecars is not empty, throw an error.
@@ -155,7 +158,8 @@ impl<T: EthSpec> BlocksAndBlobsRequestInfo<T> {
                 }
             }
             let blobs = VariableList::from(blobs_buffer.into_iter().flatten().collect::<Vec<_>>());
-            responses.push(RpcBlock::new(None, block, Some(blobs), None).map_err(|e| format!("{e:?}"))?)
+            responses
+                .push(RpcBlock::new(None, block, Some(blobs), None).map_err(|e| format!("{e:?}"))?)
         }
 
         // if accumulated sidecars is not empty, throw an error.
