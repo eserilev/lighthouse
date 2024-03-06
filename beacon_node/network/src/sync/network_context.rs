@@ -376,13 +376,15 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
                 // create the shared request id. This is fine since the rpc handles substream ids.
                 let id = self.next_id();
                 let request_id = RequestId::Sync(SyncRequestId::BackFillBlockAndDataColumns { id });
+                let data_column_ids = request.data_column_ids().as_ref().ok_or(
+                    "Trying to send a backfill BlocksByRange and DataColumnsByRange request without data column ids"
+                )?;
 
                 // Create the blob request based on the blob request.
                 let data_columns_request = Request::DataColumnsByRange(DataColumnsByRangeRequest {
                     start_slot: *request.start_slot(),
                     count: *request.count(),
-                    // TODO unwrap
-                    data_column_ids: request.column_indices().as_ref().unwrap().to_vec(),
+                    data_column_ids: data_column_ids.to_owned(),
                 });
                 let blocks_request = Request::BlocksByRange(request);
 

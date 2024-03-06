@@ -101,7 +101,7 @@ impl<E: EthSpec> RpcBlock<E> {
         block_root: Option<Hash256>,
         block: Arc<SignedBeaconBlock<E>>,
         blobs: Option<BlobSidecarList<E>>,
-        data_columns: Option<DataColumnSidecarList<E>>,
+        _data_column_sidecars: Option<DataColumnSidecarList<E>>,
     ) -> Result<Self, AvailabilityCheckError> {
         let block_root = block_root.unwrap_or_else(|| get_block_root(&block));
 

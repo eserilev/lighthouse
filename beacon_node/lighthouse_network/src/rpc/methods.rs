@@ -263,7 +263,7 @@ pub struct BlocksByRangeRequest {
     pub count: u64,
 
     /// The data column indices to fetch
-    pub column_indices: Option<Vec<DataColumnIdentifier>>,
+    pub data_column_ids: Option<Vec<DataColumnIdentifier>>,
 }
 
 impl BlocksByRangeRequest {
@@ -272,7 +272,7 @@ impl BlocksByRangeRequest {
         Self::V2(BlocksByRangeRequestV2 {
             start_slot,
             count,
-            column_indices: None,
+            data_column_ids: None,
         })
     }
 
@@ -280,7 +280,7 @@ impl BlocksByRangeRequest {
         Self::V1(BlocksByRangeRequestV1 {
             start_slot,
             count,
-            column_indices: None,
+            data_column_ids: None,
         })
     }
 }
