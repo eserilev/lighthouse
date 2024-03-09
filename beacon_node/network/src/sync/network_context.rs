@@ -832,4 +832,14 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
         self.backfill_blocks_and_blobs_requests
             .insert(id, (batch_id, request));
     }
+
+    pub fn insert_backfill_blocks_and_data_columns_requests(
+        &mut self,
+        id: Id,
+        batch_id: BatchId,
+        request: BlocksAndDataColumnsRequestInfo<T::EthSpec>,
+    ) {
+        self.backfill_blocks_and_data_columns_requests
+            .insert(id, (batch_id, request));
+    }
 }

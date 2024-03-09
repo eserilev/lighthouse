@@ -152,6 +152,10 @@ impl<T: EthSpec> DataColumnSidecar<T> {
         self.signed_block_header.message.tree_hash_root()
     }
 
+    pub fn block_parent_root(&self) -> Hash256 {
+        self.signed_block_header.message.parent_root
+    }
+
     pub fn min_size() -> usize {
         // min size is one cell
         Self {

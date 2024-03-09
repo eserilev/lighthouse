@@ -107,7 +107,7 @@ impl<E: EthSpec> RpcBlock<E> {
 
         if let (Some(blobs), Ok(block_commitments)) = (
             blobs.as_ref(),
-            block.clone().message().body().blob_kzg_commitments(),
+            block.message().body().blob_kzg_commitments(),
         ) {
             if blobs.len() != block_commitments.len() {
                 return Err(AvailabilityCheckError::MissingBlobs);
@@ -123,20 +123,11 @@ impl<E: EthSpec> RpcBlock<E> {
             }
         }
         let inner = match blobs {
-            Some(blobs) => RpcBlockInner::BlockAndBlobs(block.clone(), blobs),
-            None => RpcBlockInner::Block(block.clone()),
+            Some(blobs) => RpcBlockInner::BlockAndBlobs(block, blobs),
+            None => RpcBlockInner::Block(block),
         };
 
         // TODO(das) handle data columns
-        // if let (Some(_), Ok(_)) = (
-        //     data_columns.as_ref(),
-        //     block.message().body().blob_kzg_commitments()
-        // ) {
-        // }
-        // let inner = match data_columns {
-        //     Some(data_columns) => RpcBlockInner::BlockAndDataColumns(block, data_columns),
-        //     None => RpcBlockInner::Block(block),
-        // };
 
         Ok(Self {
             block_root,

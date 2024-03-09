@@ -16,7 +16,7 @@ use types::{
     beacon_block_body::KzgCommitments, data_column_sidecar::DataColumn, BeaconBlock,
     BeaconBlockAltair, BeaconBlockBase, BeaconBlockMerge, BlobSidecar, ChainSpec,
     DataColumnIdentifier, DataColumnSidecar, EmptyBlock, Epoch, EthSpec, ForkContext, ForkName,
-    Hash256, MinimalEthSpec, Signature, SignedBeaconBlock, Slot, KzgProofs
+    Hash256, KzgProofs, MinimalEthSpec, Signature, SignedBeaconBlock, Slot,
 };
 
 type E = MinimalEthSpec;
