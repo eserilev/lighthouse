@@ -102,7 +102,7 @@ pub enum Response<TSpec: EthSpec> {
     BlobsByRoot(Option<Arc<BlobSidecar<TSpec>>>),
     /// A response to a get DATA_COLUMN_SIDECARS_BY_ROOT request.
     DataColumnsByRoot(Option<Arc<DataColumnSidecar<TSpec>>>),
-    /// A response to a get DATA_COLUMN_SIDECARS_BY_RANGE request.
+    /// A response to a get DATA_COLUMN_SIDECARS_BY_RANGE request. A None response signals the end of the batch.
     DataColumnsByRange(Option<Arc<DataColumnSidecar<TSpec>>>),
     /// A response to a LightClientUpdate request.
     LightClientBootstrap(LightClientBootstrap<TSpec>),
