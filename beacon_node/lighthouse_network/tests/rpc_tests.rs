@@ -8,14 +8,13 @@ use lighthouse_network::{rpc::max_rpc_size, NetworkEvent, ReportSource, Request,
 use slog::{debug, warn, Level};
 use ssz::Encode;
 use ssz_types::VariableList;
+use std::marker::PhantomData;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
 use tokio::time::sleep;
 use types::{
-    BeaconBlock, BeaconBlockAltair, BeaconBlockBase, BeaconBlockMerge, BlobSidecar, ChainSpec,
-    EmptyBlock, Epoch, EthSpec, ForkContext, ForkName, Hash256, MinimalEthSpec, Signature,
-    SignedBeaconBlock, Slot,
+    BeaconBlock, BeaconBlockAltair, BeaconBlockBase, BeaconBlockHeader, BeaconBlockMerge, BlobSidecar, ChainSpec, EmptyBlock, Epoch, EthSpec, FixedVector, ForkContext, ForkName, Hash256, LightClientBootstrap, LightClientHeader, LightClientHeaderAltair, MinimalEthSpec, Signature, SignedBeaconBlock, Slot, SyncCommittee
 };
 
 type E = MinimalEthSpec;
@@ -850,6 +849,137 @@ fn test_tcp_blocks_by_root_chunked_rpc() {
             }
         }
     })
+}
+
+#[test]
+fn test_light_client_bootstrap() {
+    // set up the logging. The level and enabled logging or not
+    let log_level = Level::Debug;
+    let enable_logging = false;
+
+    let messages_to_send: u64 = 1;
+    let extra_messages_to_send: u64 = 10;
+
+    let log = common::build_log(log_level, enable_logging);
+    let spec = E::default_spec();
+
+    let rt = Arc::new(Runtime::new().unwrap());
+
+    rt.block_on(async {
+        let (mut sender, mut receiver) = common::build_node_pair(
+            Arc::downgrade(&rt),
+            &log,
+            ForkName::Base,
+            &spec,
+            Protocol::Tcp,
+        )
+        .await;
+
+        let rpc_request = Request::LightClientBootstrap(LightClientBootstrapRequest{
+            root: Hash256::from_low_u64_be(0),
+        });
+
+        let header = LightClientHeader::Altair(LightClientHeaderAltair {
+            beacon: BeaconBlockHeader::empty(),
+            _phantom_data: PhantomData,
+        });
+
+        let current_sync_committee = Arc::new(SyncCommittee::temporary());
+
+        let light_client_bootstrap = LightClientBootstrap { 
+            header,
+            current_sync_committee,
+            current_sync_committee_branch: FixedVector::default(),
+        };
+
+        let rpc_response = Response::LightClientBootstrap(Arc::new(light_client_bootstrap));
+
+        // keep count of the number of messages received
+        let mut messages_received = 0;
+        // build the sender future
+        let sender_future = async {
+            loop {
+                match sender.next_event().await {
+                    NetworkEvent::PeerConnectedOutgoing(peer_id) => {
+                        // Send a STATUS message
+                        debug!(log, "Sending RPC");
+                        sender.send_request(peer_id, 10, rpc_request.clone());
+                    }
+                    NetworkEvent::ResponseReceived { peer_id: _, id: _, response } => {
+                        debug!(log, "Sender received a response");
+                        match response {
+                            Response::LightClientBootstrap(_) => {
+                                // should be exactly messages_to_send
+                                messages_received += 1;
+                                assert_eq!(messages_received, messages_to_send);
+                                assert_eq!(response, rpc_response.clone());
+                                // end the test
+                                return;
+                            },
+                            _ => {},
+                        }
+                    },
+                    _ => {}
+                }
+            }
+        };
+        
+
+        // determine messages to send (PeerId, RequestId). If some, indicates we still need to send
+        // messages
+        let mut message_info = None;
+        // the number of messages we've sent
+        let mut messages_sent = 0;
+        let receiver_future = async {
+            loop {
+                // this future either drives the sending/receiving or times out allowing messages to be
+                // sent in the timeout
+                match futures::future::select(
+                    Box::pin(receiver.next_event()),
+                    Box::pin(tokio::time::sleep(Duration::from_secs(1))),
+                )
+                .await
+                {
+                    futures::future::Either::Left((
+                        NetworkEvent::RequestReceived {
+                            peer_id,
+                            id,
+                            request,
+                        },
+                        _,
+                    )) => {
+                        if request == rpc_request {
+                            // send the response
+                            warn!(log, "Receiver got request");
+                            message_info = Some((peer_id, id));
+                        }
+                    }
+                    futures::future::Either::Right((_, _)) => {} // The timeout hit, send messages if required
+                    _ => continue,
+                }
+
+                // if we need to send messages send them here. This will happen after a delay
+                if message_info.is_some() {
+                    messages_sent += 1;
+                    let (peer_id, stream_id) = message_info.as_ref().unwrap();
+                    receiver.send_response(*peer_id, *stream_id, rpc_response.clone());
+                    debug!(log, "Sending message {}", messages_sent);
+                    if messages_sent == messages_to_send + extra_messages_to_send {
+                        // stop sending messages
+                        return;
+                    }
+                }
+            }
+        };
+
+        tokio::select! {
+            _ = sender_future => {}
+            _ = receiver_future => {}
+            _ = sleep(Duration::from_secs(30)) => {
+                panic!("Future timed out");
+            }
+        }
+    });
 }
 
 // Tests a streamed, chunked BlocksByRoot RPC Message terminates when all expected reponses have been received

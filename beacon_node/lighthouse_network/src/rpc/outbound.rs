@@ -39,6 +39,7 @@ pub enum OutboundRequest<TSpec: EthSpec> {
     BlobsByRoot(BlobsByRootRequest),
     Ping(Ping),
     MetaData(MetadataRequest<TSpec>),
+    LightClientBootstrap(LightClientBootstrapRequest)
 }
 
 impl<TSpec: EthSpec> UpgradeInfo for OutboundRequestContainer<TSpec> {
@@ -88,6 +89,10 @@ impl<TSpec: EthSpec> OutboundRequest<TSpec> {
                 ProtocolId::new(SupportedProtocol::MetaDataV2, Encoding::SSZSnappy),
                 ProtocolId::new(SupportedProtocol::MetaDataV1, Encoding::SSZSnappy),
             ],
+            OutboundRequest::LightClientBootstrap(_) => vec![ProtocolId::new(
+                SupportedProtocol::LightClientBootstrapV1,
+                Encoding::SSZSnappy,
+            )]
         }
     }
     /* These functions are used in the handler for stream management */
@@ -103,6 +108,7 @@ impl<TSpec: EthSpec> OutboundRequest<TSpec> {
             OutboundRequest::BlobsByRoot(req) => req.blob_ids.len() as u64,
             OutboundRequest::Ping(_) => 1,
             OutboundRequest::MetaData(_) => 1,
+            OutboundRequest::LightClientBootstrap(_) => 1,
         }
     }
 
@@ -126,6 +132,7 @@ impl<TSpec: EthSpec> OutboundRequest<TSpec> {
                 MetadataRequest::V1(_) => SupportedProtocol::MetaDataV1,
                 MetadataRequest::V2(_) => SupportedProtocol::MetaDataV2,
             },
+            OutboundRequest::LightClientBootstrap(_) => SupportedProtocol::LightClientBootstrapV1,
         }
     }
 
@@ -139,6 +146,7 @@ impl<TSpec: EthSpec> OutboundRequest<TSpec> {
             OutboundRequest::BlocksByRoot(_) => ResponseTermination::BlocksByRoot,
             OutboundRequest::BlobsByRange(_) => ResponseTermination::BlobsByRange,
             OutboundRequest::BlobsByRoot(_) => ResponseTermination::BlobsByRoot,
+            OutboundRequest::LightClientBootstrap(_) => ResponseTermination::LightClientBootstrap,
             OutboundRequest::Status(_) => unreachable!(),
             OutboundRequest::Goodbye(_) => unreachable!(),
             OutboundRequest::Ping(_) => unreachable!(),
@@ -196,6 +204,7 @@ impl<TSpec: EthSpec> std::fmt::Display for OutboundRequest<TSpec> {
             OutboundRequest::BlocksByRoot(req) => write!(f, "Blocks by root: {:?}", req),
             OutboundRequest::BlobsByRange(req) => write!(f, "Blobs by range: {:?}", req),
             OutboundRequest::BlobsByRoot(req) => write!(f, "Blobs by root: {:?}", req),
+            OutboundRequest::LightClientBootstrap(req) => write!(f, "Light client bootstrap: {:?}", req),
             OutboundRequest::Ping(ping) => write!(f, "Ping: {}", ping.data),
             OutboundRequest::MetaData(_) => write!(f, "MetaData request"),
         }

@@ -411,6 +411,9 @@ pub enum ResponseTermination {
 
     /// Blobs by root stream termination.
     BlobsByRoot,
+
+    /// Light client bootstrap stream termination.
+    LightClientBootstrap,
 }
 
 /// The structured response containing a result/code indicating success or failure
