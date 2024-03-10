@@ -961,7 +961,8 @@ impl<T: BeaconChainTypes> BackFillSync<T> {
     ) -> Result<(), BackFillError> {
         if let Some(batch) = self.batches.get_mut(&batch_id) {
             let (request, is_blob_batch) = batch.to_blocks_by_range_request();
-            match network.backfill_blocks_by_range_request(peer, is_blob_batch, request, batch_id) {
+            // TODO(das) pass in data_column_ids to fetch 
+            match network.backfill_blocks_by_range_request(peer, is_blob_batch, request, batch_id, None) {
                 Ok(request_id) => {
                     // inform the batch about the new request
                     if let Err(e) = batch.start_downloading_from_peer(peer, request_id) {

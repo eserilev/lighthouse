@@ -21,7 +21,7 @@ use slog::{debug, trace, warn};
 use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use types::{BlobSidecar, DataColumnSidecar, EthSpec, SignedBeaconBlock};
+use types::{BlobSidecar, DataColumnIdentifier, DataColumnSidecar, EthSpec, SignedBeaconBlock};
 
 pub struct BlocksAndBlobsByRangeResponse<T: EthSpec> {
     pub batch_id: BatchId,
@@ -307,6 +307,7 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
         batch_type: ByRangeRequestType,
         request: BlocksByRangeRequest,
         batch_id: BatchId,
+        data_column_ids: Option<Vec<DataColumnIdentifier>>,
     ) -> Result<Id, &'static str> {
         match batch_type {
             ByRangeRequestType::Blocks => {
@@ -376,7 +377,7 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
                 // create the shared request id. This is fine since the rpc handles substream ids.
                 let id = self.next_id();
                 let request_id = RequestId::Sync(SyncRequestId::BackFillBlockAndDataColumns { id });
-                let data_column_ids = request.data_column_ids().as_ref().ok_or(
+                let data_column_ids = data_column_ids.ok_or(
                     "Trying to send a backfill BlocksByRange and DataColumnsByRange request without data column ids"
                 )?;
 
@@ -384,7 +385,7 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
                 let data_columns_request = Request::DataColumnsByRange(DataColumnsByRangeRequest {
                     start_slot: *request.start_slot(),
                     count: *request.count(),
-                    data_column_ids: data_column_ids.to_owned(),
+                    data_column_ids: data_column_ids,
                 });
                 let blocks_request = Request::BlocksByRange(request);
 
