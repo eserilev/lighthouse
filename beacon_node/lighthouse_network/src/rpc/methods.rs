@@ -260,23 +260,17 @@ pub struct BlocksByRangeRequest {
     pub start_slot: u64,
 
     /// The number of blocks from the start slot.
-    pub count: u64
+    pub count: u64,
 }
 
 impl BlocksByRangeRequest {
     /// The default request is V2
     pub fn new(start_slot: u64, count: u64) -> Self {
-        Self::V2(BlocksByRangeRequestV2 {
-            start_slot,
-            count,
-        })
+        Self::V2(BlocksByRangeRequestV2 { start_slot, count })
     }
 
     pub fn new_v1(start_slot: u64, count: u64) -> Self {
-        Self::V1(BlocksByRangeRequestV1 {
-            start_slot,
-            count,
-        })
+        Self::V1(BlocksByRangeRequestV1 { start_slot, count })
     }
 }
 
