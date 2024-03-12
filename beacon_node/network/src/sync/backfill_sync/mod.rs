@@ -922,8 +922,10 @@ impl<T: BeaconChainTypes> BackFillSync<T> {
         // Find a peer to request the batch
         let failed_peers = batch.failed_peers();
 
-        let new_peer = {
-            let mut priorized_peers = self
+        
+
+        let prioritized_peers = {
+            let mut prioritized_peers = self
                 .network_globals
                 .peers
                 .read()
@@ -937,8 +939,9 @@ impl<T: BeaconChainTypes> BackFillSync<T> {
                 })
                 .collect::<Vec<_>>();
             // Sort peers prioritizing unrelated peers with less active requests.
-            priorized_peers.sort_unstable();
-            priorized_peers.first().map(|&(_, _, peer)| peer)
+            prioritized_peers.sort_unstable();
+            prioritized_peers
+            // priorized_peers.first().map(|&(_, _, peer)| peer)
         };
 
         if let Some(peer) = new_peer {
@@ -1198,4 +1201,10 @@ enum ResetEpochError {
     SyncCompleted,
     /// Backfill is not required.
     NotRequired,
+}
+
+
+
+fn get_peers_for_data_column(peers: Vec<PeerId>, batch_id: BatchId) {
+
 }

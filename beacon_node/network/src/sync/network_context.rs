@@ -381,11 +381,11 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
                     "Trying to send a backfill BlocksByRange and DataColumnsByRange request without data column ids"
                 )?;
 
-                // Create the blob request based on the blob request.
+                // Create the data column request based on the blob request.
                 let data_columns_request = Request::DataColumnsByRange(DataColumnsByRangeRequest {
                     start_slot: *request.start_slot(),
                     count: *request.count(),
-                    data_column_ids: data_column_ids,
+                    data_column_ids,
                 });
                 let blocks_request = Request::BlocksByRange(request);
 
