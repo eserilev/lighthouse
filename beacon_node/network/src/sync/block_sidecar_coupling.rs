@@ -23,6 +23,8 @@ impl<E: EthSpec> BlocksAndDataColumnsRequestInfo<E> {
         }
     }
 
+    // TODO(das) data column sidecar response will get terminated before all requests are consumed
+    // because the first responding peer will send a data column response and then terminate it with a `None`
     pub fn add_data_column_sidecar_response(
         &mut self,
         data_column_sidecar_opt: Option<Arc<DataColumnSidecar<E>>>,

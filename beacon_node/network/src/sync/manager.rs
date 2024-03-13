@@ -256,7 +256,7 @@ pub fn spawn<T: BeaconChainTypes>(
             beacon_chain.clone(),
             log.clone(),
         ),
-        range_sync: RangeSync::new(beacon_chain.clone(), log.clone()),
+        range_sync: RangeSync::new(beacon_chain.clone(), network_globals.clone(), log.clone()),
         backfill_sync: BackFillSync::new(beacon_chain.clone(), network_globals, log.clone()),
         block_lookups: BlockLookups::new(
             beacon_chain.data_availability_checker.clone(),

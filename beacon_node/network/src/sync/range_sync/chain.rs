@@ -10,6 +10,7 @@ use lighthouse_network::discovery::peer_id_to_node_id;
 use lighthouse_network::{PeerAction, PeerId};
 use rand::seq::SliceRandom;
 use slog::{crit, debug, o, warn};
+use std::collections::HashMap;
 use std::collections::{btree_map::Entry, BTreeMap, HashSet};
 use std::hash::{Hash, Hasher};
 use types::{DataColumnIdentifier, Epoch, EthSpec, Hash256, Slot};
@@ -102,6 +103,9 @@ pub struct SyncingChain<T: BeaconChainTypes> {
     /// Batches validated by this chain.
     validated_batches: u64,
 
+    /// This nodes local peer id
+    local_peer_id: PeerId,
+
     /// The chain's log.
     log: slog::Logger,
 }
@@ -127,6 +131,7 @@ impl<T: BeaconChainTypes> SyncingChain<T> {
         target_head_slot: Slot,
         target_head_root: Hash256,
         peer_id: PeerId,
+        local_peer_id: PeerId,
         log: &slog::Logger,
     ) -> Self {
         let mut peers = FnvHashMap::default();
@@ -148,6 +153,7 @@ impl<T: BeaconChainTypes> SyncingChain<T> {
             state: ChainSyncingState::Stopped,
             current_processing_batch: None,
             validated_batches: 0,
+            local_peer_id,
             log: log.new(o!("chain" => id)),
         }
     }
@@ -877,7 +883,6 @@ impl<T: BeaconChainTypes> SyncingChain<T> {
 
         // Find a peer to request the batch
         let failed_peers = batch.failed_peers();
-
         let new_peer = {
             let mut prioritized_peers = self
                 .peers
@@ -886,23 +891,16 @@ impl<T: BeaconChainTypes> SyncingChain<T> {
                 .collect::<Vec<_>>();
             // Sort peers prioritizing unrelated peers with less active requests.
             prioritized_peers.sort_unstable();
-            prioritized_peers
-                .iter()
-                .map(|(_, _, peer)| (peer, peer_id_to_node_id(peer).unwrap()))
-                .map(|(peer, node_id)| {
-                    (
-                        peer,
-                        DataColumnIdentifier::compute_data_columns_for_epoch(
-                            node_id.raw().into(),
-                            batch_id,
-                        ),
-                    )
-                });
+
             prioritized_peers.first().map(|&(_, _, peer)| peer)
         };
 
+        let peers = self.peers.iter().map(|(&peer, _)| peer).collect::<Vec<_>>();
+
+        let peers_and_columns = self.peers_with_data_columns(peers, batch_id);
+
         if let Some(peer) = new_peer {
-            self.send_batch(network, batch_id, peer)
+            self.send_batch(network, batch_id, peer, Some(peers_and_columns))
         } else {
             // If we are here the chain has no more peers
             Err(RemoveChain::EmptyPeerPool)
@@ -915,10 +913,18 @@ impl<T: BeaconChainTypes> SyncingChain<T> {
         network: &mut SyncNetworkContext<T>,
         batch_id: BatchId,
         peer: PeerId,
+        peers_data_columns: Option<HashMap<PeerId, Vec<DataColumnIdentifier>>>,
     ) -> ProcessingResult {
         if let Some(batch) = self.batches.get_mut(&batch_id) {
             let (request, batch_type) = batch.to_blocks_by_range_request();
-            match network.blocks_by_range_request(peer, batch_type, request, self.id, batch_id) {
+            match network.blocks_by_range_request(
+                peer,
+                peers_data_columns,
+                batch_type,
+                request,
+                self.id,
+                batch_id,
+            ) {
                 Ok(request_id) => {
                     // inform the batch about the new request
                     batch.start_downloading_from_peer(peer, request_id)?;
@@ -931,6 +937,7 @@ impl<T: BeaconChainTypes> SyncingChain<T> {
                     } else {
                         debug!(self.log, "Requesting batch"; "epoch" => batch_id, &batch);
                     }
+                    // TODO(das) insert for multiple peers
                     // register the batch for this peer
                     return self
                         .peers
@@ -1020,12 +1027,16 @@ impl<T: BeaconChainTypes> SyncingChain<T> {
         // check if we have the batch for our optimistic start. If not, request it first.
         // We wait for this batch before requesting any other batches.
         if let Some(epoch) = self.optimistic_start {
+            // TODO(das) will need to clean this up
+            let peers_and_columns = self.peers_with_data_columns(idle_peers.clone(), epoch);
             if let Entry::Vacant(entry) = self.batches.entry(epoch) {
                 if let Some(peer) = idle_peers.pop() {
                     let batch_type = network.batch_type(epoch);
                     let optimistic_batch = BatchInfo::new(&epoch, EPOCHS_PER_BATCH, batch_type);
                     entry.insert(optimistic_batch);
-                    self.send_batch(network, epoch, peer)?;
+
+                    // TODO(das) handle list of peers + columns for optimistic sync
+                    self.send_batch(network, epoch, peer, Some(peers_and_columns))?;
                 }
             }
             return Ok(KeepChain);
@@ -1033,8 +1044,10 @@ impl<T: BeaconChainTypes> SyncingChain<T> {
 
         while let Some(peer) = idle_peers.pop() {
             if let Some(batch_id) = self.include_next_batch(network) {
+                // TODO(das) will need to clean this up
+                let peers_and_columns = self.peers_with_data_columns(idle_peers.clone(), batch_id);
                 // send the batch
-                self.send_batch(network, batch_id, peer)?;
+                self.send_batch(network, batch_id, peer, Some(peers_and_columns))?;
             } else {
                 // No more batches, simply stop
                 return Ok(KeepChain);
@@ -1089,6 +1102,31 @@ impl<T: BeaconChainTypes> SyncingChain<T> {
                 Some(batch_id)
             }
         }
+    }
+
+    /// Using the list of available peers for the given chain and the current batch id
+    /// compute the data columns for the given epoch
+    fn peers_with_data_columns(
+        &self,
+        peers: Vec<PeerId>,
+        batch_id: BatchId,
+    ) -> HashMap<PeerId, Vec<DataColumnIdentifier>> {
+        let mut peer_data_column_map = HashMap::new();
+
+        let _ = peer_id_to_node_id(&self.local_peer_id);
+
+        for peer in peers {
+            if let Ok(node_id) = peer_id_to_node_id(&peer) {
+                // TODO(das) this probably gets replaced by some network shard calculation
+                let column_indexes = DataColumnIdentifier::compute_data_columns_for_epoch(
+                    node_id.raw().into(),
+                    batch_id,
+                );
+                peer_data_column_map.insert(peer, column_indexes);
+            }
+        }
+
+        peer_data_column_map
     }
 }
 

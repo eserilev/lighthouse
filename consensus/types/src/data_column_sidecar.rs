@@ -39,8 +39,16 @@ pub struct DataColumnIdentifier {
 impl DataColumnIdentifier {
     /// Compute columns a node is required to custody for a given node id and epoch
     /// TODO(das)
-    pub fn compute_data_columns_for_epoch(_node_id: U256, _epoch: Epoch) -> Vec<ColumnIndex> {
-        vec![1, 2]
+    pub fn compute_data_columns_for_epoch(
+        _node_id: U256,
+        _epoch: Epoch,
+    ) -> Vec<DataColumnIdentifier> {
+        let data_column_identifer = DataColumnIdentifier {
+            block_root: Hash256::default(),
+            index: 1,
+        };
+
+        vec![data_column_identifer]
     }
 }
 

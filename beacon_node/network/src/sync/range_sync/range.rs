@@ -50,8 +50,8 @@ use crate::sync::BatchProcessResult;
 use beacon_chain::block_verification_types::RpcBlock;
 use beacon_chain::{BeaconChain, BeaconChainTypes};
 use lighthouse_network::rpc::GoodbyeReason;
-use lighthouse_network::PeerId;
 use lighthouse_network::SyncInfo;
+use lighthouse_network::{NetworkGlobals, PeerId};
 use lru_cache::LRUTimeCache;
 use slog::{crit, debug, trace, warn};
 use std::collections::HashMap;
@@ -75,6 +75,8 @@ pub struct RangeSync<T: BeaconChainTypes, C = BeaconChain<T>> {
     chains: ChainCollection<T, C>,
     /// Chains that have failed and are stored to prevent being retried.
     failed_chains: LRUTimeCache<Hash256>,
+    /// Reference to the network globals
+    network_globals: Arc<NetworkGlobals<T::EthSpec>>,
     /// The syncing logger.
     log: slog::Logger,
 }
@@ -84,7 +86,11 @@ where
     C: BlockStorage + ToStatusMessage,
     T: BeaconChainTypes,
 {
-    pub fn new(beacon_chain: Arc<C>, log: slog::Logger) -> Self {
+    pub fn new(
+        beacon_chain: Arc<C>,
+        network_globals: Arc<NetworkGlobals<T::EthSpec>>,
+        log: slog::Logger,
+    ) -> Self {
         RangeSync {
             beacon_chain: beacon_chain.clone(),
             chains: ChainCollection::new(beacon_chain, log.clone()),
@@ -92,6 +98,7 @@ where
                 FAILED_CHAINS_EXPIRY_SECONDS,
             )),
             awaiting_head_peers: HashMap::new(),
+            network_globals,
             log,
         }
     }
@@ -123,6 +130,8 @@ where
         let remote_finalized_slot = remote_info
             .finalized_epoch
             .start_slot(T::EthSpec::slots_per_epoch());
+
+        let local_peer_id = self.network_globals.local_peer_id();
 
         // NOTE: A peer that has been re-status'd may now exist in multiple finalized chains. This
         // is OK since we since only one finalized chain at a time.
@@ -157,12 +166,17 @@ where
                     remote_info.finalized_root,
                     target_head_slot,
                     peer_id,
+                    local_peer_id,
                     RangeSyncType::Finalized,
                     network,
                 );
 
-                self.chains
-                    .update(network, &local_info, &mut self.awaiting_head_peers);
+                self.chains.update(
+                    network,
+                    &local_info,
+                    local_peer_id,
+                    &mut self.awaiting_head_peers,
+                );
             }
             RangeSyncType::Head => {
                 // This peer requires a head chain sync
@@ -190,11 +204,16 @@ where
                     remote_info.head_root,
                     remote_info.head_slot,
                     peer_id,
+                    local_peer_id,
                     RangeSyncType::Head,
                     network,
                 );
-                self.chains
-                    .update(network, &local_info, &mut self.awaiting_head_peers);
+                self.chains.update(
+                    network,
+                    &local_info,
+                    local_peer_id,
+                    &mut self.awaiting_head_peers,
+                );
             }
         }
     }
@@ -357,8 +376,12 @@ where
         };
 
         // update the state of the collection
-        self.chains
-            .update(network, &local, &mut self.awaiting_head_peers);
+        self.chains.update(
+            network,
+            &local,
+            self.network_globals.local_peer_id(),
+            &mut self.awaiting_head_peers,
+        );
     }
 
     /// Kickstarts sync.
@@ -633,6 +656,7 @@ mod tests {
         let fake_store = Arc::new(FakeStorage::default());
         let range_sync = RangeSync::<TestBeaconChainType, FakeStorage>::new(
             fake_store.clone(),
+            NetworkGlobals::new_test_globals(vec![], &log).into(),
             log.new(o!("component" => "range")),
         );
         let (network_tx, network_rx) = mpsc::unbounded_channel();

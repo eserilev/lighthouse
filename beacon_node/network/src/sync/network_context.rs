@@ -19,6 +19,7 @@ use lighthouse_network::rpc::{BlocksByRangeRequest, BlocksByRootRequest, Goodbye
 use lighthouse_network::{Client, NetworkGlobals, PeerAction, PeerId, ReportSource, Request};
 use slog::{debug, trace, warn};
 use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use types::{BlobSidecar, DataColumnIdentifier, DataColumnSidecar, EthSpec, SignedBeaconBlock};
@@ -188,6 +189,7 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
     pub fn blocks_by_range_request(
         &mut self,
         peer_id: PeerId,
+        peers_data_columns: Option<HashMap<PeerId, Vec<DataColumnIdentifier>>>,
         batch_type: ByRangeRequestType,
         request: BlocksByRangeRequest,
         chain_id: ChainId,
@@ -256,6 +258,8 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
                 Ok(id)
             }
             ByRangeRequestType::BlocksAndDataColumns => {
+                // TODO(das) we have a list of peers, debug message
+                // should reflect that
                 debug!(
                     self.log,
                     "Sending BlocksByRange and DataColumnsByRange requests";
@@ -268,11 +272,23 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
                 let id = self.next_id();
                 let request_id = RequestId::Sync(SyncRequestId::RangeBlockAndDataColumns { id });
 
-                // Create the blob request based on the blob request.
-                let blobs_request = Request::BlobsByRange(BlobsByRangeRequest {
-                    start_slot: *request.start_slot(),
-                    count: *request.count(),
-                });
+                if let Some(peers_data_columns) = peers_data_columns {
+                    for (&data_column_peer, data_column_ids) in peers_data_columns.iter() {
+                        // Create the data columns requests
+                        let data_column_request =
+                            Request::DataColumnsByRange(DataColumnsByRangeRequest {
+                                start_slot: *request.start_slot(),
+                                count: *request.count(),
+                                data_column_ids: data_column_ids.to_vec(),
+                            });
+                        self.send_network_msg(NetworkMessage::SendRequest {
+                            peer_id: data_column_peer,
+                            request: data_column_request,
+                            request_id,
+                        })?;
+                    }
+                }
+
                 let blocks_request = Request::BlocksByRange(request);
 
                 // Send both requests. Make sure both can be sent.
@@ -281,18 +297,14 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
                     request: blocks_request,
                     request_id,
                 })?;
-                self.send_network_msg(NetworkMessage::SendRequest {
-                    peer_id,
-                    request: blobs_request,
-                    request_id,
-                })?;
-                let block_blob_info = BlocksAndBlobsRequestInfo::default();
-                self.range_blocks_and_blobs_requests.insert(
+
+                let block_data_column_info = BlocksAndDataColumnsRequestInfo::default();
+                self.range_blocks_and_data_columns_requests.insert(
                     id,
-                    BlocksAndBlobsByRangeRequest {
+                    BlocksAndDataColumnsByRangeRequest {
                         chain_id,
                         batch_id,
-                        block_blob_info,
+                        block_data_column_info,
                     },
                 );
                 Ok(id)
@@ -796,9 +808,10 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
             "To deal with alignment with deneb boundaries, batches need to be of just one epoch"
         );
 
+        // TODO(das) enable blob range requests here OR blobs based on config/fork check etc
         if let Some(data_availability_boundary) = self.chain.data_availability_boundary() {
             if epoch >= data_availability_boundary {
-                ByRangeRequestType::BlocksAndBlobs
+                ByRangeRequestType::BlocksAndDataColumns
             } else {
                 ByRangeRequestType::Blocks
             }

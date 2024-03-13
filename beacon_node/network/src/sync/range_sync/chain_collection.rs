@@ -193,6 +193,7 @@ impl<T: BeaconChainTypes, C: BlockStorage> ChainCollection<T, C> {
         &mut self,
         network: &mut SyncNetworkContext<T>,
         local: &SyncInfo,
+        local_peer_id: PeerId,
         awaiting_head_peers: &mut HashMap<PeerId, SyncInfo>,
     ) {
         // Remove any outdated finalized/head chains
@@ -208,6 +209,7 @@ impl<T: BeaconChainTypes, C: BlockStorage> ChainCollection<T, C> {
                 network,
                 local.finalized_epoch,
                 local_head_epoch,
+                local_peer_id,
                 awaiting_head_peers,
             );
         }
@@ -325,6 +327,7 @@ impl<T: BeaconChainTypes, C: BlockStorage> ChainCollection<T, C> {
         network: &mut SyncNetworkContext<T>,
         local_epoch: Epoch,
         local_head_epoch: Epoch,
+        local_peer_id: PeerId,
         awaiting_head_peers: &mut HashMap<PeerId, SyncInfo>,
     ) {
         // Include the awaiting head peers
@@ -335,6 +338,7 @@ impl<T: BeaconChainTypes, C: BlockStorage> ChainCollection<T, C> {
                 peer_sync_info.head_root,
                 peer_sync_info.head_slot,
                 peer_id,
+                local_peer_id,
                 RangeSyncType::Head,
                 network,
             );
@@ -461,6 +465,7 @@ impl<T: BeaconChainTypes, C: BlockStorage> ChainCollection<T, C> {
         target_head_root: Hash256,
         target_head_slot: Slot,
         peer: PeerId,
+        local_peer_id: PeerId,
         sync_type: RangeSyncType,
         network: &mut SyncNetworkContext<T>,
     ) {
@@ -493,6 +498,7 @@ impl<T: BeaconChainTypes, C: BlockStorage> ChainCollection<T, C> {
                     target_head_slot,
                     target_head_root,
                     peer,
+                    local_peer_id,
                     &self.log,
                 );
                 debug_assert_eq!(new_chain.get_id(), id);
