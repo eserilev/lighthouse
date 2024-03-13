@@ -922,8 +922,6 @@ impl<T: BeaconChainTypes> BackFillSync<T> {
         // Find a peer to request the batch
         let failed_peers = batch.failed_peers();
 
-        
-
         let prioritized_peers = {
             let mut prioritized_peers = self
                 .network_globals
@@ -1203,8 +1201,4 @@ enum ResetEpochError {
     NotRequired,
 }
 
-
-
-fn get_peers_for_data_column(peers: Vec<PeerId>, batch_id: BatchId) {
-
-}
+fn get_peers_for_data_column(peers: Vec<PeerId>, batch_id: BatchId) {}

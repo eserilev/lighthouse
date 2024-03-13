@@ -9,10 +9,10 @@ use derivative::Derivative;
 use ssz_types::VariableList;
 use state_processing::ConsensusContext;
 use std::sync::Arc;
-use types::blob_sidecar::{BlobIdentifier, FixedBlobSidecarList};
-use types::data_column_sidecar::{DataColumnSidecarList, FixedDataColumnSidecarList};
 use types::blob_sidecar::{self};
+use types::blob_sidecar::{BlobIdentifier, FixedBlobSidecarList};
 use types::data_column_sidecar::{self};
+use types::data_column_sidecar::{DataColumnSidecarList, FixedDataColumnSidecarList};
 use types::{
     BeaconBlockRef, BeaconState, BlindedPayload, BlobSidecarList, Epoch, EthSpec, Hash256,
     SignedBeaconBlock, SignedBeaconBlockHeader, Slot,

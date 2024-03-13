@@ -6,12 +6,13 @@ use crate::sync::{
 use beacon_chain::block_verification_types::RpcBlock;
 use beacon_chain::BeaconChainTypes;
 use fnv::FnvHashMap;
+use lighthouse_network::discovery::peer_id_to_node_id;
 use lighthouse_network::{PeerAction, PeerId};
 use rand::seq::SliceRandom;
 use slog::{crit, debug, o, warn};
 use std::collections::{btree_map::Entry, BTreeMap, HashSet};
 use std::hash::{Hash, Hasher};
-use types::{Epoch, EthSpec, Hash256, Slot};
+use types::{DataColumnIdentifier, Epoch, EthSpec, Hash256, Slot};
 
 /// Blocks are downloaded in batches from peers. This constant specifies how many epochs worth of
 /// blocks per batch are requested _at most_. A batch may request less blocks to account for
@@ -878,14 +879,26 @@ impl<T: BeaconChainTypes> SyncingChain<T> {
         let failed_peers = batch.failed_peers();
 
         let new_peer = {
-            let mut priorized_peers = self
+            let mut prioritized_peers = self
                 .peers
                 .iter()
                 .map(|(peer, requests)| (failed_peers.contains(peer), requests.len(), *peer))
                 .collect::<Vec<_>>();
             // Sort peers prioritizing unrelated peers with less active requests.
-            priorized_peers.sort_unstable();
-            priorized_peers.first().map(|&(_, _, peer)| peer)
+            prioritized_peers.sort_unstable();
+            prioritized_peers
+                .iter()
+                .map(|(_, _, peer)| (peer, peer_id_to_node_id(peer).unwrap()))
+                .map(|(peer, node_id)| {
+                    (
+                        peer,
+                        DataColumnIdentifier::compute_data_columns_for_epoch(
+                            node_id.raw().into(),
+                            batch_id,
+                        ),
+                    )
+                });
+            prioritized_peers.first().map(|&(_, _, peer)| peer)
         };
 
         if let Some(peer) = new_peer {
