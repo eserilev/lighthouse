@@ -22,7 +22,7 @@ pub struct OnDiskConsensusContext<E: EthSpec> {
     /// They are not part of the on-disk format.
     #[ssz(skip_serializing, skip_deserializing)]
     indexed_attestations:
-        HashMap<(AttestationData, BitList<E::MaxValidatorsPerSlot>), IndexedAttestation<E>>,
+        HashMap<(AttestationData, u64, BitList<E::MaxValidatorsPerSlot>), IndexedAttestation<E>>,
 }
 
 impl<E: EthSpec> OnDiskConsensusContext<E> {

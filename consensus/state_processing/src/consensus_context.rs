@@ -23,7 +23,7 @@ pub struct ConsensusContext<E: EthSpec> {
     pub current_block_root: Option<Hash256>,
     /// Cache of indexed attestations constructed during block processing.
     pub indexed_attestations:
-        HashMap<(AttestationData, BitList<E::MaxValidatorsPerSlot>), IndexedAttestation<E>>,
+        HashMap<(AttestationData, u64, BitList<E::MaxValidatorsPerSlot>), IndexedAttestation<E>>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -160,7 +160,7 @@ impl<E: EthSpec> ConsensusContext<E> {
                     .extend_aggregation_bits()
                     .map_err(BeaconStateError::from)?;
 
-                let key = (attn.data.clone(), extended_aggregation_bits);
+                let key = (attn.data.clone(), attestation.committee_index(), extended_aggregation_bits);
 
                 match self.indexed_attestations.entry(key) {
                     Entry::Occupied(occupied) => Ok(occupied.into_mut()),
@@ -176,7 +176,7 @@ impl<E: EthSpec> ConsensusContext<E> {
                 }
             }
             AttestationRef::Electra(attn) => {
-                let key = (attn.data.clone(), attn.aggregation_bits.clone());
+                let key = (attn.data.clone(), attestation.committee_index(), attn.aggregation_bits.clone());
 
                 match self.indexed_attestations.entry(key) {
                     Entry::Occupied(occupied) => Ok(occupied.into_mut()),
@@ -201,7 +201,7 @@ impl<E: EthSpec> ConsensusContext<E> {
     pub fn set_indexed_attestations(
         mut self,
         attestations: HashMap<
-            (AttestationData, BitList<E::MaxValidatorsPerSlot>),
+            (AttestationData, u64, BitList<E::MaxValidatorsPerSlot>),
             IndexedAttestation<E>,
         >,
     ) -> Self {
