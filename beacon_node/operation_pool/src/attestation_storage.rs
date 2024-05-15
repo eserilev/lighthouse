@@ -43,7 +43,7 @@ pub struct SplitAttestation<E: EthSpec> {
 
 // TODO(electra): rename this type
 #[derive(Debug, Clone)]
-pub struct AttestationRef<'a, E: EthSpec> {
+pub struct CompactAttestationRef<'a, E: EthSpec> {
     pub checkpoint: &'a CheckpointKey,
     pub data: &'a CompactAttestationData,
     pub indexed: &'a CompactIndexedAttestation<E>,
@@ -97,8 +97,8 @@ impl<E: EthSpec> SplitAttestation<E> {
         }
     }
 
-    pub fn as_ref(&self) -> AttestationRef<E> {
-        AttestationRef {
+    pub fn as_ref(&self) -> CompactAttestationRef<E> {
+        CompactAttestationRef {
             checkpoint: &self.checkpoint,
             data: &self.data,
             indexed: &self.indexed,
@@ -106,7 +106,7 @@ impl<E: EthSpec> SplitAttestation<E> {
     }
 }
 
-impl<'a, E: EthSpec> AttestationRef<'a, E> {
+impl<'a, E: EthSpec> CompactAttestationRef<'a, E> {
     pub fn attestation_data(&self) -> AttestationData {
         AttestationData {
             slot: self.data.slot,
@@ -399,7 +399,7 @@ impl<E: EthSpec> AttestationMap<E> {
     pub fn get_attestations<'a>(
         &'a self,
         checkpoint_key: &'a CheckpointKey,
-    ) -> impl Iterator<Item = AttestationRef<'a, E>> + 'a {
+    ) -> impl Iterator<Item = CompactAttestationRef<'a, E>> + 'a {
         self.checkpoint_map
             .get(checkpoint_key)
             .into_iter()
@@ -407,7 +407,7 @@ impl<E: EthSpec> AttestationMap<E> {
     }
 
     /// Iterate all attestations in the map.
-    pub fn iter(&self) -> impl Iterator<Item = AttestationRef<E>> {
+    pub fn iter(&self) -> impl Iterator<Item = CompactAttestationRef<E>> {
         self.checkpoint_map
             .iter()
             .flat_map(|(checkpoint_key, attestation_map)| attestation_map.iter(checkpoint_key))
@@ -438,9 +438,9 @@ impl<E: EthSpec> AttestationDataMap<E> {
     pub fn iter<'a>(
         &'a self,
         checkpoint_key: &'a CheckpointKey,
-    ) -> impl Iterator<Item = AttestationRef<'a, E>> + 'a {
+    ) -> impl Iterator<Item = CompactAttestationRef<'a, E>> + 'a {
         self.attestations.iter().flat_map(|(data, vec_indexed)| {
-            vec_indexed.iter().map(|indexed| AttestationRef {
+            vec_indexed.iter().map(|indexed| CompactAttestationRef {
                 checkpoint: checkpoint_key,
                 data,
                 indexed,
