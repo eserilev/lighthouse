@@ -240,6 +240,8 @@ impl<E: EthSpec> AggregateMap for AggregatedAttestationMap<E> {
     /// The given attestation (`a`) must only have one signature.
     fn insert(&mut self, a: AttestationRef<E>) -> Result<InsertOutcome, Error> {
         let _timer = metrics::start_timer(&metrics::ATTESTATION_PROCESSING_AGG_POOL_CORE_INSERT);
+        println!("attn committee index: {}", a.committee_index());
+        println!("attn agg bit: {}", a.num_set_aggregation_bits());
 
         let aggregation_bit = match a {
             AttestationRef::Base(att) => att

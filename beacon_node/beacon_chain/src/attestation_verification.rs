@@ -464,7 +464,7 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
         chain: &BeaconChain<T>,
     ) -> Result<Hash256, Error> {
         let attestation = signed_aggregate.message().aggregate();
-
+        
         // Ensure attestation is within the last ATTESTATION_PROPAGATION_SLOT_RANGE slots (within a
         // MAXIMUM_GOSSIP_CLOCK_DISPARITY allowance).
         //
@@ -481,24 +481,19 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
             });
         }
 
+        let attestation_data_root = attestation.data().tree_hash_root();
+
         // [New in Electra:EIP7549]
         verify_committee_index(attestation, &chain.spec)?;
-
-        // Ensure the valid aggregated attestation has not already been seen locally.
-        let root = match attestation {
-            AttestationRef::Base(att) => att.data.tree_hash_root(),
-            AttestationRef::Electra(att) => att.tree_hash_root(),
-        };
-
 
         if chain
             .observed_attestations
             .write()
-            .is_known_subset(attestation, root)
+            .is_known_subset(attestation, attestation_data_root)
             .map_err(|e| Error::BeaconChainError(e.into()))?
         {
             metrics::inc_counter(&metrics::AGGREGATED_ATTESTATION_SUBSETS);
-            return Err(Error::AttestationSupersetKnown(root));
+            return Err(Error::AttestationSupersetKnown(attestation_data_root));
         }
 
         let aggregator_index = signed_aggregate.message().aggregator_index();
@@ -544,7 +539,7 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
         if attestation.is_aggregation_bits_zero() {
             Err(Error::EmptyAggregationBitfield)
         } else {
-            Ok(root)
+            Ok(attestation_data_root)
         }
     }
 
