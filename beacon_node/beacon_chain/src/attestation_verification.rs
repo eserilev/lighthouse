@@ -485,17 +485,20 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
         verify_committee_index(attestation, &chain.spec)?;
 
         // Ensure the valid aggregated attestation has not already been seen locally.
-        let attestation_data = attestation.data();
-        let attestation_data_root = attestation_data.tree_hash_root();
+        let root = match attestation {
+            AttestationRef::Base(att) => att.data.tree_hash_root(),
+            AttestationRef::Electra(att) => att.tree_hash_root(),
+        };
+
 
         if chain
             .observed_attestations
             .write()
-            .is_known_subset(attestation, attestation_data_root)
+            .is_known_subset(attestation, root)
             .map_err(|e| Error::BeaconChainError(e.into()))?
         {
             metrics::inc_counter(&metrics::AGGREGATED_ATTESTATION_SUBSETS);
-            return Err(Error::AttestationSupersetKnown(attestation_data_root));
+            return Err(Error::AttestationSupersetKnown(root));
         }
 
         let aggregator_index = signed_aggregate.message().aggregator_index();
@@ -541,7 +544,7 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
         if attestation.is_aggregation_bits_zero() {
             Err(Error::EmptyAggregationBitfield)
         } else {
-            Ok(attestation_data_root)
+            Ok(root)
         }
     }
 
@@ -672,6 +675,7 @@ impl<'a, T: BeaconChainTypes> VerifiedAggregatedAttestation<'a, T> {
             .observe_validator(attestation.data().target.epoch, aggregator_index as usize)
             .map_err(BeaconChainError::from)?
         {
+            println!("here");
             return Err(Error::PriorAttestationKnown {
                 validator_index: aggregator_index,
                 epoch: attestation.data().target.epoch,
