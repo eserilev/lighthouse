@@ -44,6 +44,7 @@ use itertools::Itertools;
 use proto_array::Block as ProtoBlock;
 use slog::debug;
 use slot_clock::SlotClock;
+use tree_hash_derive::TreeHash;
 use state_processing::{
     common::{
         attesting_indices_base,
@@ -59,7 +60,7 @@ use std::borrow::Cow;
 use strum::AsRefStr;
 use tree_hash::TreeHash;
 use types::{
-    Attestation, AttestationRef, BeaconCommittee, BeaconStateError::NoCommitteeFound, ChainSpec,
+    Attestation, AttestationData, AttestationRef, BeaconCommittee, BeaconStateError::NoCommitteeFound, ChainSpec,
     CommitteeIndex, Epoch, EthSpec, ForkName, Hash256, IndexedAttestation, SelectionProof,
     SignedAggregateAndProof, Slot, SubnetId,
 };
@@ -323,6 +324,12 @@ impl<'a, T: BeaconChainTypes> VerifiedUnaggregatedAttestation<'a, T> {
     }
 }
 
+#[derive(TreeHash)]
+struct ObservedAttestationKey {
+    committee_index: u64,
+    attestation_data: AttestationData
+}
+
 /// Custom `Clone` implementation is to avoid the restrictive trait bounds applied by the usual derive
 /// macro.
 impl<'a, T: BeaconChainTypes> Clone for IndexedUnaggregatedAttestation<'a, T> {
@@ -481,7 +488,12 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
             });
         }
 
-        let attestation_data_root = attestation.data().tree_hash_root();
+        let observed_attestation_key = ObservedAttestationKey {
+            committee_index: attestation.committee_index(),
+            attestation_data: attestation.data().clone(),
+        };
+
+        let attestation_data_root = observed_attestation_key.tree_hash_root();
 
         // [New in Electra:EIP7549]
         verify_committee_index(attestation, &chain.spec)?;
@@ -645,6 +657,13 @@ impl<'a, T: BeaconChainTypes> VerifiedAggregatedAttestation<'a, T> {
     ) -> Result<(), Error> {
         let attestation = signed_aggregate.message().aggregate();
         let aggregator_index = signed_aggregate.message().aggregator_index();
+
+        let observed_attestation_key = ObservedAttestationKey {
+            committee_index: attestation.committee_index(),
+            attestation_data: attestation.data().clone(),
+        };
+
+        let attestation_data_root = observed_attestation_key.tree_hash_root();
 
         // Observe the valid attestation so we do not re-process it.
         //
