@@ -41,7 +41,6 @@ pub struct SplitAttestation<E: EthSpec> {
     pub indexed: CompactIndexedAttestation<E>,
 }
 
-// TODO(electra): rename this type
 #[derive(Debug, Clone)]
 pub struct CompactAttestationRef<'a, E: EthSpec> {
     pub checkpoint: &'a CheckpointKey,

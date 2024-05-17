@@ -429,6 +429,7 @@ impl GossipTester {
                 vec![&self.invalid_aggregate, &aggregate].into_iter(),
             )
             .unwrap();
+
         assert_eq!(results.len(), 2);
         let batch_err = results.pop().unwrap().err().expect(&format!(
             "{} should error during batch_verify_aggregated_attestations_for_gossip",
@@ -715,6 +716,7 @@ async fn aggregated_gossip_verification() {
         .inspect_aggregate_err(
             "aggregate with bad aggregate signature",
             |tester, a| {
+                println!("check1");
                 let mut agg_sig = AggregateSignature::infinity();
                 agg_sig.add_assign(&tester.aggregator_sk.sign(Hash256::repeat_byte(42)));
                 match a.to_mut() {
@@ -739,6 +741,7 @@ async fn aggregated_gossip_verification() {
                         <E as EthSpec>::ValidatorRegistryLimit::to_u64() + 1
                 }
                 SignedAggregateAndProofRefMut::Electra(att) => {
+                    println!("check2");
                     att.message.aggregator_index =
                         <E as EthSpec>::ValidatorRegistryLimit::to_u64() + 1
                 }
@@ -765,6 +768,7 @@ async fn aggregated_gossip_verification() {
                     att.message.aggregator_index = VALIDATOR_COUNT as u64
                 }
                 SignedAggregateAndProofRefMut::Electra(att) => {
+                    println!("check3");
                     att.message.aggregator_index = VALIDATOR_COUNT as u64
                 }
             },
@@ -798,6 +802,7 @@ async fn aggregated_gossip_verification() {
         .inspect_aggregate_err(
             "aggregate from non-aggregator",
             |tester, a| {
+                println!("check4");
                 let chain = &tester.harness.chain;
                 let (index, sk) = tester.non_aggregator();
                 *a = SignedAggregateAndProof::from_aggregate(

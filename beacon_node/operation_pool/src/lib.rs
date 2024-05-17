@@ -1284,7 +1284,7 @@ mod release_tests {
                 ForkName::Electra => {
                     // TODO(electra) some attestations only have 2 or 3 agg bits set
                     // others have 5
-                    assert!(att.num_set_aggregation_bits() >= 2);
+                    assert!(att.num_set_aggregation_bits() >= small_step_size);
                 }
                 _ => {
                     assert!(att.num_set_aggregation_bits() >= big_step_size);

@@ -1614,10 +1614,10 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         attestation: &AttestationRef<T::EthSpec>
     ) -> Result<Option<Attestation<T::EthSpec>>, Error> {
         match attestation {
-            AttestationRef::Base(att) => self.get_aggregated_attestation_base(att.data),
+            AttestationRef::Base(att) => self.get_aggregated_attestation_base(&att.data),
             AttestationRef::Electra(att) => self.get_aggregated_attestation_electra(
                 att.data.slot,
-                att.data.tree_hash_root(),
+                &att.data.tree_hash_root(),
                 att.committee_index()
             )
         }

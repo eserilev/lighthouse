@@ -1514,54 +1514,101 @@ where
     ) -> AttesterSlashing<E> {
         let fork = self.chain.canonical_head.cached_head().head_fork();
 
-        // TODO(electra): consider making this test fork-agnostic
-        let mut attestation_1 = IndexedAttestationBase {
-            attesting_indices: VariableList::new(validator_indices).unwrap(),
-            data: AttestationData {
-                slot: Slot::new(0),
-                index: 0,
-                beacon_block_root: Hash256::zero(),
-                target: Checkpoint {
-                    root: Hash256::zero(),
-                    epoch: target1.unwrap_or(fork.epoch),
+        let fork_name = self.spec.fork_name_at_slot::<E>(Slot::new(0));
+
+        let mut attestation_1 = if fork_name >= ForkName::Electra {
+            IndexedAttestation::Electra(IndexedAttestationElectra {
+                attesting_indices: VariableList::new(validator_indices).unwrap(),
+                data: AttestationData {
+                    slot: Slot::new(0),
+                    index: 0,
+                    beacon_block_root: Hash256::zero(),
+                    target: Checkpoint {
+                        root: Hash256::zero(),
+                        epoch: target1.unwrap_or(fork.epoch),
+                    },
+                    source: Checkpoint {
+                        root: Hash256::zero(),
+                        epoch: source1.unwrap_or(Epoch::new(0)),
+                    },
                 },
-                source: Checkpoint {
-                    root: Hash256::zero(),
-                    epoch: source1.unwrap_or(Epoch::new(0)),
+                signature: AggregateSignature::infinity(),
+            })
+        } else {
+            IndexedAttestation::Base(IndexedAttestationBase {
+                attesting_indices: VariableList::new(validator_indices).unwrap(),
+                data: AttestationData {
+                    slot: Slot::new(0),
+                    index: 0,
+                    beacon_block_root: Hash256::zero(),
+                    target: Checkpoint {
+                        root: Hash256::zero(),
+                        epoch: target1.unwrap_or(fork.epoch),
+                    },
+                    source: Checkpoint {
+                        root: Hash256::zero(),
+                        epoch: source1.unwrap_or(Epoch::new(0)),
+                    },
                 },
-            },
-            signature: AggregateSignature::infinity(),
+                signature: AggregateSignature::infinity(),
+            })
         };
 
         let mut attestation_2 = attestation_1.clone();
-        attestation_2.data.index += 1;
-        attestation_2.data.source.epoch = source2.unwrap_or(Epoch::new(0));
-        attestation_2.data.target.epoch = target2.unwrap_or(fork.epoch);
+        attestation_2.data_mut().index += 1;
+        attestation_2.data_mut().source.epoch = source2.unwrap_or(Epoch::new(0));
+        attestation_2.data_mut().target.epoch = target2.unwrap_or(fork.epoch);
 
         for attestation in &mut [&mut attestation_1, &mut attestation_2] {
-            // TODO(electra) we could explore iter mut here
-            for i in attestation.attesting_indices.iter() {
-                let sk = &self.validator_keypairs[*i as usize].sk;
-
-                let genesis_validators_root = self.chain.genesis_validators_root;
-
-                let domain = self.chain.spec.get_domain(
-                    attestation.data.target.epoch,
-                    Domain::BeaconAttester,
-                    &fork,
-                    genesis_validators_root,
-                );
-                let message = attestation.data.signing_root(domain);
-
-                attestation.signature.add_assign(&sk.sign(message));
-            }
+            match attestation {
+                IndexedAttestation::Base(attestation) => {
+                    for i in attestation.attesting_indices.iter() {
+                        let sk = &self.validator_keypairs[*i as usize].sk;
+        
+                        let genesis_validators_root = self.chain.genesis_validators_root;
+        
+                        let domain = self.chain.spec.get_domain(
+                            attestation.data.target.epoch,
+                            Domain::BeaconAttester,
+                            &fork,
+                            genesis_validators_root,
+                        );
+                        let message = attestation.data.signing_root(domain);
+        
+                        attestation.signature.add_assign(&sk.sign(message));
+                    }
+                },
+                IndexedAttestation::Electra(attestation) => {
+                    for i in attestation.attesting_indices.iter() {
+                        let sk = &self.validator_keypairs[*i as usize].sk;
+        
+                        let genesis_validators_root = self.chain.genesis_validators_root;
+        
+                        let domain = self.chain.spec.get_domain(
+                            attestation.data.target.epoch,
+                            Domain::BeaconAttester,
+                            &fork,
+                            genesis_validators_root,
+                        );
+                        let message = attestation.data.signing_root(domain);
+        
+                        attestation.signature.add_assign(&sk.sign(message));
+                    }
+                }
+            }        
         }
 
-        // TODO(electra): fix this test
-        AttesterSlashing::Base(AttesterSlashingBase {
-            attestation_1,
-            attestation_2,
-        })
+        if fork_name >= ForkName::Electra {
+            AttesterSlashing::Electra(AttesterSlashingElectra {
+                attestation_1: attestation_1.as_electra().unwrap().clone(),
+                attestation_2: attestation_2.as_electra().unwrap().clone(),
+            })
+        } else {
+            AttesterSlashing::Base(AttesterSlashingBase {
+                attestation_1: attestation_1.as_base().unwrap().clone(),
+                attestation_2: attestation_2.as_base().unwrap().clone(),
+            })
+        }
     }
 
     pub fn make_attester_slashing_different_indices(
@@ -1569,6 +1616,8 @@ where
         validator_indices_1: Vec<u64>,
         validator_indices_2: Vec<u64>,
     ) -> AttesterSlashing<E> {
+        let fork_name = self.spec.fork_name_at_slot::<E>(Slot::new(0));
+
         let data = AttestationData {
             slot: Slot::new(0),
             index: 0,
@@ -1583,45 +1632,89 @@ where
             },
         };
 
-        // TODO(electra): make this test fork-agnostic
-        let mut attestation_1 = IndexedAttestationBase {
-            attesting_indices: VariableList::new(validator_indices_1).unwrap(),
-            data: data.clone(),
-            signature: AggregateSignature::infinity(),
-        };
+        let (mut attestation_1, mut attestation_2) = if fork_name >= ForkName::Electra {
+            let attestation_1 = IndexedAttestationElectra {
+                attesting_indices: VariableList::new(validator_indices_1).unwrap(),
+                data: data.clone(),
+                signature: AggregateSignature::infinity(),
+            };
+    
+            let attestation_2 = IndexedAttestationElectra {
+                attesting_indices: VariableList::new(validator_indices_2).unwrap(),
+                data,
+                signature: AggregateSignature::infinity(),
+            };
 
-        let mut attestation_2 = IndexedAttestationBase {
-            attesting_indices: VariableList::new(validator_indices_2).unwrap(),
-            data,
-            signature: AggregateSignature::infinity(),
-        };
+            (IndexedAttestation::Electra(attestation_1), IndexedAttestation::Electra(attestation_2))
+        } else {
+            let attestation_1 = IndexedAttestationBase {
+                attesting_indices: VariableList::new(validator_indices_1).unwrap(),
+                data: data.clone(),
+                signature: AggregateSignature::infinity(),
+            };
+    
+            let attestation_2 = IndexedAttestationBase {
+                attesting_indices: VariableList::new(validator_indices_2).unwrap(),
+                data,
+                signature: AggregateSignature::infinity(),
+            };
 
-        attestation_2.data.index += 1;
+            (IndexedAttestation::Base(attestation_1), IndexedAttestation::Base(attestation_2))
+        };
+      
+        attestation_2.data_mut().index += 1;
 
         let fork = self.chain.canonical_head.cached_head().head_fork();
         for attestation in &mut [&mut attestation_1, &mut attestation_2] {
-            for i in attestation.attesting_indices.iter() {
-                let sk = &self.validator_keypairs[*i as usize].sk;
-
-                let genesis_validators_root = self.chain.genesis_validators_root;
-
-                let domain = self.chain.spec.get_domain(
-                    attestation.data.target.epoch,
-                    Domain::BeaconAttester,
-                    &fork,
-                    genesis_validators_root,
-                );
-                let message = attestation.data.signing_root(domain);
-
-                attestation.signature.add_assign(&sk.sign(message));
-            }
+            match attestation {
+                IndexedAttestation::Base(attestation) => {
+                    for i in attestation.attesting_indices.iter() {
+                        let sk = &self.validator_keypairs[*i as usize].sk;
+        
+                        let genesis_validators_root = self.chain.genesis_validators_root;
+        
+                        let domain = self.chain.spec.get_domain(
+                            attestation.data.target.epoch,
+                            Domain::BeaconAttester,
+                            &fork,
+                            genesis_validators_root,
+                        );
+                        let message = attestation.data.signing_root(domain);
+        
+                        attestation.signature.add_assign(&sk.sign(message));
+                    }
+                },
+                IndexedAttestation::Electra(attestation) => {
+                    for i in attestation.attesting_indices.iter() {
+                        let sk = &self.validator_keypairs[*i as usize].sk;
+        
+                        let genesis_validators_root = self.chain.genesis_validators_root;
+        
+                        let domain = self.chain.spec.get_domain(
+                            attestation.data.target.epoch,
+                            Domain::BeaconAttester,
+                            &fork,
+                            genesis_validators_root,
+                        );
+                        let message = attestation.data.signing_root(domain);
+        
+                        attestation.signature.add_assign(&sk.sign(message));
+                    }
+                },
+            }    
         }
 
-        // TODO(electra): fix this test
-        AttesterSlashing::Base(AttesterSlashingBase {
-            attestation_1,
-            attestation_2,
-        })
+        if fork_name >= ForkName::Electra {
+            AttesterSlashing::Electra(AttesterSlashingElectra {
+                attestation_1: attestation_1.as_electra().unwrap().clone(),
+                attestation_2: attestation_2.as_electra().unwrap().clone(),
+            })
+        } else {
+            AttesterSlashing::Base(AttesterSlashingBase {
+                attestation_1: attestation_1.as_base().unwrap().clone(),
+                attestation_2: attestation_2.as_base().unwrap().clone(),
+            })
+        }
     }
 
     pub fn make_proposer_slashing(&self, validator_index: u64) -> ProposerSlashing {

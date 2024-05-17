@@ -732,6 +732,7 @@ impl<'a, T: BeaconChainTypes> VerifiedAggregatedAttestation<'a, T> {
                 )
                 .and_then(|is_valid| {
                     if !is_valid {
+                        println!("is_valid {}", is_valid);
                         Err(Error::InvalidSignature)
                     } else {
                         Ok(())
@@ -1158,6 +1159,7 @@ pub fn verify_attestation_signature<T: BeaconChainTypes>(
         .spec
         .fork_at_epoch(indexed_attestation.data().target.epoch);
 
+    println!("1");
     let signature_set = indexed_attestation_signature_set_from_pubkeys(
         |validator_index| pubkey_cache.get(validator_index).map(Cow::Borrowed),
         indexed_attestation.signature(),
@@ -1262,6 +1264,7 @@ pub fn verify_signed_aggregate_signatures<T: BeaconChainTypes>(
         .spec
         .fork_at_epoch(indexed_attestation.data().target.epoch);
 
+    println!("2");
     let signature_sets = vec![
         signed_aggregate_selection_proof_signature_set(
             |validator_index| pubkey_cache.get(validator_index).map(Cow::Borrowed),
@@ -1289,6 +1292,8 @@ pub fn verify_signed_aggregate_signatures<T: BeaconChainTypes>(
         )
         .map_err(BeaconChainError::SignatureSetError)?,
     ];
+
+    println!("3");
 
     Ok(verify_signature_sets(signature_sets.iter()))
 }
@@ -1373,16 +1378,14 @@ pub fn obtain_indexed_attestation_and_committees_per_slot<T: BeaconChainTypes>(
     })
 }
 
-// TODO(electra) update comments below to reflect logic changes
-// i.e. this now runs the map_fn on a list of committees for the slot of the provided attestation
 /// Runs the `map_fn` with the committee and committee count per slot for the given `attestation`.
 ///
-/// This function exists in this odd "map" pattern because efficiently obtaining the committee for
-/// an attestation can be complex. It might involve reading straight from the
+/// This function exists in this odd "map" pattern because efficiently obtaining the committees for
+/// an attestations slot can be complex. It might involve reading straight from the
 /// `beacon_chain.shuffling_cache` or it might involve reading it from a state from the DB. Due to
 /// the complexities of `RwLock`s on the shuffling cache, a simple `Cow` isn't suitable here.
 ///
-/// If the committee for `attestation` isn't found in the `shuffling_cache`, we will read a state
+/// If the committees for an `attestation`'s slot isn't found in the `shuffling_cache`, we will read a state
 /// from disk and then update the `shuffling_cache`.
 fn map_attestation_committees<T, F, R>(
     chain: &BeaconChain<T>,
