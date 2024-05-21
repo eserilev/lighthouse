@@ -2063,7 +2063,6 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             // This method is called for API and gossip attestations, so this covers all aggregated attestation events
             if let Some(event_handler) = self.event_handler.as_ref() {
                 if event_handler.has_attestation_subscribers() {
-     
                     event_handler.register(EventKind::Attestation(Box::new(
                         v.attestation().clone_as_attestation(),
                     )));

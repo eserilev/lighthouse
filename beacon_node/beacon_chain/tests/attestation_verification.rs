@@ -423,6 +423,7 @@ impl GossipTester {
         /*
          * Batch verification
          */
+        println!("desc {}", desc);
         let mut results = self
             .harness
             .chain
@@ -771,6 +772,7 @@ async fn aggregated_gossip_verification() {
                 }
             },
             |_, err| {
+                println!("{:?}", err);
                 assert!(matches!(
                     err,
                     // Naively we should think this condition would trigger this error:
@@ -780,12 +782,7 @@ async fn aggregated_gossip_verification() {
                     // However, the following error is triggered first:
                     AttnError::AggregatorNotInCommittee {
                         aggregator_index
-                    } |
-                    // unless were working with electra attestations
-                    // in which case this error is triggered instead:
-                    AttnError::AggregatorPubkeyUnknown(
-                        aggregator_index
-                    )
+                    }
                     if aggregator_index == VALIDATOR_COUNT as u64
                 ))
             },

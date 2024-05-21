@@ -60,7 +60,7 @@ use strum::AsRefStr;
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 use types::{
-    Attestation, AttestationData, AttestationRef, BeaconCommittee,
+    Attestation, AttestationData, AttestationRef, BeaconCommittee, BeaconStateError,
     BeaconStateError::NoCommitteeFound, ChainSpec, CommitteeIndex, Epoch, EthSpec, ForkName,
     Hash256, IndexedAttestation, SelectionProof, SignedAggregateAndProof, Slot, SubnetId,
 };
@@ -264,9 +264,30 @@ pub enum Error {
     BeaconChainError(BeaconChainError),
 }
 
+// TODO(electra) the error conversion changes here are to get a test case to pass
+// this could easily be cleaned up
 impl From<BeaconChainError> for Error {
     fn from(e: BeaconChainError) -> Self {
-        Error::BeaconChainError(e)
+        match &e {
+            BeaconChainError::BeaconStateError(beacon_state_error) => {
+                if let BeaconStateError::AggregatorNotInCommittee { aggregator_index } =
+                    beacon_state_error
+                {
+                    Self::AggregatorNotInCommittee {
+                        aggregator_index: *aggregator_index,
+                    }
+                } else if let BeaconStateError::InvalidSelectionProof { aggregator_index } =
+                    beacon_state_error
+                {
+                    Self::InvalidSelectionProof {
+                        aggregator_index: *aggregator_index,
+                    }
+                } else {
+                    Error::BeaconChainError(e)
+                }
+            }
+            _ => Error::BeaconChainError(e),
+        }
     }
 }
 
@@ -404,7 +425,6 @@ fn process_slash_info<T: BeaconChainTypes>(
     use AttestationSlashInfo::*;
 
     if let Some(slasher) = chain.slasher.as_ref() {
-
         let (indexed_attestation, check_signature, err) = match slash_info {
             SignatureNotChecked(attestation, err) => {
                 match obtain_indexed_attestation_and_committees_per_slot(chain, attestation) {
@@ -435,7 +455,6 @@ fn process_slash_info<T: BeaconChainTypes>(
                 return err;
             }
         }
-
 
         // Supply to slasher.
         slasher.accept_attestation(indexed_attestation);
@@ -565,9 +584,6 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
         chain: &BeaconChain<T>,
     ) -> Result<Self, AttestationSlashInfo<'a, T, Error>> {
         use AttestationSlashInfo::*;
-
-        let attestation = signed_aggregate.message().aggregate();
-        let aggregator_index = signed_aggregate.message().aggregator_index();
         let observed_attestation_key_root = match Self::verify_early_checks(signed_aggregate, chain)
         {
             Ok(root) => root,
@@ -580,8 +596,10 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
         };
         let get_indexed_attestation_with_committee =
             |(committees, _): (Vec<BeaconCommittee>, CommitteesPerSlot)| {
-                match attestation {
-                    AttestationRef::Base(att) => {
+                match signed_aggregate {
+                    SignedAggregateAndProof::Base(signed_aggregate) => {
+                        let att = &signed_aggregate.message.aggregate;
+                        let aggregator_index = signed_aggregate.message.aggregator_index;
                         let committee = committees
                             .iter()
                             .filter(|&committee| committee.index == att.data.index)
@@ -591,13 +609,13 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
                                 index: att.data.index,
                             })?;
 
+                        // TODO(electra):
+                        // Note: this clones the signature which is known to be a relatively slow operation.
+                        //
+                        // Future optimizations should remove this clone.
                         if let Some(committee) = committee {
-                            // TODO(electra):
-                            // Note: this clones the signature which is known to be a relatively slow operation.
-                            //
-                            // Future optimizations should remove this clone.
                             let selection_proof = SelectionProof::from(
-                                signed_aggregate.message().selection_proof().clone(),
+                                signed_aggregate.message.selection_proof.clone(),
                             );
 
                             if !selection_proof
@@ -611,7 +629,7 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
                             if !committee.committee.contains(&(aggregator_index as usize)) {
                                 return Err(Error::AggregatorNotInCommittee { aggregator_index });
                             }
-                            
+
                             attesting_indices_base::get_indexed_attestation(
                                 committee.committee,
                                 att,
@@ -624,27 +642,18 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
                             })
                         }
                     }
-                    AttestationRef::Electra(att) => {
-                        for committee in committees.iter() {
-                            let selection_proof = SelectionProof::from(
-                                signed_aggregate.message().selection_proof().clone(),
-                            );
-    
-                            if !selection_proof
-                                .is_aggregator(committee.committee.len(), &chain.spec)
-                                .map_err(|e| Error::BeaconChainError(e.into()))?
-                            {
-                                return Err(Error::InvalidSelectionProof { aggregator_index });
-                            }
-                        }
-                        
-                        attesting_indices_electra::get_indexed_attestation(&committees, att)
-                            .map_err(|e| BeaconChainError::from(e).into())
+                    SignedAggregateAndProof::Electra(signed_aggregate) => {
+                        attesting_indices_electra::get_indexed_attestation_from_signed_aggregate(
+                            &committees,
+                            signed_aggregate,
+                            &chain.spec,
+                        )
+                        .map_err(|e| BeaconChainError::from(e).into())
                     }
                 }
             };
 
-        
+        let attestation = signed_aggregate.message().aggregate();
         let indexed_attestation = match map_attestation_committees(
             chain,
             attestation,

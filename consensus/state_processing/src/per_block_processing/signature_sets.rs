@@ -437,7 +437,7 @@ where
     let message = slot.signing_root(domain);
     let signature = signed_aggregate_and_proof.message().selection_proof();
     let validator_index = signed_aggregate_and_proof.message().aggregator_index();
-
+    println!("validator index, {}", validator_index);
     Ok(SignatureSet::single_pubkey(
         signature,
         get_pubkey(validator_index as usize).ok_or(Error::ValidatorUnknown(validator_index))?,
