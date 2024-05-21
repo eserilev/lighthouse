@@ -1343,7 +1343,10 @@ where
                     // If there are any attestations in this committee, create an aggregate.
                     if let Some((attestation, _)) = committee_attestations.first() {
                         let bc = state
-                            .get_beacon_committee(attestation.data().slot, attestation.data().index)
+                            .get_beacon_committee(
+                                attestation.data().slot,
+                                attestation.committee_index(),
+                            )
                             .unwrap();
 
                         // Find an aggregator if one exists. Return `None` if there are no
@@ -1370,21 +1373,42 @@ where
                             })
                             .copied()?;
 
+                        let fork_name = self.spec.fork_name_at_slot::<E>(slot);
+
+                        let aggregate = if fork_name >= ForkName::Electra {
+                            self.chain
+                                .get_aggregated_attestation_electra(
+                                    slot,
+                                    &attestation.data().tree_hash_root(),
+                                    bc.index,
+                                )
+                                .unwrap()
+                                .unwrap_or_else(|| {
+                                    committee_attestations.iter().skip(1).fold(
+                                        attestation.clone(),
+                                        |mut agg, (att, _)| {
+                                            agg.aggregate(att.to_ref());
+                                            agg
+                                        },
+                                    )
+                                })
+                        } else {
+                            self.chain
+                                .get_aggregated_attestation_base(attestation.data())
+                                .unwrap()
+                                .unwrap_or_else(|| {
+                                    committee_attestations.iter().skip(1).fold(
+                                        attestation.clone(),
+                                        |mut agg, (att, _)| {
+                                            agg.aggregate(att.to_ref());
+                                            agg
+                                        },
+                                    )
+                                })
+                        };
+
                         // If the chain is able to produce an aggregate, use that. Otherwise, build an
                         // aggregate locally.
-                        let aggregate = self
-                            .chain
-                            .get_aggregated_attestation_base(attestation.data())
-                            .unwrap()
-                            .unwrap_or_else(|| {
-                                committee_attestations.iter().skip(1).fold(
-                                    attestation.clone(),
-                                    |mut agg, (att, _)| {
-                                        agg.aggregate(att.to_ref());
-                                        agg
-                                    },
-                                )
-                            });
 
                         let signed_aggregate = SignedAggregateAndProof::from_aggregate(
                             aggregator_index as u64,
@@ -1564,9 +1588,9 @@ where
                 IndexedAttestation::Base(attestation) => {
                     for i in attestation.attesting_indices.iter() {
                         let sk = &self.validator_keypairs[*i as usize].sk;
-        
+
                         let genesis_validators_root = self.chain.genesis_validators_root;
-        
+
                         let domain = self.chain.spec.get_domain(
                             attestation.data.target.epoch,
                             Domain::BeaconAttester,
@@ -1574,28 +1598,28 @@ where
                             genesis_validators_root,
                         );
                         let message = attestation.data.signing_root(domain);
-        
-                        attestation.signature.add_assign(&sk.sign(message));
-                    }
-                },
-                IndexedAttestation::Electra(attestation) => {
-                    for i in attestation.attesting_indices.iter() {
-                        let sk = &self.validator_keypairs[*i as usize].sk;
-        
-                        let genesis_validators_root = self.chain.genesis_validators_root;
-        
-                        let domain = self.chain.spec.get_domain(
-                            attestation.data.target.epoch,
-                            Domain::BeaconAttester,
-                            &fork,
-                            genesis_validators_root,
-                        );
-                        let message = attestation.data.signing_root(domain);
-        
+
                         attestation.signature.add_assign(&sk.sign(message));
                     }
                 }
-            }        
+                IndexedAttestation::Electra(attestation) => {
+                    for i in attestation.attesting_indices.iter() {
+                        let sk = &self.validator_keypairs[*i as usize].sk;
+
+                        let genesis_validators_root = self.chain.genesis_validators_root;
+
+                        let domain = self.chain.spec.get_domain(
+                            attestation.data.target.epoch,
+                            Domain::BeaconAttester,
+                            &fork,
+                            genesis_validators_root,
+                        );
+                        let message = attestation.data.signing_root(domain);
+
+                        attestation.signature.add_assign(&sk.sign(message));
+                    }
+                }
+            }
         }
 
         if fork_name >= ForkName::Electra {
@@ -1638,30 +1662,36 @@ where
                 data: data.clone(),
                 signature: AggregateSignature::infinity(),
             };
-    
+
             let attestation_2 = IndexedAttestationElectra {
                 attesting_indices: VariableList::new(validator_indices_2).unwrap(),
                 data,
                 signature: AggregateSignature::infinity(),
             };
 
-            (IndexedAttestation::Electra(attestation_1), IndexedAttestation::Electra(attestation_2))
+            (
+                IndexedAttestation::Electra(attestation_1),
+                IndexedAttestation::Electra(attestation_2),
+            )
         } else {
             let attestation_1 = IndexedAttestationBase {
                 attesting_indices: VariableList::new(validator_indices_1).unwrap(),
                 data: data.clone(),
                 signature: AggregateSignature::infinity(),
             };
-    
+
             let attestation_2 = IndexedAttestationBase {
                 attesting_indices: VariableList::new(validator_indices_2).unwrap(),
                 data,
                 signature: AggregateSignature::infinity(),
             };
 
-            (IndexedAttestation::Base(attestation_1), IndexedAttestation::Base(attestation_2))
+            (
+                IndexedAttestation::Base(attestation_1),
+                IndexedAttestation::Base(attestation_2),
+            )
         };
-      
+
         attestation_2.data_mut().index += 1;
 
         let fork = self.chain.canonical_head.cached_head().head_fork();
@@ -1670,9 +1700,9 @@ where
                 IndexedAttestation::Base(attestation) => {
                     for i in attestation.attesting_indices.iter() {
                         let sk = &self.validator_keypairs[*i as usize].sk;
-        
+
                         let genesis_validators_root = self.chain.genesis_validators_root;
-        
+
                         let domain = self.chain.spec.get_domain(
                             attestation.data.target.epoch,
                             Domain::BeaconAttester,
@@ -1680,16 +1710,16 @@ where
                             genesis_validators_root,
                         );
                         let message = attestation.data.signing_root(domain);
-        
+
                         attestation.signature.add_assign(&sk.sign(message));
                     }
-                },
+                }
                 IndexedAttestation::Electra(attestation) => {
                     for i in attestation.attesting_indices.iter() {
                         let sk = &self.validator_keypairs[*i as usize].sk;
-        
+
                         let genesis_validators_root = self.chain.genesis_validators_root;
-        
+
                         let domain = self.chain.spec.get_domain(
                             attestation.data.target.epoch,
                             Domain::BeaconAttester,
@@ -1697,11 +1727,11 @@ where
                             genesis_validators_root,
                         );
                         let message = attestation.data.signing_root(domain);
-        
+
                         attestation.signature.add_assign(&sk.sign(message));
                     }
-                },
-            }    
+                }
+            }
         }
 
         if fork_name >= ForkName::Electra {
@@ -2504,6 +2534,7 @@ where
             AttestationStrategy::AllValidators => self.get_all_validators(),
             AttestationStrategy::SomeValidators(vals) => vals,
         };
+
         let state_root = state.update_tree_hash_cache().unwrap();
         let (_, _, last_produced_block_hash, _) = self
             .add_attested_blocks_at_slots_with_sync(

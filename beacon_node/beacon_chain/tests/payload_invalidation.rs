@@ -25,7 +25,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use task_executor::ShutdownReason;
-use tree_hash::TreeHash;
 use types::*;
 
 const VALIDATOR_COUNT: usize = 32;

@@ -2,6 +2,7 @@
 
 use beacon_chain::attestation_verification::{
     batch_verify_aggregated_attestations, batch_verify_unaggregated_attestations, Error,
+    ObservedAttestationKey,
 };
 use beacon_chain::test_utils::{MakeAttestationOptions, HARNESS_GENESIS_TIME};
 use beacon_chain::{
@@ -128,7 +129,7 @@ fn get_valid_unaggregated_attestation<T: BeaconChainTypes>(
     let validator_committee_index = 0;
     let validator_index = *head
         .beacon_state
-        .get_beacon_committee(current_slot, valid_attestation.data().index)
+        .get_beacon_committee(current_slot, valid_attestation.committee_index())
         .expect("should get committees")
         .committee
         .get(validator_committee_index)
@@ -146,7 +147,7 @@ fn get_valid_unaggregated_attestation<T: BeaconChainTypes>(
         )
         .expect("should sign attestation");
 
-    let subnet_id = SubnetId::compute_subnet_for_attestation::<E>(
+    let subnet_id = SubnetId::compute_subnet_for_attestation::<T::EthSpec>(
         &valid_attestation.to_ref(),
         head.beacon_state
             .get_committee_count_at_slot(current_slot)
@@ -173,7 +174,7 @@ fn get_valid_aggregated_attestation<T: BeaconChainTypes>(
     let current_slot = chain.slot().expect("should get slot");
 
     let committee = state
-        .get_beacon_committee(current_slot, aggregate.data().index)
+        .get_beacon_committee(current_slot, aggregate.committee_index())
         .expect("should get committees");
     let committee_len = committee.committee.len();
 
@@ -224,7 +225,7 @@ fn get_non_aggregator<T: BeaconChainTypes>(
 
     // TODO(electra) make fork-agnostic
     let committee = state
-        .get_beacon_committee(current_slot, aggregate.data().index)
+        .get_beacon_committee(current_slot, aggregate.committee_index())
         .expect("should get committees");
     let committee_len = committee.committee.len();
 
@@ -663,7 +664,7 @@ async fn aggregated_gossip_verification() {
                     .chain
                     .head_snapshot()
                     .beacon_state
-                    .get_beacon_committee(tester.slot(), a.message().aggregate().data().index)
+                    .get_beacon_committee(tester.slot(), a.message().aggregate().committee_index())
                     .expect("should get committees")
                     .committee
                     .len();
@@ -716,7 +717,6 @@ async fn aggregated_gossip_verification() {
         .inspect_aggregate_err(
             "aggregate with bad aggregate signature",
             |tester, a| {
-                println!("check1");
                 let mut agg_sig = AggregateSignature::infinity();
                 agg_sig.add_assign(&tester.aggregator_sk.sign(Hash256::repeat_byte(42)));
                 match a.to_mut() {
@@ -741,7 +741,6 @@ async fn aggregated_gossip_verification() {
                         <E as EthSpec>::ValidatorRegistryLimit::to_u64() + 1
                 }
                 SignedAggregateAndProofRefMut::Electra(att) => {
-                    println!("check2");
                     att.message.aggregator_index =
                         <E as EthSpec>::ValidatorRegistryLimit::to_u64() + 1
                 }
@@ -768,7 +767,6 @@ async fn aggregated_gossip_verification() {
                     att.message.aggregator_index = VALIDATOR_COUNT as u64
                 }
                 SignedAggregateAndProofRefMut::Electra(att) => {
-                    println!("check3");
                     att.message.aggregator_index = VALIDATOR_COUNT as u64
                 }
             },
@@ -796,13 +794,12 @@ async fn aggregated_gossip_verification() {
          * The following test ensures:
          *
          * aggregate_and_proof.selection_proof selects the validator as an aggregator for the slot --
-         * i.e. is_aggregator(state, aggregate.data.slot, aggregate.data.index,
+         * i.e. is_aggregator(state, aggregate.data.slot, aggregate.committee_index(),
          * aggregate_and_proof.selection_proof) returns True.
          */
         .inspect_aggregate_err(
             "aggregate from non-aggregator",
             |tester, a| {
-                println!("check4");
                 let chain = &tester.harness.chain;
                 let (index, sk) = tester.non_aggregator();
                 *a = SignedAggregateAndProof::from_aggregate(
@@ -817,6 +814,7 @@ async fn aggregated_gossip_verification() {
             },
             |tester, err| {
                 let (val_index, _) = tester.non_aggregator();
+
                 assert!(matches!(
                     err,
                     AttnError::InvalidSelectionProof {
@@ -843,7 +841,10 @@ async fn aggregated_gossip_verification() {
                 assert!(matches!(
                     err,
                     AttnError::AttestationSupersetKnown(hash)
-                    if hash == tester.valid_aggregate.message().aggregate().data().tree_hash_root()
+                    if hash == ObservedAttestationKey {
+                        committee_index: tester.valid_aggregate.message().aggregate().committee_index(),
+                        attestation_data: tester.valid_aggregate.message().aggregate().data().clone(),
+                    }.tree_hash_root()
                 ))
             },
         )

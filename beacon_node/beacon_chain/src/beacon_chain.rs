@@ -85,7 +85,9 @@ use futures::channel::mpsc::Sender;
 use itertools::process_results;
 use itertools::Itertools;
 use kzg::Kzg;
-use operation_pool::{CompactAttestationRef, OperationPool, PersistedOperationPool, ReceivedPreCapella};
+use operation_pool::{
+    CompactAttestationRef, OperationPool, PersistedOperationPool, ReceivedPreCapella,
+};
 use parking_lot::{Mutex, RwLock};
 use proto_array::{DoNotReOrg, ProposerHeadError};
 use safe_arith::SafeArith;
@@ -1611,15 +1613,15 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
 
     pub fn get_aggregated_attestation(
         &self,
-        attestation: &AttestationRef<T::EthSpec>
+        attestation: &AttestationRef<T::EthSpec>,
     ) -> Result<Option<Attestation<T::EthSpec>>, Error> {
         match attestation {
             AttestationRef::Base(att) => self.get_aggregated_attestation_base(&att.data),
             AttestationRef::Electra(att) => self.get_aggregated_attestation_electra(
                 att.data.slot,
                 &att.data.tree_hash_root(),
-                att.committee_index()
-            )
+                att.committee_index(),
+            ),
         }
     }
 
@@ -2061,6 +2063,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             // This method is called for API and gossip attestations, so this covers all aggregated attestation events
             if let Some(event_handler) = self.event_handler.as_ref() {
                 if event_handler.has_attestation_subscribers() {
+     
                     event_handler.register(EventKind::Attestation(Box::new(
                         v.attestation().clone_as_attestation(),
                     )));
@@ -2199,7 +2202,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 self.log,
                 "Stored unaggregated attestation";
                 "outcome" => ?outcome,
-                "index" => attestation.data().index,
+                "index" => attestation.committee_index(),
                 "slot" => attestation.data().slot.as_u64(),
             ),
             Err(NaiveAggregationError::SlotTooLow {
@@ -2218,7 +2221,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                         self.log,
                         "Failed to store unaggregated attestation";
                         "error" => ?e,
-                        "index" => attestation.data().index,
+                        "index" => attestation.committee_index(),
                         "slot" => attestation.data().slot.as_u64(),
                 );
                 return Err(Error::from(e).into());

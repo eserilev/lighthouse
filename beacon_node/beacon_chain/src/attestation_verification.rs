@@ -44,7 +44,6 @@ use itertools::Itertools;
 use proto_array::Block as ProtoBlock;
 use slog::debug;
 use slot_clock::SlotClock;
-use tree_hash_derive::TreeHash;
 use state_processing::{
     common::{
         attesting_indices_base,
@@ -59,10 +58,11 @@ use state_processing::{
 use std::borrow::Cow;
 use strum::AsRefStr;
 use tree_hash::TreeHash;
+use tree_hash_derive::TreeHash;
 use types::{
-    Attestation, AttestationData, AttestationRef, BeaconCommittee, BeaconStateError::NoCommitteeFound, ChainSpec,
-    CommitteeIndex, Epoch, EthSpec, ForkName, Hash256, IndexedAttestation, SelectionProof,
-    SignedAggregateAndProof, Slot, SubnetId,
+    Attestation, AttestationData, AttestationRef, BeaconCommittee,
+    BeaconStateError::NoCommitteeFound, ChainSpec, CommitteeIndex, Epoch, EthSpec, ForkName,
+    Hash256, IndexedAttestation, SelectionProof, SignedAggregateAndProof, Slot, SubnetId,
 };
 
 pub use batch::{batch_verify_aggregated_attestations, batch_verify_unaggregated_attestations};
@@ -281,10 +281,17 @@ enum CheckAttestationSignature {
 /// `IndexedAttestation` can be derived.
 ///
 /// These attestations have *not* undergone signature verification.
+/// The `observed_attestation_key_root` is the hashed value of an `ObservedAttestationKey`.
 struct IndexedAggregatedAttestation<'a, T: BeaconChainTypes> {
     signed_aggregate: &'a SignedAggregateAndProof<T::EthSpec>,
     indexed_attestation: IndexedAttestation<T::EthSpec>,
-    attestation_data_root: Hash256,
+    observed_attestation_key_root: Hash256,
+}
+
+#[derive(TreeHash)]
+pub struct ObservedAttestationKey {
+    pub committee_index: u64,
+    pub attestation_data: AttestationData,
 }
 
 /// Wraps a `Attestation` that has been verified up until the point that an `IndexedAttestation` can
@@ -322,12 +329,6 @@ impl<'a, T: BeaconChainTypes> VerifiedUnaggregatedAttestation<'a, T> {
     pub fn into_indexed_attestation(self) -> IndexedAttestation<T::EthSpec> {
         self.indexed_attestation
     }
-}
-
-#[derive(TreeHash)]
-struct ObservedAttestationKey {
-    committee_index: u64,
-    attestation_data: AttestationData
 }
 
 /// Custom `Clone` implementation is to avoid the restrictive trait bounds applied by the usual derive
@@ -403,6 +404,7 @@ fn process_slash_info<T: BeaconChainTypes>(
     use AttestationSlashInfo::*;
 
     if let Some(slasher) = chain.slasher.as_ref() {
+
         let (indexed_attestation, check_signature, err) = match slash_info {
             SignatureNotChecked(attestation, err) => {
                 match obtain_indexed_attestation_and_committees_per_slot(chain, attestation) {
@@ -433,6 +435,7 @@ fn process_slash_info<T: BeaconChainTypes>(
                 return err;
             }
         }
+
 
         // Supply to slasher.
         slasher.accept_attestation(indexed_attestation);
@@ -471,7 +474,7 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
         chain: &BeaconChain<T>,
     ) -> Result<Hash256, Error> {
         let attestation = signed_aggregate.message().aggregate();
-        
+
         // Ensure attestation is within the last ATTESTATION_PROPAGATION_SLOT_RANGE slots (within a
         // MAXIMUM_GOSSIP_CLOCK_DISPARITY allowance).
         //
@@ -488,12 +491,11 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
             });
         }
 
-        let observed_attestation_key = ObservedAttestationKey {
+        let observed_attestation_key_root = ObservedAttestationKey {
             committee_index: attestation.committee_index(),
             attestation_data: attestation.data().clone(),
-        };
-
-        let attestation_data_root = observed_attestation_key.tree_hash_root();
+        }
+        .tree_hash_root();
 
         // [New in Electra:EIP7549]
         verify_committee_index(attestation, &chain.spec)?;
@@ -501,11 +503,13 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
         if chain
             .observed_attestations
             .write()
-            .is_known_subset(attestation, attestation_data_root)
+            .is_known_subset(attestation, observed_attestation_key_root)
             .map_err(|e| Error::BeaconChainError(e.into()))?
         {
             metrics::inc_counter(&metrics::AGGREGATED_ATTESTATION_SUBSETS);
-            return Err(Error::AttestationSupersetKnown(attestation_data_root));
+            return Err(Error::AttestationSupersetKnown(
+                observed_attestation_key_root,
+            ));
         }
 
         let aggregator_index = signed_aggregate.message().aggregator_index();
@@ -551,7 +555,7 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
         if attestation.is_aggregation_bits_zero() {
             Err(Error::EmptyAggregationBitfield)
         } else {
-            Ok(attestation_data_root)
+            Ok(observed_attestation_key_root)
         }
     }
 
@@ -564,7 +568,8 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
 
         let attestation = signed_aggregate.message().aggregate();
         let aggregator_index = signed_aggregate.message().aggregator_index();
-        let attestation_data_root = match Self::verify_early_checks(signed_aggregate, chain) {
+        let observed_attestation_key_root = match Self::verify_early_checks(signed_aggregate, chain)
+        {
             Ok(root) => root,
             Err(e) => {
                 return Err(SignatureNotChecked(
@@ -573,7 +578,6 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
                 ))
             }
         };
-
         let get_indexed_attestation_with_committee =
             |(committees, _): (Vec<BeaconCommittee>, CommitteesPerSlot)| {
                 match attestation {
@@ -607,6 +611,7 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
                             if !committee.committee.contains(&(aggregator_index as usize)) {
                                 return Err(Error::AggregatorNotInCommittee { aggregator_index });
                             }
+                            
                             attesting_indices_base::get_indexed_attestation(
                                 committee.committee,
                                 att,
@@ -620,12 +625,26 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
                         }
                     }
                     AttestationRef::Electra(att) => {
+                        for committee in committees.iter() {
+                            let selection_proof = SelectionProof::from(
+                                signed_aggregate.message().selection_proof().clone(),
+                            );
+    
+                            if !selection_proof
+                                .is_aggregator(committee.committee.len(), &chain.spec)
+                                .map_err(|e| Error::BeaconChainError(e.into()))?
+                            {
+                                return Err(Error::InvalidSelectionProof { aggregator_index });
+                            }
+                        }
+                        
                         attesting_indices_electra::get_indexed_attestation(&committees, att)
                             .map_err(|e| BeaconChainError::from(e).into())
                     }
                 }
             };
 
+        
         let indexed_attestation = match map_attestation_committees(
             chain,
             attestation,
@@ -639,11 +658,10 @@ impl<'a, T: BeaconChainTypes> IndexedAggregatedAttestation<'a, T> {
                 ))
             }
         };
-
         Ok(IndexedAggregatedAttestation {
             signed_aggregate,
             indexed_attestation,
-            attestation_data_root,
+            observed_attestation_key_root,
         })
     }
 }
@@ -652,18 +670,11 @@ impl<'a, T: BeaconChainTypes> VerifiedAggregatedAttestation<'a, T> {
     /// Run the checks that happen after the indexed attestation and signature have been checked.
     fn verify_late_checks(
         signed_aggregate: &SignedAggregateAndProof<T::EthSpec>,
-        attestation_data_root: Hash256,
+        observed_attestation_key_root: Hash256,
         chain: &BeaconChain<T>,
     ) -> Result<(), Error> {
         let attestation = signed_aggregate.message().aggregate();
         let aggregator_index = signed_aggregate.message().aggregator_index();
-
-        let observed_attestation_key = ObservedAttestationKey {
-            committee_index: attestation.committee_index(),
-            attestation_data: attestation.data().clone(),
-        };
-
-        let attestation_data_root = observed_attestation_key.tree_hash_root();
 
         // Observe the valid attestation so we do not re-process it.
         //
@@ -672,11 +683,13 @@ impl<'a, T: BeaconChainTypes> VerifiedAggregatedAttestation<'a, T> {
         if let ObserveOutcome::Subset = chain
             .observed_attestations
             .write()
-            .observe_item(attestation, Some(attestation_data_root))
+            .observe_item(attestation, Some(observed_attestation_key_root))
             .map_err(|e| Error::BeaconChainError(e.into()))?
         {
             metrics::inc_counter(&metrics::AGGREGATED_ATTESTATION_SUBSETS);
-            return Err(Error::AttestationSupersetKnown(attestation_data_root));
+            return Err(Error::AttestationSupersetKnown(
+                observed_attestation_key_root,
+            ));
         }
 
         // Observe the aggregator so we don't process another aggregate from them.
@@ -689,7 +702,6 @@ impl<'a, T: BeaconChainTypes> VerifiedAggregatedAttestation<'a, T> {
             .observe_validator(attestation.data().target.epoch, aggregator_index as usize)
             .map_err(BeaconChainError::from)?
         {
-            println!("here");
             return Err(Error::PriorAttestationKnown {
                 validator_index: aggregator_index,
                 epoch: attestation.data().target.epoch,
@@ -737,7 +749,7 @@ impl<'a, T: BeaconChainTypes> VerifiedAggregatedAttestation<'a, T> {
         let IndexedAggregatedAttestation {
             signed_aggregate,
             indexed_attestation,
-            attestation_data_root,
+            observed_attestation_key_root,
         } = signed_aggregate;
 
         match check_signature {
@@ -750,7 +762,6 @@ impl<'a, T: BeaconChainTypes> VerifiedAggregatedAttestation<'a, T> {
                 )
                 .and_then(|is_valid| {
                     if !is_valid {
-                        println!("is_valid {}", is_valid);
                         Err(Error::InvalidSignature)
                     } else {
                         Ok(())
@@ -762,7 +773,9 @@ impl<'a, T: BeaconChainTypes> VerifiedAggregatedAttestation<'a, T> {
             CheckAttestationSignature::No => (),
         };
 
-        if let Err(e) = Self::verify_late_checks(signed_aggregate, attestation_data_root, chain) {
+        if let Err(e) =
+            Self::verify_late_checks(signed_aggregate, observed_attestation_key_root, chain)
+        {
             return Err(SignatureValid(indexed_attestation, e));
         }
 
@@ -1177,7 +1190,6 @@ pub fn verify_attestation_signature<T: BeaconChainTypes>(
         .spec
         .fork_at_epoch(indexed_attestation.data().target.epoch);
 
-    println!("1");
     let signature_set = indexed_attestation_signature_set_from_pubkeys(
         |validator_index| pubkey_cache.get(validator_index).map(Cow::Borrowed),
         indexed_attestation.signature(),
@@ -1187,7 +1199,6 @@ pub fn verify_attestation_signature<T: BeaconChainTypes>(
         &chain.spec,
     )
     .map_err(BeaconChainError::SignatureSetError)?;
-
     metrics::stop_timer(signature_setup_timer);
 
     let _signature_verification_timer =
@@ -1282,7 +1293,6 @@ pub fn verify_signed_aggregate_signatures<T: BeaconChainTypes>(
         .spec
         .fork_at_epoch(indexed_attestation.data().target.epoch);
 
-    println!("2");
     let signature_sets = vec![
         signed_aggregate_selection_proof_signature_set(
             |validator_index| pubkey_cache.get(validator_index).map(Cow::Borrowed),
@@ -1310,8 +1320,6 @@ pub fn verify_signed_aggregate_signatures<T: BeaconChainTypes>(
         )
         .map_err(BeaconChainError::SignatureSetError)?,
     ];
-
-    println!("3");
 
     Ok(verify_signature_sets(signature_sets.iter()))
 }

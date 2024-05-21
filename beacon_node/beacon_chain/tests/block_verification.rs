@@ -690,7 +690,6 @@ async fn invalid_signature_attester_slashing() {
             };
 
             AttesterSlashing::Electra(attester_slashing)
-
         } else {
             let indexed_attestation = IndexedAttestationBase {
                 attesting_indices: vec![0].into(),

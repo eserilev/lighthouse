@@ -1282,8 +1282,6 @@ mod release_tests {
         for att in &best_attestations {
             match fork_name {
                 ForkName::Electra => {
-                    // TODO(electra) some attestations only have 2 or 3 agg bits set
-                    // others have 5
                     assert!(att.num_set_aggregation_bits() >= small_step_size);
                 }
                 _ => {

@@ -247,6 +247,25 @@ impl<'a, E: EthSpec> AttestationRef<'a, E> {
             AttestationRef::Electra(att) => att.committee_index(),
         }
     }
+
+    pub fn set_aggregation_bits(&self) -> Vec<usize> {
+        match self {
+            Self::Base(att) => att
+                .aggregation_bits
+                .iter()
+                .enumerate()
+                .filter(|(_i, bit)| *bit)
+                .map(|(i, _bit)| i)
+                .collect::<Vec<_>>(),
+            Self::Electra(att) => att
+                .aggregation_bits
+                .iter()
+                .enumerate()
+                .filter(|(_i, bit)| *bit)
+                .map(|(i, _bit)| i)
+                .collect::<Vec<_>>(),
+        }
+    }
 }
 
 impl<E: EthSpec> AttestationElectra<E> {

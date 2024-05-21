@@ -449,7 +449,6 @@ async fn aggregated_gossip_verification() {
         subcommittee_index: contribution.subcommittee_index,
     };
 
-    println!("7");
     assert_invalid!(
         "aggregate that has already been seen",
         valid_aggregate.clone(),
@@ -465,7 +464,6 @@ async fn aggregated_gossip_verification() {
      * subcommittee index `contribution.subcommittee_index`.
      */
 
-    println!("8");
     assert_invalid!(
         "aggregate from aggregator and subcommittee that has already been seen",
         {

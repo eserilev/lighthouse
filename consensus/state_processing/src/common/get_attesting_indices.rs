@@ -13,7 +13,6 @@ pub mod attesting_indices_base {
     ) -> Result<IndexedAttestation<E>, BlockOperationError<Invalid>> {
         let attesting_indices =
             get_attesting_indices::<E>(committee, &attestation.aggregation_bits)?;
-
         Ok(IndexedAttestation::Base(IndexedAttestationBase {
             attesting_indices: VariableList::new(attesting_indices)?,
             data: attestation.data.clone(),
