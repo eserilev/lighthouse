@@ -423,7 +423,6 @@ impl GossipTester {
         /*
          * Batch verification
          */
-        println!("desc {}", desc);
         let mut results = self
             .harness
             .chain
@@ -772,7 +771,6 @@ async fn aggregated_gossip_verification() {
                 }
             },
             |_, err| {
-                println!("{:?}", err);
                 assert!(matches!(
                     err,
                     // Naively we should think this condition would trigger this error:

@@ -2660,7 +2660,9 @@ pub fn generate_rand_block_and_blobs<E: EthSpec>(
     num_blobs: NumBlobs,
     rng: &mut impl Rng,
 ) -> (SignedBeaconBlock<E, FullPayload<E>>, Vec<BlobSidecar<E>>) {
+    println!("randomly generating the beacon block is the trickt part. probably beacuse attestations im guessing?");
     let inner = map_fork_name!(fork_name, BeaconBlock, <_>::random_for_test(rng));
+   
     let mut block = SignedBeaconBlock::from_block(inner, types::Signature::random_for_test(rng));
     let mut blob_sidecars = vec![];
 
@@ -2697,7 +2699,6 @@ pub fn generate_rand_block_and_blobs<E: EthSpec>(
             };
             let (bundle, transactions) =
                 execution_layer::test_utils::generate_blobs::<E>(num_blobs).unwrap();
-
             payload.execution_payload.transactions = <_>::default();
             for tx in Vec::from(transactions) {
                 payload.execution_payload.transactions.push(tx).unwrap();
