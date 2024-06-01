@@ -92,7 +92,7 @@ pub trait SubsetItem {
 
     /// Returns the item that gets stored in `ObservedAggregates` for later subset
     /// comparison with incoming aggregates.
-    fn get_item(&self) -> Self::Item;
+    fn get_item(&self) -> Option<Self::Item>;
 
     /// Returns a unique value that keys the object to the item that is being stored
     /// in `ObservedAggregates`.
@@ -126,13 +126,12 @@ impl<'a, E: EthSpec> SubsetItem for AttestationRef<'a, E> {
     }
 
     /// Returns the sync contribution aggregation bits.
-    fn get_item(&self) -> Self::Item {
+    fn get_item(&self) -> Option<Self::Item> {
         match self {
             Self::Base(att) => {
-                // TODO(electra) fix unwrap
-                att.extend_aggregation_bits().unwrap()
+                att.extend_aggregation_bits().ok()
             }
-            Self::Electra(att) => att.aggregation_bits.clone(),
+            Self::Electra(att) => Some(att.aggregation_bits.clone()),
         }
     }
 
@@ -153,8 +152,8 @@ impl<'a, E: EthSpec> SubsetItem for &'a SyncCommitteeContribution<E> {
     }
 
     /// Returns the sync contribution aggregation bits.
-    fn get_item(&self) -> Self::Item {
-        self.aggregation_bits.clone()
+    fn get_item(&self) -> Option<Self::Item> {
+        Some(self.aggregation_bits.clone())
     }
 
     /// Returns the hash tree root of the root, slot and subcommittee index
@@ -234,8 +233,10 @@ impl<I> SlotHashSet<I> {
                 // If true, we replace the new item with its existing subset. This allows us
                 // to hold fewer items in the list.
                 } else if item.is_superset(existing) {
-                    *existing = item.get_item();
-                    return Ok(ObserveOutcome::New);
+                    if let Some(item) = item.get_item() {
+                        *existing = item;
+                        return Ok(ObserveOutcome::New);
+                    }
                 }
             }
         }
@@ -252,8 +253,11 @@ impl<I> SlotHashSet<I> {
             return Err(Error::ReachedMaxObservationsPerSlot(self.max_capacity));
         }
 
-        let item = item.get_item();
-        self.map.entry(root).or_default().push(item);
+        if let Some(item) = item.get_item() {
+            self.map.entry(root).or_default().push(item);
+        }
+
+        // TODO(electra) should this be returned inside the `if let Some(item)` directly above?
         Ok(ObserveOutcome::New)
     }
 
