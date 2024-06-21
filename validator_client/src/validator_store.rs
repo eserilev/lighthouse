@@ -694,8 +694,8 @@ impl<T: SlotClock + 'static, E: EthSpec> ValidatorStore<T, E> {
             let signing_epoch = attestation.data.target.epoch;
             let signing_context = self.signing_context(Domain::BeaconAttester, signing_epoch);
             let domain_hash = signing_context.domain_hash(&self.spec);
-            if signing_method
-                .requires_local_slashing_protection(self.enable_web3signer_slashing_protection)
+            if true //signing_method
+               // .requires_local_slashing_protection(self.enable_web3signer_slashing_protection)
             {
                 attestations_to_check.push((attestation, validator_duty, domain_hash));
             } else {
