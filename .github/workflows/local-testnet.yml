@@ -69,6 +69,11 @@ jobs:
         run: ./stop_local_testnet.sh local-blinded
         working-directory: scripts/local_testnet
 
+      - name: Start a local testnet and run assertoor tests
+        uses: eserilev/kurtosis-assertoor-github-action@v1.0.2
+        with:
+          ethereum_package_args: scripts/tests/assertoor_network_params.yaml
+
       - name: Upload logs artifact
         uses: actions/upload-artifact@v4
         with:
