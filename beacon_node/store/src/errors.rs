@@ -5,7 +5,8 @@ use crate::hot_cold_store::HotColdDBError;
 use leveldb::error::Error as LevelDBError;
 use ssz::DecodeError;
 use state_processing::BlockReplayError;
-use types::{BeaconStateError, Hash256, InconsistentFork, Slot};
+use types::{BeaconStateError, EpochCacheError, Hash256, InconsistentFork, Slot};
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
@@ -28,6 +29,8 @@ pub enum Error {
     AnchorInfoConcurrentMutation,
     /// The store's `blob_info` was mutated concurrently, the latest modification wasn't applied.
     BlobInfoConcurrentMutation,
+    /// The store's `data_column_info` was mutated concurrently, the latest modification wasn't applied.
+    DataColumnInfoConcurrentMutation,
     /// The block or state is unavailable due to weak subjectivity sync.
     HistoryUnavailable,
     /// State reconstruction cannot commence because not all historic blocks are known.
@@ -54,6 +57,14 @@ pub enum Error {
     LevelDbError(LevelDBError),
     #[cfg(feature = "redb")]
     RedbError(redb::Error),
+    CacheBuildError(EpochCacheError),
+    RandaoMixOutOfBounds,
+    FinalizedStateDecreasingSlot,
+    FinalizedStateUnaligned,
+    StateForCacheHasPendingUpdates {
+        state_root: Hash256,
+        slot: Slot,
+    },
 }
 
 pub trait HandleUnavailable<T> {
@@ -118,12 +129,17 @@ impl From<InconsistentFork> for Error {
     }
 }
 
-#[cfg(feature = "leveldb")]
-impl From<LevelDBError> for Error {
-    fn from(e: LevelDBError) -> Error {
-        Error::LevelDbError(e)
+impl From<EpochCacheError> for Error {
+    fn from(e: EpochCacheError) -> Error {
+        Error::CacheBuildError(e)
     }
 }
+
+// #[cfg(feature = "leveldb")]
+// impl From<LevelDBError> for Error {
+//         Error::LevelDbError(e)
+//     }
+// }
 
 #[cfg(feature = "redb")]
 impl From<redb::Error> for Error {

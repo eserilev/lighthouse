@@ -1,6 +1,6 @@
 use crate::{
     get_key_for_col, hot_cold_store::BytesKey, ColumnIter, ColumnKeyIter, DBColumn, Error,
-    ItemStore, Key, KeyValueStore, KeyValueStoreOp,
+    ItemStore, Key, KeyValueStore, KeyValueStoreOp, RawKeyIter
 };
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use std::collections::BTreeMap;
@@ -100,6 +100,18 @@ impl<E: EthSpec> KeyValueStore<E> for MemoryStore<E> {
         }))
     }
 
+    fn iter_raw_keys(&self, column: DBColumn, prefix: &[u8]) -> RawKeyIter {
+        let start_key = BytesKey::from_vec(get_key_for_col(column.as_str(), prefix));
+        let keys = self
+            .db
+            .read()
+            .range(start_key.clone()..)
+            .take_while(|(k, _)| k.starts_with(&start_key))
+            .filter_map(|(k, _)| k.remove_column_variable(column).map(|k| k.to_vec()))
+            .collect::<Vec<_>>();
+        Box::new(keys.into_iter().map(Ok))
+    }
+
     fn iter_column_keys<K: Key>(&self, column: DBColumn) -> ColumnKeyIter<K> {
         Box::new(self.iter_column(column).map(|res| res.map(|(k, _)| k)))
     }
@@ -108,7 +120,7 @@ impl<E: EthSpec> KeyValueStore<E> for MemoryStore<E> {
         self.transaction_mutex.lock()
     }
 
-    fn compact(&self) -> Result<(), Error> {
+    fn compact_column(&self, _column: DBColumn) -> Result<(), Error> {
         Ok(())
     }
 }

@@ -1,16 +1,13 @@
+use super::*;
 use crate::hot_cold_store::{BytesKey, HotColdDBError};
-use crate::Key;
-use crate::{
-    get_key_for_col, metrics, ColumnIter, ColumnKeyIter, DBColumn, Error, ItemStore, KeyValueStore,
-    KeyValueStoreOp, RawEntryIter, RawKeyIter,
-};
 use leveldb::compaction::Compaction;
 use leveldb::database::batch::{Batch, Writebatch};
 use leveldb::database::kv::KV;
 use leveldb::database::Database;
-use leveldb::iterator::{Iterable, LevelDBIterator};
-use leveldb::options::{Options, ReadOptions};
 use parking_lot::{Mutex, MutexGuard};
+use leveldb::error::Error as LevelDBError;
+use leveldb::iterator::{Iterable, KeyIterator, LevelDBIterator};
+use leveldb::options::{Options, ReadOptions, WriteOptions};
 use std::marker::PhantomData;
 use std::path::Path;
 use types::{EthSpec, Hash256};
@@ -72,16 +69,13 @@ impl<E: EthSpec> LevelDB<E> {
     ) -> Result<(), Error> {
         let column_key = get_key_for_col(col, key);
 
-        metrics::inc_counter(&metrics::DISK_DB_WRITE_COUNT);
-        metrics::inc_counter_by(&metrics::DISK_DB_WRITE_BYTES, val.len() as u64);
-        let timer = metrics::start_timer(&metrics::DISK_DB_WRITE_TIMES);
+        metrics::inc_counter_vec(&metrics::DISK_DB_WRITE_COUNT, &[col]);
+        metrics::inc_counter_vec_by(&metrics::DISK_DB_WRITE_BYTES, &[col], val.len() as u64);
+        let _timer = metrics::start_timer(&metrics::DISK_DB_WRITE_TIMES);
 
         self.db
             .put(opts.into(), BytesKey::from_vec(column_key), val)
             .map_err(Into::into)
-            .map(|()| {
-                metrics::stop_timer(timer);
-            })
     }
 
     /// Store some `value` in `column`, indexed with `key`.
@@ -101,7 +95,7 @@ impl<E: EthSpec> LevelDB<E> {
     pub fn get_bytes(&self, col: &str, key: &[u8]) -> Result<Option<Vec<u8>>, Error> {
         let column_key = get_key_for_col(col, key);
 
-        metrics::inc_counter(&metrics::DISK_DB_READ_COUNT);
+        metrics::inc_counter_vec(&metrics::DISK_DB_READ_COUNT, &[col]);
         let timer = metrics::start_timer(&metrics::DISK_DB_READ_TIMES);
 
         self.db
@@ -109,7 +103,11 @@ impl<E: EthSpec> LevelDB<E> {
             .map_err(Into::into)
             .map(|opt| {
                 opt.map(|bytes| {
-                    metrics::inc_counter_by(&metrics::DISK_DB_READ_BYTES, bytes.len() as u64);
+                    metrics::inc_counter_vec_by(
+                        &metrics::DISK_DB_READ_BYTES,
+                        &[col],
+                        bytes.len() as u64,
+                    );
                     metrics::stop_timer(timer);
                     bytes
                 })
@@ -120,7 +118,7 @@ impl<E: EthSpec> LevelDB<E> {
     pub fn key_exists(&self, col: &str, key: &[u8]) -> Result<bool, Error> {
         let column_key = get_key_for_col(col, key);
 
-        metrics::inc_counter(&metrics::DISK_DB_EXISTS_COUNT);
+        metrics::inc_counter_vec(&metrics::DISK_DB_EXISTS_COUNT, &[col]);
 
         self.db
             .get(self.read_options(), BytesKey::from_vec(column_key))
@@ -132,7 +130,7 @@ impl<E: EthSpec> LevelDB<E> {
     pub fn key_delete(&self, col: &str, key: &[u8]) -> Result<(), Error> {
         let column_key = get_key_for_col(col, key);
 
-        metrics::inc_counter(&metrics::DISK_DB_DELETE_COUNT);
+        metrics::inc_counter_vec(&metrics::DISK_DB_DELETE_COUNT, &[col]);
 
         self.db
             .delete(self.write_options().into(), BytesKey::from_vec(column_key))
@@ -144,10 +142,21 @@ impl<E: EthSpec> LevelDB<E> {
         for op in ops_batch {
             match op {
                 KeyValueStoreOp::PutKeyValue(key, value) => {
+                    let col = get_col_from_key(&key).unwrap_or("unknown".to_owned());
+                    metrics::inc_counter_vec(&metrics::DISK_DB_WRITE_COUNT, &[&col]);
+                    metrics::inc_counter_vec_by(
+                        &metrics::DISK_DB_WRITE_BYTES,
+                        &[&col],
+                        value.len() as u64,
+                    );
+
                     leveldb_batch.put(BytesKey::from_vec(key), &value);
                 }
 
                 KeyValueStoreOp::DeleteKey(key) => {
+                    let col = get_col_from_key(&key).unwrap_or("unknown".to_owned());
+                    metrics::inc_counter_vec(&metrics::DISK_DB_DELETE_COUNT, &[&col]);
+
                     leveldb_batch.delete(BytesKey::from_vec(key));
                 }
             }
@@ -315,6 +324,8 @@ impl<E: EthSpec> KeyValueStore<E> for LevelDB<E> {
                 }
             }
         }
+        let _timer = metrics::start_timer(&metrics::DISK_DB_WRITE_TIMES);
+        
         self.db.write(self.write_options().into(), &leveldb_batch)?;
         Ok(())
     }
@@ -341,12 +352,22 @@ impl<E: EthSpec> KeyValueStore<E> for LevelDB<E> {
         ] {
             self.db.compact(&start_key, &end_key);
         }
+    }
+
+    fn compact_column(&self, column: DBColumn) -> Result<(), Error> {
+        // Use key-size-agnostic keys [] and 0xff..ff with a minimum of 32 bytes to account for
+        // columns that may change size between sub-databases or schema versions.
+        let start_key = BytesKey::from_vec(get_key_for_col(column.as_str(), &[]));
+        let end_key = BytesKey::from_vec(get_key_for_col(
+            column.as_str(),
+            &vec![0xff; std::cmp::max(column.key_size(), 32)],
+        ));
+        self.db.compact(&start_key, &end_key);
         Ok(())
     }
 
     fn iter_column_from<K: Key>(&self, column: DBColumn, from: &[u8]) -> ColumnIter<K> {
         let start_key = BytesKey::from_vec(get_key_for_col(column.into(), from));
-
         let iter = self.db.iter(self.read_options());
         iter.seek(&start_key);
 

@@ -7,13 +7,11 @@
 //!
 //! Provides a simple API for storing/retrieving all types that sometimes needs type-hints. See
 //! tests for implementation examples.
-#[macro_use]
-extern crate lazy_static;
-
 mod chunk_writer;
 pub mod chunked_iter;
 pub mod chunked_vector;
 pub mod config;
+pub mod consensus_context;
 pub mod errors;
 mod forwards_iter;
 mod garbage_collection;
@@ -24,11 +22,13 @@ pub mod metadata;
 pub mod metrics;
 mod partial_beacon_state;
 pub mod reconstruct;
+pub mod state_cache;
 
 pub mod database;
 pub mod iter;
 pub use self::chunk_writer::ChunkWriter;
 pub use self::config::StoreConfig;
+pub use self::consensus_context::OnDiskConsensusContext;
 pub use self::hot_cold_store::{HotColdDB, HotStateSummary, Split};
 pub use self::memory_store::MemoryStore;
 pub use self::partial_beacon_state::PartialBeaconState;
@@ -41,6 +41,8 @@ use parking_lot::MutexGuard;
 use std::sync::Arc;
 use strum::{EnumIter, EnumString, IntoStaticStr};
 pub use types::*;
+
+const DATA_COLUMN_DB_KEY_SIZE: usize = 32 + 8;
 
 pub type ColumnIter<'a, K> = Box<dyn Iterator<Item = Result<(K, Vec<u8>), Error>> + 'a>;
 pub type ColumnKeyIter<'a, K> = Box<dyn Iterator<Item = Result<K, Error>> + 'a>;
@@ -78,8 +80,22 @@ pub trait KeyValueStore<E: EthSpec>: Sync + Send + Sized + 'static {
     /// this method. In future we may implement a safer mandatory locking scheme.
     fn begin_rw_transaction(&self) -> MutexGuard<()>;
 
-    /// Compact the database, freeing space used by deleted items.
-    fn compact(&self) -> Result<(), Error>;
+    /// Compact a single column in the database, freeing space used by deleted items.
+    fn compact_column(&self, column: DBColumn) -> Result<(), Error>;
+
+    /// Compact a default set of columns that are likely to free substantial space.
+    fn compact(&self) -> Result<(), Error> {
+        // Compact state and block related columns as they are likely to have the most churn,
+        // i.e. entries being created and deleted.
+        for column in [
+            DBColumn::BeaconState,
+            DBColumn::BeaconStateSummary,
+            DBColumn::BeaconBlock,
+        ] {
+            self.compact_column(column)?;
+        }
+        Ok(())
+    }
 
     /// Iterate through all keys and values in a particular column.
     fn iter_column<K: Key>(&self, column: DBColumn) -> ColumnIter<K> {
@@ -93,9 +109,7 @@ pub trait KeyValueStore<E: EthSpec>: Sync + Send + Sized + 'static {
         Box::new(std::iter::empty())
     }
 
-    fn iter_raw_keys(&self, _column: DBColumn, _prefix: &[u8]) -> RawKeyIter {
-        Box::new(std::iter::empty())
-    }
+    fn iter_raw_keys(&self, column: DBColumn, prefix: &[u8]) -> RawKeyIter;
 
     /// Iterate through all keys in a particular column.
     fn iter_column_keys<K: Key>(&self, column: DBColumn) -> ColumnKeyIter<K>;
@@ -125,6 +139,35 @@ pub fn get_key_for_col(column: &str, key: &[u8]) -> Vec<u8> {
     let mut result = column.as_bytes().to_vec();
     result.extend_from_slice(key);
     result
+}
+
+pub fn get_col_from_key(key: &[u8]) -> Option<String> {
+    if key.len() < 3 {
+        return None;
+    }
+    String::from_utf8(key[0..3].to_vec()).ok()
+}
+
+pub fn get_data_column_key(block_root: &Hash256, column_index: &ColumnIndex) -> Vec<u8> {
+    let mut result = block_root.as_bytes().to_vec();
+    result.extend_from_slice(&column_index.to_le_bytes());
+    result
+}
+
+pub fn parse_data_column_key(data: Vec<u8>) -> Result<(Hash256, ColumnIndex), Error> {
+    if data.len() != DBColumn::BeaconDataColumn.key_size() {
+        return Err(Error::InvalidKey);
+    }
+    // split_at panics if 32 < 40 which will never happen after the length check above
+    let (block_root_bytes, column_index_bytes) = data.split_at(32);
+    let block_root = Hash256::from_slice(block_root_bytes);
+    // column_index_bytes is asserted to be 8 bytes after the length check above
+    let column_index = ColumnIndex::from_le_bytes(
+        column_index_bytes
+            .try_into()
+            .map_err(|_| Error::InvalidKey)?,
+    );
+    Ok((block_root, column_index))
 }
 
 #[must_use]
@@ -187,11 +230,13 @@ pub enum StoreOp<'a, E: EthSpec> {
     PutBlock(Hash256, Arc<SignedBeaconBlock<E>>),
     PutState(Hash256, &'a BeaconState<E>),
     PutBlobs(Hash256, BlobSidecarList<E>),
+    PutDataColumns(Hash256, DataColumnSidecarList<E>),
     PutStateSummary(Hash256, HotStateSummary),
     PutStateTemporaryFlag(Hash256),
     DeleteStateTemporaryFlag(Hash256),
     DeleteBlock(Hash256),
     DeleteBlobs(Hash256),
+    DeleteDataColumns(Hash256, Vec<ColumnIndex>),
     DeleteState(Hash256, Option<Slot>),
     DeleteExecutionPayload(Hash256),
     KeyValueOp(KeyValueStoreOp),
@@ -207,6 +252,8 @@ pub enum DBColumn {
     BeaconBlock,
     #[strum(serialize = "blb")]
     BeaconBlob,
+    #[strum(serialize = "bdc")]
+    BeaconDataColumn,
     /// For full `BeaconState`s in the hot database (finalized or fork-boundary states).
     #[strum(serialize = "ste")]
     BeaconState,
@@ -251,6 +298,9 @@ pub enum DBColumn {
     BeaconHistoricalSummaries,
     #[strum(serialize = "olc")]
     OverflowLRUCache,
+    /// For persisting eagerly computed light client data
+    #[strum(serialize = "lcu")]
+    LightClientUpdate,
 }
 
 /// A block from the database, which might have an execution payload or not.
@@ -273,7 +323,7 @@ impl DBColumn {
     /// This function returns the number of bytes used by keys in a given column.
     pub fn key_size(self) -> usize {
         match self {
-            Self::OverflowLRUCache => 33, // See `OverflowKey` encode impl.
+            Self::OverflowLRUCache => 33, // DEPRECATED
             Self::BeaconMeta
             | Self::BeaconBlock
             | Self::BeaconState
@@ -293,7 +343,9 @@ impl DBColumn {
             | Self::BeaconStateRoots
             | Self::BeaconHistoricalRoots
             | Self::BeaconHistoricalSummaries
-            | Self::BeaconRandaoMixes => 8,
+            | Self::BeaconRandaoMixes
+            | Self::LightClientUpdate => 8,
+            Self::BeaconDataColumn => DATA_COLUMN_DB_KEY_SIZE,
         }
     }
 }
@@ -399,5 +451,12 @@ mod tests {
         store.delete::<StorableThing>(&key).unwrap();
 
         assert!(!store.exists::<StorableThing>(&key).unwrap());
+    }
+
+    #[test]
+    fn test_get_col_from_key() {
+        let key = get_key_for_col(DBColumn::BeaconBlock.into(), &[1u8; 32]);
+        let col = get_col_from_key(&key).unwrap();
+        assert_eq!(col, "blk");
     }
 }

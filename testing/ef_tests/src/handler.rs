@@ -18,13 +18,19 @@ pub trait Handler {
 
     fn handler_name(&self) -> String;
 
+    // Add forks here to exclude them from EF spec testing. Helpful for adding future or
+    // unspecified forks.
+    fn disabled_forks(&self) -> Vec<ForkName> {
+        vec![]
+    }
+
     fn is_enabled_for_fork(&self, fork_name: ForkName) -> bool {
         Self::Case::is_enabled_for_fork(fork_name)
     }
 
     fn run(&self) {
         for fork_name in ForkName::list_all() {
-            if self.is_enabled_for_fork(fork_name) {
+            if !self.disabled_forks().contains(&fork_name) && self.is_enabled_for_fork(fork_name) {
                 self.run_for_fork(fork_name)
             }
         }
@@ -210,8 +216,8 @@ impl<T, E> SszStaticHandler<T, E> {
         Self::for_forks(vec![ForkName::Altair])
     }
 
-    pub fn merge_only() -> Self {
-        Self::for_forks(vec![ForkName::Merge])
+    pub fn bellatrix_only() -> Self {
+        Self::for_forks(vec![ForkName::Bellatrix])
     }
 
     pub fn capella_only() -> Self {
@@ -220,6 +226,10 @@ impl<T, E> SszStaticHandler<T, E> {
 
     pub fn deneb_only() -> Self {
         Self::for_forks(vec![ForkName::Deneb])
+    }
+
+    pub fn electra_only() -> Self {
+        Self::for_forks(vec![ForkName::Electra])
     }
 
     pub fn altair_and_later() -> Self {
@@ -232,6 +242,18 @@ impl<T, E> SszStaticHandler<T, E> {
 
     pub fn capella_and_later() -> Self {
         Self::for_forks(ForkName::list_all()[3..].to_vec())
+    }
+
+    pub fn deneb_and_later() -> Self {
+        Self::for_forks(ForkName::list_all()[4..].to_vec())
+    }
+
+    pub fn electra_and_later() -> Self {
+        Self::for_forks(ForkName::list_all()[5..].to_vec())
+    }
+
+    pub fn pre_electra() -> Self {
+        Self::for_forks(ForkName::list_all()[0..5].to_vec())
     }
 }
 
@@ -247,7 +269,7 @@ pub struct SszStaticWithSpecHandler<T, E>(PhantomData<(T, E)>);
 
 impl<T, E> Handler for SszStaticHandler<T, E>
 where
-    T: cases::SszStaticType + ssz::Decode + TypeName,
+    T: cases::SszStaticType + tree_hash::TreeHash + ssz::Decode + TypeName,
     E: TypeName,
 {
     type Case = cases::SszStatic<T>;
@@ -551,7 +573,7 @@ impl<E: EthSpec + TypeName> Handler for ForkChoiceHandler<E> {
 
     fn is_enabled_for_fork(&self, fork_name: ForkName) -> bool {
         // Merge block tests are only enabled for Bellatrix.
-        if self.handler_name == "on_merge_block" && fork_name != ForkName::Merge {
+        if self.handler_name == "on_merge_block" && fork_name != ForkName::Bellatrix {
             return false;
         }
 
@@ -562,7 +584,7 @@ impl<E: EthSpec + TypeName> Handler for ForkChoiceHandler<E> {
 
         // No FCU override tests prior to bellatrix.
         if self.handler_name == "should_override_forkchoice_update"
-            && (fork_name == ForkName::Base || fork_name == ForkName::Altair)
+            && !fork_name.bellatrix_enabled()
         {
             return false;
         }
@@ -598,9 +620,7 @@ impl<E: EthSpec + TypeName> Handler for OptimisticSyncHandler<E> {
     }
 
     fn is_enabled_for_fork(&self, fork_name: ForkName) -> bool {
-        fork_name != ForkName::Base
-            && fork_name != ForkName::Altair
-            && cfg!(not(feature = "fake_crypto"))
+        fork_name.bellatrix_enabled() && cfg!(not(feature = "fake_crypto"))
     }
 }
 
@@ -783,13 +803,12 @@ impl<E: EthSpec + TypeName> Handler for MerkleProofValidityHandler<E> {
         "single_merkle_proof".into()
     }
 
-    fn is_enabled_for_fork(&self, fork_name: ForkName) -> bool {
-        fork_name != ForkName::Base
-            // Test is skipped due to some changes in the Capella light client
-            // spec.
-            //
-            // https://github.com/sigp/lighthouse/issues/4022
-            && fork_name != ForkName::Capella && fork_name != ForkName::Deneb
+    fn is_enabled_for_fork(&self, _fork_name: ForkName) -> bool {
+        // Test is skipped due to some changes in the Capella light client
+        // spec.
+        //
+        // https://github.com/sigp/lighthouse/issues/4022
+        false
     }
 }
 
@@ -814,10 +833,33 @@ impl<E: EthSpec + TypeName> Handler for KzgInclusionMerkleProofValidityHandler<E
 
     fn is_enabled_for_fork(&self, fork_name: ForkName) -> bool {
         // Enabled in Deneb
-        fork_name != ForkName::Base
-            && fork_name != ForkName::Altair
-            && fork_name != ForkName::Merge
-            && fork_name != ForkName::Capella
+        fork_name == ForkName::Deneb
+    }
+}
+
+#[derive(Derivative)]
+#[derivative(Default(bound = ""))]
+pub struct LightClientUpdateHandler<E>(PhantomData<E>);
+
+impl<E: EthSpec + TypeName> Handler for LightClientUpdateHandler<E> {
+    type Case = cases::LightClientVerifyIsBetterUpdate<E>;
+
+    fn config_name() -> &'static str {
+        E::name()
+    }
+
+    fn runner_name() -> &'static str {
+        "light_client"
+    }
+
+    fn handler_name(&self) -> String {
+        "update_ranking".into()
+    }
+
+    fn is_enabled_for_fork(&self, fork_name: ForkName) -> bool {
+        // Enabled in Altair
+        // TODO(electra) re-enable once https://github.com/sigp/lighthouse/issues/6002 is resolved
+        fork_name != ForkName::Base && fork_name != ForkName::Electra
     }
 }
 

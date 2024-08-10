@@ -1,6 +1,4 @@
-extern crate slog;
-
-mod address_change_broadcast;
+mod compute_light_client_updates;
 pub mod config;
 mod metrics;
 mod notifier;

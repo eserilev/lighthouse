@@ -149,6 +149,14 @@ impl<E: EthSpec> KeyValueStore<E> for BeaconNodeBackend<E> {
             BeaconNodeBackend::Redb(txn) => todo!(),
         }
     }
+    
+    fn compact_column(&self, column: DBColumn) -> Result<(), crate::Error> {
+        todo!()
+    }
+    
+    fn iter_raw_keys(&self, column: DBColumn, prefix: &[u8]) -> crate::RawKeyIter {
+        todo!()
+    }
 }
 
 impl<E: EthSpec> BeaconNodeBackend<E> {

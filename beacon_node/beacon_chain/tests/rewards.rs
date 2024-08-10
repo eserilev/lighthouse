@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use beacon_chain::test_utils::{
     generate_deterministic_keypairs, BeaconChainHarness, EphemeralHarnessType,
@@ -12,7 +13,6 @@ use beacon_chain::{
 use eth2::lighthouse::attestation_rewards::TotalAttestationRewards;
 use eth2::lighthouse::StandardAttestationRewards;
 use eth2::types::ValidatorId;
-use lazy_static::lazy_static;
 use types::beacon_state::Error as BeaconStateError;
 use types::{BeaconState, ChainSpec, ForkName, Slot};
 
@@ -20,9 +20,8 @@ pub const VALIDATOR_COUNT: usize = 64;
 
 type E = MinimalEthSpec;
 
-lazy_static! {
-    static ref KEYPAIRS: Vec<Keypair> = generate_deterministic_keypairs(VALIDATOR_COUNT);
-}
+static KEYPAIRS: LazyLock<Vec<Keypair>> =
+    LazyLock::new(|| generate_deterministic_keypairs(VALIDATOR_COUNT));
 
 fn get_harness(spec: ChainSpec) -> BeaconChainHarness<EphemeralHarnessType<E>> {
     let harness = BeaconChainHarness::builder(E::default())
@@ -105,8 +104,8 @@ async fn test_sync_committee_rewards() {
             .get_validator_index(&validator.pubkey)
             .unwrap()
             .unwrap();
-        let pre_state_balance = parent_state.balances()[validator_index];
-        let post_state_balance = state.balances()[validator_index];
+        let pre_state_balance = *parent_state.balances().get(validator_index).unwrap();
+        let post_state_balance = *state.balances().get(validator_index).unwrap();
         let sync_committee_reward = rewards.get(&(validator_index as u64)).unwrap_or(&0);
 
         if validator_index == proposer_index {
@@ -141,7 +140,7 @@ async fn test_verify_attestation_rewards_base() {
         )
         .await;
 
-    let initial_balances: Vec<u64> = harness.get_current_state().balances().clone().into();
+    let initial_balances: Vec<u64> = harness.get_current_state().balances().to_vec();
 
     // extend slots to beginning of epoch N + 2
     harness.extend_slots(E::slots_per_epoch() as usize).await;
@@ -163,7 +162,7 @@ async fn test_verify_attestation_rewards_base() {
     let expected_balances = apply_attestation_rewards(&initial_balances, total_rewards);
 
     // verify expected balances against actual balances
-    let balances: Vec<u64> = harness.get_current_state().balances().clone().into();
+    let balances: Vec<u64> = harness.get_current_state().balances().to_vec();
     assert_eq!(expected_balances, balances);
 }
 
@@ -185,7 +184,7 @@ async fn test_verify_attestation_rewards_base_inactivity_leak() {
             AttestationStrategy::SomeValidators(half_validators.clone()),
         )
         .await;
-    let initial_balances: Vec<u64> = harness.get_current_state().balances().clone().into();
+    let initial_balances: Vec<u64> = harness.get_current_state().balances().to_vec();
 
     // extend slots to beginning of epoch N + 2
     harness.advance_slot();
@@ -215,7 +214,7 @@ async fn test_verify_attestation_rewards_base_inactivity_leak() {
     let expected_balances = apply_attestation_rewards(&initial_balances, total_rewards);
 
     // verify expected balances against actual balances
-    let balances: Vec<u64> = harness.get_current_state().balances().clone().into();
+    let balances: Vec<u64> = harness.get_current_state().balances().to_vec();
     assert_eq!(expected_balances, balances);
 }
 
@@ -241,7 +240,7 @@ async fn test_verify_attestation_rewards_base_inactivity_leak_justification_epoc
     // advance to create first justification epoch and get initial balances
     harness.extend_slots(E::slots_per_epoch() as usize).await;
     target_epoch += 1;
-    let initial_balances: Vec<u64> = harness.get_current_state().balances().clone().into();
+    let initial_balances: Vec<u64> = harness.get_current_state().balances().to_vec();
 
     //assert previous_justified_checkpoint matches 0 as we were in inactivity leak from beginning
     assert_eq!(
@@ -284,7 +283,7 @@ async fn test_verify_attestation_rewards_base_inactivity_leak_justification_epoc
     let expected_balances = apply_attestation_rewards(&initial_balances, total_rewards);
 
     // verify expected balances against actual balances
-    let balances: Vec<u64> = harness.get_current_state().balances().clone().into();
+    let balances: Vec<u64> = harness.get_current_state().balances().to_vec();
     assert_eq!(expected_balances, balances);
 }
 
@@ -298,7 +297,7 @@ async fn test_verify_attestation_rewards_altair() {
     harness
         .extend_slots((E::slots_per_epoch() * (target_epoch + 1)) as usize)
         .await;
-    let initial_balances: Vec<u64> = harness.get_current_state().balances().clone().into();
+    let initial_balances: Vec<u64> = harness.get_current_state().balances().to_vec();
 
     // advance until epoch N + 2 and build proposal rewards map
     let mut proposal_rewards_map: HashMap<u64, u64> = HashMap::new();
@@ -364,7 +363,7 @@ async fn test_verify_attestation_rewards_altair() {
         apply_sync_committee_rewards(&sync_committee_rewards_map, expected_balances);
 
     // verify expected balances against actual balances
-    let balances: Vec<u64> = harness.get_current_state().balances().clone().into();
+    let balances: Vec<u64> = harness.get_current_state().balances().to_vec();
 
     assert_eq!(expected_balances, balances);
 }
@@ -386,7 +385,7 @@ async fn test_verify_attestation_rewards_altair_inactivity_leak() {
             half_validators.clone(),
         )
         .await;
-    let initial_balances: Vec<u64> = harness.get_current_state().balances().clone().into();
+    let initial_balances: Vec<u64> = harness.get_current_state().balances().to_vec();
 
     // advance until epoch N + 2 and build proposal rewards map
     let mut proposal_rewards_map: HashMap<u64, u64> = HashMap::new();
@@ -458,7 +457,7 @@ async fn test_verify_attestation_rewards_altair_inactivity_leak() {
         apply_sync_committee_rewards(&sync_committee_rewards_map, expected_balances);
 
     // verify expected balances against actual balances
-    let balances: Vec<u64> = harness.get_current_state().balances().clone().into();
+    let balances: Vec<u64> = harness.get_current_state().balances().to_vec();
 
     assert_eq!(expected_balances, balances);
 }
@@ -492,7 +491,7 @@ async fn test_verify_attestation_rewards_altair_inactivity_leak_justification_ep
     // advance for first justification epoch and get balances
     harness.extend_slots(E::slots_per_epoch() as usize).await;
     target_epoch += 1;
-    let initial_balances: Vec<u64> = harness.get_current_state().balances().clone().into();
+    let initial_balances: Vec<u64> = harness.get_current_state().balances().to_vec();
 
     // advance until epoch N + 2 and build proposal rewards map
     let mut proposal_rewards_map: HashMap<u64, u64> = HashMap::new();
@@ -568,7 +567,7 @@ async fn test_verify_attestation_rewards_altair_inactivity_leak_justification_ep
         apply_sync_committee_rewards(&sync_committee_rewards_map, expected_balances);
 
     // verify expected balances against actual balances
-    let balances: Vec<u64> = harness.get_current_state().balances().clone().into();
+    let balances: Vec<u64> = harness.get_current_state().balances().to_vec();
     assert_eq!(expected_balances, balances);
 }
 

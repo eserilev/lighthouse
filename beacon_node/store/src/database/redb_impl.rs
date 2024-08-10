@@ -73,12 +73,8 @@ impl<E: EthSpec> Redb<E> {
         val: &[u8],
         opts: WriteOptions,
     ) -> Result<(), Error> {
-        println!("put_bytes_with_options");
-        println!("{}", col);
-        println!("{:?}", key);
-        metrics::inc_counter(&metrics::DISK_DB_WRITE_COUNT);
-        metrics::inc_counter_by(&metrics::DISK_DB_WRITE_BYTES, val.len() as u64);
-        let timer = metrics::start_timer(&metrics::DISK_DB_WRITE_TIMES);
+        metrics::inc_counter_vec(&metrics::DISK_DB_WRITE_COUNT, &[col]);
+        metrics::inc_counter_vec_by(&metrics::DISK_DB_WRITE_BYTES, &[col], val.len() as u64);        let timer = metrics::start_timer(&metrics::DISK_DB_WRITE_TIMES);
         let column_key = get_key_for_col(col, key);
         let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(TABLE_NAME);
         let mut tx = self.db.begin_write()?;
@@ -107,8 +103,7 @@ impl<E: EthSpec> Redb<E> {
 
     // Retrieve some bytes in `column` with `key`.
     pub fn get_bytes(&self, col: &str, key: &[u8]) -> Result<Option<Vec<u8>>, Error> {
-        println!("get_bytes");
-        metrics::inc_counter(&metrics::DISK_DB_READ_COUNT);
+        metrics::inc_counter_vec(&metrics::DISK_DB_READ_COUNT, &[col]);
         let timer = metrics::start_timer(&metrics::DISK_DB_READ_TIMES);
         let column_key = get_key_for_col(col, key);
 
@@ -121,25 +116,21 @@ impl<E: EthSpec> Redb<E> {
         // TODO: clean this up
         if let Some(access_guard) = result {
             let value = access_guard.value().to_vec();
-            println!("{}", col);
-            println!("{:?}", key);
-            println!("get_bytes found");
-            metrics::inc_counter_by(&metrics::DISK_DB_READ_BYTES, value.len() as u64);
-            metrics::stop_timer(timer);
+            metrics::inc_counter_vec_by(
+                &metrics::DISK_DB_READ_BYTES,
+                &[col],
+                value.len() as u64,
+            );
+            drop(timer);
             Ok(Some(value))
         } else {
-            println!("{}", col);
-            println!("{:?}", key);
-            println!("get_bytes not found");
-            metrics::inc_counter_by(&metrics::DISK_DB_READ_BYTES, 0 as u64);
-            metrics::stop_timer(timer);
             Ok(None)
         }
     }
 
     /// Return `true` if `key` exists in `column`.
     pub fn key_exists(&self, col: &str, key: &[u8]) -> Result<bool, Error> {
-        metrics::inc_counter(&metrics::DISK_DB_EXISTS_COUNT);
+        metrics::inc_counter_vec(&metrics::DISK_DB_EXISTS_COUNT, &[col]);
         let column_key = get_key_for_col(col, key);
 
         let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(TABLE_NAME);
@@ -159,7 +150,7 @@ impl<E: EthSpec> Redb<E> {
         let tx = self.db.begin_write()?;
         let mut table = tx.open_table(table_definition)?;
 
-        metrics::inc_counter(&metrics::DISK_DB_DELETE_COUNT);
+        metrics::inc_counter_vec(&metrics::DISK_DB_DELETE_COUNT, &[col]);
 
         table.remove(column_key.as_slice()).map(|_| ())?;
         drop(table);
@@ -206,6 +197,7 @@ impl<E: EthSpec> Redb<E> {
         let tx = self.db.begin_read().unwrap();
         let table = tx.open_table(table_definition).unwrap();
 
+        // TODO
         let x = table
             .iter()
             .unwrap()

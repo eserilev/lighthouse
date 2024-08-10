@@ -10,6 +10,7 @@ pub enum Error {
         blob_commitment: KzgCommitment,
         block_commitment: KzgCommitment,
     },
+    UnableToDetermineImportRequirement,
     Unexpected,
     SszTypes(ssz_types::Error),
     MissingBlobs,
@@ -19,8 +20,10 @@ pub enum Error {
     ParentStateMissing(Hash256),
     BlockReplayError(state_processing::BlockReplayError),
     RebuildingStateCaches(BeaconStateError),
+    SlotClockError,
 }
 
+#[derive(PartialEq, Eq)]
 pub enum ErrorCategory {
     /// Internal Errors (not caused by peers)
     Internal,
@@ -39,7 +42,9 @@ impl Error {
             | Error::Unexpected
             | Error::ParentStateMissing(_)
             | Error::BlockReplayError(_)
-            | Error::RebuildingStateCaches(_) => ErrorCategory::Internal,
+            | Error::UnableToDetermineImportRequirement
+            | Error::RebuildingStateCaches(_)
+            | Error::SlotClockError => ErrorCategory::Internal,
             Error::Kzg(_)
             | Error::BlobIndexInvalid(_)
             | Error::KzgCommitmentMismatch { .. }
