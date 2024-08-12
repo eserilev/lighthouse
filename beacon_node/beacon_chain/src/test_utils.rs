@@ -1985,6 +1985,7 @@ where
         block_root: Hash256,
         block_contents: SignedBlockContentsTuple<E>,
     ) -> Result<SignedBeaconBlockHash, BlockError<E>> {
+
         self.set_current_slot(slot);
         let (block, blob_items) = block_contents;
 
@@ -2004,6 +2005,7 @@ where
             .await?
             .try_into()
             .unwrap();
+        println!("3");
         self.chain.recompute_head_at_current_slot().await;
         Ok(block_hash)
     }
@@ -2162,6 +2164,7 @@ where
         sync_committee_strategy: SyncCommitteeStrategy,
     ) -> Result<(SignedBeaconBlockHash, BeaconState<E>), BlockError<E>> {
         let (block_hash, block, state) = self.add_block_at_slot(slot, state).await?;
+
         self.attest_block(&state, state_root, block_hash, &block.0, validators);
 
         if sync_committee_strategy == SyncCommitteeStrategy::AllValidators

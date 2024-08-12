@@ -13,7 +13,7 @@ pub fn upgrade_to_v19<T: BeaconChainTypes>(
 
     debug!(log, "Migrating from v18 to v19");
     // Iterate through the blobs on disk.
-    for res in db.hot_db.iter_column_keys::<Vec<u8>>(column) {
+    for res in db.hot_db.iter_column_keys::<Vec<u8>>(column)? {
         let key = res?;
         let key_col = get_key_for_col(column.as_str(), &key);
         hot_delete_ops.push(KeyValueStoreOp::DeleteKey(

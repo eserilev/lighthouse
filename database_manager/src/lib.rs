@@ -13,6 +13,8 @@ use cli::{Compact, Inspect};
 use environment::{Environment, RuntimeContext};
 use serde::{Deserialize, Serialize};
 use slog::{info, warn, Logger};
+use store::config::DatabaseBackend;
+use store::KeyValueStore;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -115,6 +117,7 @@ pub struct InspectConfig {
     blobs_db: bool,
     /// Configures where the inspect output should be stored.
     output_dir: PathBuf,
+    db_backend: DatabaseBackend,
 }
 
 fn parse_inspect_config(inspect_config: &Inspect) -> Result<InspectConfig, String> {
@@ -129,6 +132,7 @@ fn parse_inspect_config(inspect_config: &Inspect) -> Result<InspectConfig, Strin
     let blobs_db = inspect_config.blobs_db;
 
     let output_dir: PathBuf = inspect_config.output_dir.clone().unwrap_or_default();
+    let db_backend = inspect_config.database_backend;
     Ok(InspectConfig {
         column,
         target,
@@ -137,6 +141,7 @@ fn parse_inspect_config(inspect_config: &Inspect) -> Result<InspectConfig, Strin
         freezer,
         blobs_db,
         output_dir,
+        db_backend,
     })
 }
 
@@ -148,26 +153,26 @@ pub fn inspect_db<E: EthSpec>(
     let cold_path = client_config.get_freezer_db_path();
     let blobs_path = client_config.get_blobs_db_path();
 
-    let db = HotColdDB::<E, BeaconNodeBackend<E>, BeaconNodeBackend<E>>::open(
-        &hot_path,
-        &cold_path,
-        &blobs_path,
-        |_, _, _| Ok(()),
-        client_config.store,
-        spec,
-        log,
-    )
-    .map_err(|e| format!("{:?}", e))?;
+    // let db = HotColdDB::<E, BeaconNodeBackend<E>, BeaconNodeBackend<E>>::open(
+    //     &hot_path,
+    //     &cold_path,
+    //     &blobs_path,
+    //     |_, _, _| Ok(()),
+    //     client_config.store,
+    //     spec.clone(),
+    //     log,
+    // )
+    // .map_err(|e| format!("{:?}", e))?;
 
     let mut total = 0;
     let mut num_keys = 0;
 
     let sub_db = if inspect_config.freezer {
-        LevelDB::<E>::open(&cold_path).map_err(|e| format!("Unable to open freezer DB: {e:?}"))?
+        BeaconNodeBackend::<E>::open(inspect_config.db_backend, &cold_path).map_err(|e| format!("Unable to open freezer DB: {e:?}"))?
     } else if inspect_config.blobs_db {
-        LevelDB::<E>::open(&blobs_path).map_err(|e| format!("Unable to open blobs DB: {e:?}"))?
+        BeaconNodeBackend::<E>::open(inspect_config.db_backend, &blobs_path).map_err(|e| format!("Unable to open blobs DB: {e:?}"))?
     } else {
-        LevelDB::<E>::open(&hot_path).map_err(|e| format!("Unable to open hot DB: {e:?}"))?
+        BeaconNodeBackend::<E>::open(inspect_config.db_backend ,&hot_path).map_err(|e| format!("Unable to open hot DB: {e:?}"))?
     };
 
     let skip = inspect_config.skip.unwrap_or(0);
@@ -280,12 +285,13 @@ pub fn compact_db<E: EthSpec>(
     let blobs_path = client_config.get_blobs_db_path();
     let column = compact_config.column;
 
+    // TODO(backend) get DatabaseBackend::Redb from config
     let (sub_db, db_name) = if compact_config.freezer {
-        (LevelDB::<E>::open(&cold_path)?, "freezer_db")
+        (BeaconNodeBackend::<E>::open(DatabaseBackend::Redb, &cold_path)?, "freezer_db")
     } else if compact_config.blobs_db {
-        (LevelDB::<E>::open(&blobs_path)?, "blobs_db")
+        (BeaconNodeBackend::<E>::open(DatabaseBackend::Redb, &blobs_path)?, "blobs_db")
     } else {
-        (LevelDB::<E>::open(&hot_path)?, "hot_db")
+        (BeaconNodeBackend::<E>::open(DatabaseBackend::Redb, &hot_path)?, "hot_db")
     };
     info!(
         log,

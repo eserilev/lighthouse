@@ -1,7 +1,7 @@
 use crate::{
     get_key_for_col,
     hot_cold_store::{BytesKey, HotColdDBError},
-    metrics, ColumnKeyIter, Key,
+    metrics, ColumnKeyIter, Key, RawKeyIter,
 };
 use crate::{DBColumn, Error, KeyValueStoreOp};
 use redb::{ReadableTable, TableDefinition};
@@ -13,6 +13,7 @@ use parking_lot::{Mutex, MutexGuard};
 use super::interface::WriteOptions;
 
 const TABLE_NAME: &str = "TABLE";
+pub const REDB_DATA_FILENAME: &str = "slasher.redb";
 
 pub struct Redb<E: EthSpec> {
     db: redb::Database,
@@ -32,7 +33,8 @@ impl From<WriteOptions> for redb::Durability {
 
 impl<E: EthSpec> Redb<E> {
     pub fn open(path: &Path) -> Result<Self, Error> {
-        let db = redb::Database::create(path)?;
+        let db_path = path.join(REDB_DATA_FILENAME);
+        let db = redb::Database::create(db_path)?;
         let transaction_mutex = Mutex::new(());
 
         Redb::<E>::create_table(&db, TABLE_NAME)?;
@@ -73,6 +75,7 @@ impl<E: EthSpec> Redb<E> {
         val: &[u8],
         opts: WriteOptions,
     ) -> Result<(), Error> {
+        println!("put_bytes_with_options");
         metrics::inc_counter_vec(&metrics::DISK_DB_WRITE_COUNT, &[col]);
         metrics::inc_counter_vec_by(&metrics::DISK_DB_WRITE_BYTES, &[col], val.len() as u64);        let timer = metrics::start_timer(&metrics::DISK_DB_WRITE_TIMES);
         let column_key = get_key_for_col(col, key);
@@ -90,10 +93,12 @@ impl<E: EthSpec> Redb<E> {
 
     /// Store some `value` in `column`, indexed with `key`.
     pub fn put_bytes(&self, col: &str, key: &[u8], val: &[u8]) -> Result<(), Error> {
+        println!("put_bytes");
         self.put_bytes_with_options(col, key, val, self.write_options())
     }
 
     pub fn put_bytes_sync(&self, col: &str, key: &[u8], val: &[u8]) -> Result<(), Error> {
+        println!("put_bytes_sync");
         self.put_bytes_with_options(col, key, val, self.write_options_sync())
     }
 
@@ -103,6 +108,7 @@ impl<E: EthSpec> Redb<E> {
 
     // Retrieve some bytes in `column` with `key`.
     pub fn get_bytes(&self, col: &str, key: &[u8]) -> Result<Option<Vec<u8>>, Error> {
+        println!("get_bytes");
         metrics::inc_counter_vec(&metrics::DISK_DB_READ_COUNT, &[col]);
         let timer = metrics::start_timer(&metrics::DISK_DB_READ_TIMES);
         let column_key = get_key_for_col(col, key);
@@ -130,6 +136,7 @@ impl<E: EthSpec> Redb<E> {
 
     /// Return `true` if `key` exists in `column`.
     pub fn key_exists(&self, col: &str, key: &[u8]) -> Result<bool, Error> {
+        println!("key_exists");
         metrics::inc_counter_vec(&metrics::DISK_DB_EXISTS_COUNT, &[col]);
         let column_key = get_key_for_col(col, key);
 
@@ -145,6 +152,7 @@ impl<E: EthSpec> Redb<E> {
 
     /// Removes `key` from `column`.
     pub fn key_delete(&self, col: &str, key: &[u8]) -> Result<(), Error> {
+        println!("key_delete");
         let column_key = get_key_for_col(col, key);
         let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(TABLE_NAME);
         let tx = self.db.begin_write()?;
@@ -169,8 +177,6 @@ impl<E: EthSpec> Redb<E> {
                 KeyValueStoreOp::PutKeyValue(column, key, value) => {
                     let column_key = get_key_for_col(&column, &key);
                     table.insert(column_key.as_slice(), value.as_slice())?;
-                    println!("{}", column);
-                    println!("{:?}", key);  
                 }
 
                 KeyValueStoreOp::DeleteKey(column, key) => {
@@ -186,114 +192,66 @@ impl<E: EthSpec> Redb<E> {
 
     /// Compact all values in the states and states flag columns.
     pub fn compact(&self) -> Result<(), Error> {
-        Ok(()) // self.db.compact().map_err(Into::into).map(|_| ())
+        // self.db.compact().map_err(Into::into).map(|_| ())
+        Ok(())
     }
 
-    /// TODO resolve unwraps and clean this up
-    /// Iterate through all keys and values in a particular column.
-    pub fn iter_column_keys<K: Key>(&self, column: DBColumn) -> ColumnKeyIter<K> {
-        let table_definition: TableDefinition<'_, &[u8], &[u8]> =
-            TableDefinition::new(column.into());
-        let tx = self.db.begin_read().unwrap();
-        let table = tx.open_table(table_definition).unwrap();
+    pub fn compact_column(&self, _: DBColumn) -> Result<(), Error> {
+        // self.db.compact();
+        Ok(())
+    }
 
-        // TODO
-        let x = table
-            .iter()
-            .unwrap()
-            .take_while( |result| {
-                if let Ok(access_guard) = result {
-                    let key = access_guard.0.value().to_vec();
-                    BytesKey::from_vec(key).matches_column(column)
+    pub fn iter_raw_keys(&self, column: DBColumn, prefix: &[u8]) -> Result<RawKeyIter, Error> {
+        println!("iter_raw_keys");
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> =
+        TableDefinition::new(column.into());
+        let tx = self.db.begin_read()?;
+        let table = tx.open_table(table_definition)?;
+
+        let result = table
+            .iter()?
+            .take_while( move |result| {
+                if let Ok((key_guard, _)) = result {
+                    let key = key_guard.value().to_vec();
+                    // TODO ensure were correctly filtering by prefix
+                    BytesKey::from_vec(key).starts_with(&BytesKey::from_vec(prefix.to_vec()))
                 } else {
                     false
                 }
             })
-            .map( |result| {
-                let access_guard = result.unwrap();
-                let key = access_guard.0.value().to_vec();
-                let bytes_key = BytesKey::from_vec(key);
-                let key = bytes_key.remove_column_variable(column).ok_or_else(|| {
-                    HotColdDBError::IterationError {
-                        unexpected_key: bytes_key.clone(),
-                    }
-                })?;
-                K::from_bytes(key)
-            });
-        Box::new(std::iter::empty())
-        /*
-        Box::new(
-            table
-                .iter()
-                .unwrap()
-                .take_while(move |result| {
-                    let access_guard = result.unwrap();
-                    if let Ok(access_guard) = result {
-                        let key = access_guard.0.value().to_vec();
-                        BytesKey::from_vec(key).matches_column(column)
-                    } else {
-                        false
-                    }
-                })
-                .map(move |result| {
-                    let access_guard = result.unwrap();
-                    let key = access_guard.0.value().to_vec();
-                    let bytes_key = BytesKey::from_vec(key);
-                    let key = bytes_key.remove_column_variable(column).ok_or_else(|| {
-                        HotColdDBError::IterationError {
-                            unexpected_key: bytes_key.clone(),
-                        }
-                    })?;
-                    K::from_bytes(key)
-                }),
-        )
-         */
+            .filter_map(
+                |result| {
+                    result.ok()
+                    .map_or_else(
+                        || None, // Skip if it's an error
+                        |(key_guard, _)| Some(Ok(key_guard.value().to_vec()))
+                    )
+                
+                }
+            ).collect::<Vec<_>>();
+
+        Ok(Box::new(result.into_iter()))
     }
 
-    /*
-    pub fn iter_column_from<K: Key>(&self, column: DBColumn, from: &[u8]) -> ColumnIter<K> {
-        let start_key = BytesKey::from_vec(get_key_for_col(column.into(), from));
+    /// Iterate through all keys and values in a particular column.
+    pub fn iter_column_keys<K: Key>(&self, column: DBColumn) -> Result<ColumnKeyIter<K>, Error> {
+        println!("iter_column_keys");
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> =
+            TableDefinition::new(column.into());
+        let tx = self.db.begin_read()?;
+        let table = tx.open_table(table_definition)?;
 
-        let iter = self.db.iter(self.read_options());
-        iter.seek(&start_key);
+        let result = table
+            .iter()?
+            .filter_map( |result| {
+                result.ok()
+                .map_or_else(
+                    || None,
+                        |(key_guard, _)| {
+                            Some(K::from_bytes(&key_guard.value().to_vec()))
+                        })
+            }).collect::<Vec<_>>();
 
-        Box::new(
-            iter.take_while(move |(key, _)| key.matches_column(column))
-                .map(move |(bytes_key, value)| {
-                    let key = bytes_key.remove_column_variable(column).ok_or_else(|| {
-                        HotColdDBError::IterationError {
-                            unexpected_key: bytes_key.clone(),
-                        }
-                    })?;
-                    Ok((K::from_bytes(key)?, value))
-                }),
-        )
+        Ok(Box::new(result.into_iter()))
     }
-
-    /// Return an iterator over the state roots of all temporary states.
-    pub fn iter_temporary_state_roots(
-        &self,
-        column: DBColumn,
-    ) -> impl Iterator<Item = Result<Hash256, Error>> + '_ {
-        let start_key =
-            BytesKey::from_vec(get_key_for_col(column.into(), Hash256::zero().as_bytes()));
-
-        let keys_iter = self.db.keys_iter(self.read_options());
-        keys_iter.seek(&start_key);
-
-        keys_iter
-            .take_while(move |key| key.matches_column(column))
-            .map(move |bytes_key| {
-                bytes_key.remove_column(column).ok_or_else(|| {
-                    HotColdDBError::IterationError {
-                        unexpected_key: bytes_key,
-                    }
-                    .into()
-                })
-            })
-    }
-
-    pub fn iter_column<K: Key>(&self, column: DBColumn) -> ColumnIter<K> {
-        self.iter_column_from(column, &vec![0; column.key_size()])
-    }*/
 }

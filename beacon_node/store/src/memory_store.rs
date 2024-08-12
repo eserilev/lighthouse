@@ -30,12 +30,14 @@ impl<E: EthSpec> MemoryStore<E> {
 impl<E: EthSpec> KeyValueStore<E> for MemoryStore<E> {
     /// Get the value of some key from the database. Returns `None` if the key does not exist.
     fn get_bytes(&self, col: &str, key: &[u8]) -> Result<Option<Vec<u8>>, Error> {
+        println!("get bytes {}", col);
         let column_key = BytesKey::from_vec(get_key_for_col(col, key));
         Ok(self.db.read().get(&column_key).cloned())
     }
 
     /// Puts a key in the database.
     fn put_bytes(&self, col: &str, key: &[u8], val: &[u8]) -> Result<(), Error> {
+        println!("put bytes {}", col);
         let column_key = BytesKey::from_vec(get_key_for_col(col, key));
         self.db.write().insert(column_key, val.to_vec());
         Ok(())
@@ -100,7 +102,7 @@ impl<E: EthSpec> KeyValueStore<E> for MemoryStore<E> {
         }))
     }
 
-    fn iter_raw_keys(&self, column: DBColumn, prefix: &[u8]) -> RawKeyIter {
+    fn iter_raw_keys(&self, column: DBColumn, prefix: &[u8]) -> Result<RawKeyIter, Error> {
         let start_key = BytesKey::from_vec(get_key_for_col(column.as_str(), prefix));
         let keys = self
             .db
@@ -109,11 +111,11 @@ impl<E: EthSpec> KeyValueStore<E> for MemoryStore<E> {
             .take_while(|(k, _)| k.starts_with(&start_key))
             .filter_map(|(k, _)| k.remove_column_variable(column).map(|k| k.to_vec()))
             .collect::<Vec<_>>();
-        Box::new(keys.into_iter().map(Ok))
+        Ok(Box::new(keys.into_iter().map(Ok)))
     }
 
-    fn iter_column_keys<K: Key>(&self, column: DBColumn) -> ColumnKeyIter<K> {
-        Box::new(self.iter_column(column).map(|res| res.map(|(k, _)| k)))
+    fn iter_column_keys<K: Key>(&self, column: DBColumn) -> Result<ColumnKeyIter<K>, Error> {
+        Ok(Box::new(self.iter_column(column).map(|res| res.map(|(k, _)| k))))
     }
 
     fn begin_rw_transaction(&self) -> MutexGuard<()> {

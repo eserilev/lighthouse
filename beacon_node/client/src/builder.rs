@@ -1033,14 +1033,14 @@ where
     }
 }
 
-impl<TSlotClock, TEth1Backend, TEthSpec>
+impl<TSlotClock, TEth1Backend, E>
     ClientBuilder<
         Witness<
             TSlotClock,
             TEth1Backend,
-            TEthSpec,
-            BeaconNodeBackend<TEthSpec>,
-            BeaconNodeBackend<TEthSpec>,
+            E,
+            BeaconNodeBackend<E>,
+            BeaconNodeBackend<E>,
         >,
     >
 where

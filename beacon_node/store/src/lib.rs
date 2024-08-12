@@ -109,10 +109,10 @@ pub trait KeyValueStore<E: EthSpec>: Sync + Send + Sized + 'static {
         Box::new(std::iter::empty())
     }
 
-    fn iter_raw_keys(&self, column: DBColumn, prefix: &[u8]) -> RawKeyIter;
+    fn iter_raw_keys(&self, column: DBColumn, prefix: &[u8]) -> Result<RawKeyIter, Error>;
 
     /// Iterate through all keys in a particular column.
-    fn iter_column_keys<K: Key>(&self, column: DBColumn) -> ColumnKeyIter<K>;
+    fn iter_column_keys<K: Key>(&self, column: DBColumn) -> Result<ColumnKeyIter<K>, Error>;
 }
 
 pub trait Key: Sized + 'static {
@@ -424,7 +424,7 @@ mod tests {
     fn simplediskdb() {
         let dir = tempdir().unwrap();
         let path = dir.path();
-        let store = BeaconNodeBackend::open(&StoreConfig::default(), path).unwrap();
+        let store = BeaconNodeBackend::open(StoreConfig::default().backend, path).unwrap();
 
         test_impl(store);
     }

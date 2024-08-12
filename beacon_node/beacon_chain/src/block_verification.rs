@@ -1068,10 +1068,14 @@ impl<T: BeaconChainTypes> SignatureVerifiedBlock<T> {
             .fork_name(&chain.spec)
             .map_err(BlockError::InconsistentFork)?;
 
+        println!("a");
         // Check the anchor slot before loading the parent, to avoid spurious lookups.
         check_block_against_anchor_slot(block.message(), chain)?;
+        println!("b");
 
         let (mut parent, block) = load_parent(block, chain)?;
+
+        println!("c");
 
         let state = cheap_state_advance_to_obtain_committees::<_, BlockError<T::EthSpec>>(
             &mut parent.pre_state,
@@ -1080,8 +1084,11 @@ impl<T: BeaconChainTypes> SignatureVerifiedBlock<T> {
             &chain.spec,
         )?;
 
+        println!("d");
+
         let pubkey_cache = get_validator_pubkey_cache(chain)?;
 
+        println!("e");
         let mut signature_verifier = get_signature_verifier(&state, &pubkey_cache, &chain.spec);
 
         let mut consensus_context =
@@ -1179,6 +1186,7 @@ impl<T: BeaconChainTypes> IntoExecutionPendingBlock<T> for SignatureVerifiedBloc
         chain: &Arc<BeaconChain<T>>,
         notify_execution_layer: NotifyExecutionLayer,
     ) -> Result<ExecutionPendingBlock<T>, BlockSlashInfo<BlockError<T::EthSpec>>> {
+
         let header = self.block.signed_block_header();
         let (parent, block) = if let Some(parent) = self.parent {
             (parent, self.block)
@@ -1253,6 +1261,8 @@ impl<T: BeaconChainTypes> IntoExecutionPendingBlock<T> for RpcBlock<T::EthSpec> 
         // Perform an early check to prevent wasting time on irrelevant blocks.
         let block_root = check_block_relevancy(self.as_block(), block_root, chain)
             .map_err(|e| BlockSlashInfo::SignatureNotChecked(self.signed_block_header(), e))?;
+
+        println!("1");
         let maybe_available = chain
             .data_availability_checker
             .verify_kzg_for_rpc_block(self.clone())
@@ -1262,6 +1272,7 @@ impl<T: BeaconChainTypes> IntoExecutionPendingBlock<T> for RpcBlock<T::EthSpec> 
                     BlockError::AvailabilityCheck(e),
                 )
             })?;
+        println!("2");
         SignatureVerifiedBlock::check_slashable(maybe_available, block_root, chain)?
             .into_execution_pending_block_slashable(block_root, chain, notify_execution_layer)
     }
@@ -1906,6 +1917,7 @@ fn load_parent<T: BeaconChainTypes, B: AsBlock<T::EthSpec>>(
 
     let db_read_timer = metrics::start_timer(&metrics::BLOCK_PROCESSING_DB_READ);
 
+    println!("aa");
     let result = {
         // Load the block's parent block from the database, returning invalid if that block is not
         // found.
@@ -1914,10 +1926,12 @@ fn load_parent<T: BeaconChainTypes, B: AsBlock<T::EthSpec>>(
         // exist in fork choice but not in the database yet. In such a case we simply
         // indicate that we don't yet know the parent.
         let root = block.parent_root();
+        println!("parent root");
         let parent_block = chain
             .get_blinded_block(&block.parent_root())
             .map_err(BlockError::BeaconChainError)?
             .ok_or_else(|| {
+                println!("ERROR IS HERE");
                 // Return a `MissingBeaconBlock` error instead of a `ParentUnknown` error since
                 // we've already checked fork choice for this block.
                 //
@@ -1925,6 +1939,8 @@ fn load_parent<T: BeaconChainTypes, B: AsBlock<T::EthSpec>>(
                 // database.
                 BlockError::from(BeaconChainError::MissingBeaconBlock(block.parent_root()))
             })?;
+
+            println!("bb");
 
         // Load the parent block's state from the database, returning an error if it is not found.
         // It is an error because if we know the parent block we should also know the parent state.

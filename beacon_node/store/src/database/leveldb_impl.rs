@@ -80,6 +80,7 @@ impl<E: EthSpec> LevelDB<E> {
 
     /// Store some `value` in `column`, indexed with `key`.
     pub fn put_bytes(&self, col: &str, key: &[u8], val: &[u8]) -> Result<(), Error> {
+        println!("leveldb put_bytes");
         self.put_bytes_with_options(col, key, val, self.write_options())
     }
 

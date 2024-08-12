@@ -238,9 +238,9 @@ impl<E: EthSpec> HotColdDB<E, BeaconNodeBackend<E>, BeaconNodeBackend<E>> {
             anchor_info: RwLock::new(None),
             blob_info: RwLock::new(BlobInfo::default()),
             data_column_info: RwLock::new(DataColumnInfo::default()),
-            blobs_db: BeaconNodeBackend::open(&config, blobs_db_path)?,
-            cold_db: BeaconNodeBackend::open(&config, cold_path)?,
-            hot_db: BeaconNodeBackend::open(&config, hot_path)?,
+            blobs_db: BeaconNodeBackend::open(config.backend, blobs_db_path)?,
+            cold_db: BeaconNodeBackend::open(config.backend, cold_path)?,
+            hot_db: BeaconNodeBackend::open(config.backend, hot_path)?,
             block_cache: Mutex::new(BlockCache::new(config.block_cache_size)),
             state_cache: Mutex::new(StateCache::new(config.state_cache_size)),
             historic_state_cache: Mutex::new(LruCache::new(config.historic_state_cache_size)),
@@ -583,6 +583,7 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> HotColdDB<E, Hot, Cold> 
         block_root: &Hash256,
         decoder: impl FnOnce(&[u8]) -> Result<SignedBeaconBlock<E, Payload>, ssz::DecodeError>,
     ) -> Result<Option<SignedBeaconBlock<E, Payload>>, Error> {
+        println!("get_block_with");
         self.hot_db
             .get_bytes(DBColumn::BeaconBlock.into(), block_root.as_bytes())?
             .map(|block_bytes| decoder(&block_bytes))
@@ -1695,7 +1696,7 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> HotColdDB<E, Hot, Cold> 
     /// Fetch all keys in the data_column column with prefix `block_root`
     pub fn get_data_column_keys(&self, block_root: Hash256) -> Result<Vec<ColumnIndex>, Error> {
         self.blobs_db
-            .iter_raw_keys(DBColumn::BeaconDataColumn, block_root.as_bytes())
+            .iter_raw_keys(DBColumn::BeaconDataColumn, block_root.as_bytes())?
             .map(|key| key.and_then(|key| parse_data_column_key(key).map(|key| key.1)))
             .collect()
     }
@@ -2716,7 +2717,7 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> HotColdDB<E, Hot, Cold> 
         ];
 
         for column in columns {
-            for res in self.cold_db.iter_column_keys::<Vec<u8>>(column) {
+            for res in self.cold_db.iter_column_keys::<Vec<u8>>(column)? {
                 let key = res?;
                 cold_ops.push(KeyValueStoreOp::DeleteKey(
                     column.as_str().to_owned(),

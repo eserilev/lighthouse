@@ -425,7 +425,6 @@ impl ForkChoiceTest {
     {
         let head = self.harness.chain.head_snapshot();
         let current_slot = self.harness.chain.slot().expect("should get slot");
-
         let mut attestation = self
             .harness
             .chain
@@ -907,10 +906,13 @@ async fn invalid_attestation_past_epoch() {
 /// assert target.epoch == compute_epoch_at_slot(attestation.data.slot)
 #[tokio::test]
 async fn invalid_attestation_target_epoch() {
-    ForkChoiceTest::new()
+
+    let x = ForkChoiceTest::new()
         .apply_blocks_without_new_attestations(E::slots_per_epoch() as usize + 1)
-        .await
-        .apply_attestation_to_chain(
+        .await;
+
+    println!("hmmm,...");
+        x.apply_attestation_to_chain(
             MutationDelay::NoDelay,
             |attestation, _| {
                 attestation.data_mut().slot = Slot::new(1);

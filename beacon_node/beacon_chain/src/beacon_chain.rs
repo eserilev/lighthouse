@@ -3132,11 +3132,14 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         // A small closure to group the verification and import errors.
         let chain = self.clone();
         let import_block = async move {
+
+            println!("DO I MAKE IT HERE");
             let execution_pending = unverified_block.into_execution_pending_block(
                 block_root,
                 &chain,
                 notify_execution_layer,
             )?;
+            println!("BUT NOT HERE");
             publish_fn()?;
 
             // Record the time it took to complete consensus verification.
@@ -3157,13 +3160,16 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
 
             match executed_block {
                 ExecutedBlock::Available(block) => {
+                    println!("1");
                     self.import_available_block(Box::new(block)).await
                 }
                 ExecutedBlock::AvailabilityPending(block) => {
+                    println!("2");
                     self.check_block_availability_and_import(block).await
                 }
             }
         };
+
 
         // Verify and import the block.
         match import_block.await {
@@ -3235,6 +3241,8 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             import_data,
             payload_verification_handle,
         } = execution_pending_block;
+
+        println!("into executed block");
 
         let payload_verification_outcome = payload_verification_handle
             .await

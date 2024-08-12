@@ -3,7 +3,7 @@ use crate::database::leveldb_impl;
 #[cfg(feature = "redb")]
 use crate::database::redb_impl;
 use crate::{config::DatabaseBackend, KeyValueStoreOp, StoreConfig};
-use crate::{ColumnIter, ColumnKeyIter, DBColumn, Error, ItemStore, Key, KeyValueStore};
+use crate::{ColumnIter, ColumnKeyIter, DBColumn, Error, ItemStore, Key, KeyValueStore, RawKeyIter};
 use std::path::Path;
 use types::{EthSpec, Hash256};
 
@@ -128,7 +128,7 @@ impl<E: EthSpec> KeyValueStore<E> for BeaconNodeBackend<E> {
         }
     }
 
-    fn iter_column_keys<K: Key>(&self, _column: DBColumn) -> ColumnKeyIter<K> {
+    fn iter_column_keys<K: Key>(&self, _column: DBColumn) -> Result<ColumnKeyIter<K>, Error> {
         match self {
             #[cfg(feature = "leveldb")]
             BeaconNodeBackend::LevelDb(txn) => {
@@ -150,18 +150,32 @@ impl<E: EthSpec> KeyValueStore<E> for BeaconNodeBackend<E> {
         }
     }
     
-    fn compact_column(&self, column: DBColumn) -> Result<(), crate::Error> {
-        todo!()
+    fn compact_column(&self, column: DBColumn) -> Result<(), Error> {
+        match self {
+            #[cfg(feature = "leveldb")]
+            BeaconNodeBackend::LevelDb(txn) => {
+                leveldb_impl::LevelDB::compact_column(txn, column)
+            }
+            #[cfg(feature = "redb")]
+            BeaconNodeBackend::Redb(txn) => redb_impl::Redb::compact_column(txn, column),
+        }
     }
     
-    fn iter_raw_keys(&self, column: DBColumn, prefix: &[u8]) -> crate::RawKeyIter {
-        todo!()
+    fn iter_raw_keys(&self, column: DBColumn, prefix: &[u8]) -> Result<RawKeyIter, Error> {
+        match self {
+            #[cfg(feature = "leveldb")]
+            BeaconNodeBackend::LevelDb(txn) => {
+                leveldb_impl::LevelDB::iter_raw_keys(txn,column, prefix)
+            }
+            #[cfg(feature = "redb")]
+            BeaconNodeBackend::Redb(txn) => redb_impl::Redb::iter_raw_keys(txn,column, prefix),
+        }
     }
 }
 
 impl<E: EthSpec> BeaconNodeBackend<E> {
-    pub fn open(config: &StoreConfig, path: &Path) -> Result<Self, Error> {
-        match config.backend {
+    pub fn open(db_backend: DatabaseBackend, path: &Path) -> Result<Self, Error> {
+        match db_backend {
             #[cfg(feature = "leveldb")]
             DatabaseBackend::LevelDb => {
                 leveldb_impl::LevelDB::open(path).map(BeaconNodeBackend::LevelDb)

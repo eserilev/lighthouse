@@ -2,6 +2,7 @@ pub use clap::{Arg, ArgAction, Args, Command, FromArgMatches, Parser};
 use clap_utils::get_color_style;
 use clap_utils::FLAG_HEADER;
 use serde::{Deserialize, Serialize};
+use store::config::DatabaseBackend;
 use std::path::PathBuf;
 
 use crate::InspectTarget;
@@ -155,6 +156,14 @@ pub struct Inspect {
         display_order = 0
     )]
     pub output_dir: Option<PathBuf>,
+
+    #[clap(
+        long,
+        value_name="DATABASE",
+        help="Set the database backend to be used by the beacon node.",
+        display_order = 0
+    )]
+    pub database_backend: DatabaseBackend,
 }
 
 #[derive(Parser, Clone, Deserialize, Serialize, Debug)]
