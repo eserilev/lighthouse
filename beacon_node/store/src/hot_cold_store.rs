@@ -1048,6 +1048,19 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> HotColdDB<E, Hot, Cold> 
         Ok(key_value_batch)
     }
 
+    pub fn do_atomically_for_garbage_collection(
+        &self,
+        col: &str,
+        batch: Vec<StoreOp<E>>,
+    ) -> Result<(), Error> {
+        match self.convert_to_kv_batch(batch) {
+            Ok(kv_store_ops) => self.hot_db.do_atomically_for_col(col, kv_store_ops)?,
+            Err(e) => return Err(e),
+        };
+
+        Ok(())
+    }
+
     pub fn do_atomically_with_block_and_blobs_cache(
         &self,
         batch: Vec<StoreOp<E>>,

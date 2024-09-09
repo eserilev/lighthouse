@@ -72,6 +72,9 @@ pub trait KeyValueStore<E: EthSpec>: Sync + Send + Sized + 'static {
     /// Removes `key` from `column`.
     fn key_delete(&self, column: &str, key: &[u8]) -> Result<(), Error>;
 
+    /// Execute either all of the operations in `batch` for a given `col` or none at all, returning an error.
+    fn do_atomically_for_col(&self, col: &str, batch: Vec<KeyValueStoreOp>) -> Result<(), Error>;
+
     /// Execute either all of the operations in `batch` or none at all, returning an error.
     fn do_atomically(&self, batch: Vec<KeyValueStoreOp>) -> Result<(), Error>;
 

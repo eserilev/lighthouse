@@ -63,6 +63,36 @@ impl<E: EthSpec> KeyValueStore<E> for MemoryStore<E> {
         Ok(())
     }
 
+    // TODO(modularize-backend) do atomcally for col impl
+    fn do_atomically_for_col(&self, col: &str, batch: Vec<KeyValueStoreOp>) -> Result<(), Error> {
+        for op in batch {
+            match op {
+                KeyValueStoreOp::PutKeyValue(column, key, value) => {
+                    if col != column {
+                        // TODO(modularize-backend)
+                        // raise error
+                        todo!()
+                    }
+                    let column_key = get_key_for_col(&column, &key);
+                    self.db
+                        .write()
+                        .insert(BytesKey::from_vec(column_key), value);
+                }
+
+                KeyValueStoreOp::DeleteKey(column, key) => {
+                    if col != column {
+                        // TODO(modularize-backend)
+                        // raise error
+                        todo!()
+                    }
+                    let column_key = get_key_for_col(&column, &key);
+                    self.db.write().remove(&BytesKey::from_vec(column_key));
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn do_atomically(&self, batch: Vec<KeyValueStoreOp>) -> Result<(), Error> {
         for op in batch {
             match op {

@@ -145,6 +145,46 @@ impl<E: EthSpec> LevelDB<E> {
             .map_err(Into::into)
     }
 
+    pub fn do_atomically_for_col(
+        &self,
+        col: &str,
+        ops_batch: Vec<KeyValueStoreOp>,
+    ) -> Result<(), Error> {
+        let mut leveldb_batch = Writebatch::new();
+        for op in ops_batch {
+            match op {
+                KeyValueStoreOp::PutKeyValue(column, key, value) => {
+                    if col != column {
+                        // TODO return error
+                        todo!()
+                    }
+                    let _timer = metrics::start_timer(&metrics::DISK_DB_WRITE_TIMES);
+                    metrics::inc_counter_vec_by(
+                        &metrics::DISK_DB_WRITE_BYTES,
+                        &[&column],
+                        value.len() as u64,
+                    );
+                    metrics::inc_counter_vec(&metrics::DISK_DB_WRITE_COUNT, &[&column]);
+                    let column_key = get_key_for_col(&column, &key);
+                    leveldb_batch.put(BytesKey::from_vec(column_key), &value);
+                }
+
+                KeyValueStoreOp::DeleteKey(column, key) => {
+                    if col != column {
+                        // TODO return error
+                        todo!()
+                    }
+                    let _timer = metrics::start_timer(&metrics::DISK_DB_DELETE_TIMES);
+                    metrics::inc_counter_vec(&metrics::DISK_DB_DELETE_COUNT, &[&column]);
+                    let column_key = get_key_for_col(&column, &key);
+                    leveldb_batch.delete(BytesKey::from_vec(column_key));
+                }
+            }
+        }
+        self.db.write(self.write_options().into(), &leveldb_batch)?;
+        Ok(())
+    }
+
     pub fn do_atomically(&self, ops_batch: Vec<KeyValueStoreOp>) -> Result<(), Error> {
         let mut leveldb_batch = Writebatch::new();
         for op in ops_batch {
