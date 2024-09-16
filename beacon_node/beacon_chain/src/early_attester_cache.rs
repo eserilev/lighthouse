@@ -3,6 +3,7 @@ use crate::{
     attester_cache::{CommitteeLengths, Error},
     metrics,
 };
+use attestation::SingleAttestation;
 use parking_lot::RwLock;
 use proto_array::Block as ProtoBlock;
 use std::sync::Arc;
@@ -98,7 +99,7 @@ impl<E: EthSpec> EarlyAttesterCache<E> {
         request_slot: Slot,
         request_index: CommitteeIndex,
         spec: &ChainSpec,
-    ) -> Result<Option<Attestation<E>>, Error> {
+    ) -> Result<Option<SingleAttestation>, Error> {
         let lock = self.item.read();
         let Some(item) = lock.as_ref() else {
             return Ok(None);
@@ -120,18 +121,12 @@ impl<E: EthSpec> EarlyAttesterCache<E> {
             return Ok(None);
         }
 
-        let committee_len =
-            item.committee_lengths
-                .get_committee_length::<E>(request_slot, request_index, spec)?;
-
-        let attestation = Attestation::empty_for_signing(
+        let attestation = SingleAttestation::empty_for_signing(
             request_index,
-            committee_len,
             request_slot,
             item.beacon_block_root,
             item.source,
             item.target,
-            spec,
         )
         .map_err(Error::AttestationError)?;
 

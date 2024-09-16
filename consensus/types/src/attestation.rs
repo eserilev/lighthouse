@@ -527,6 +527,59 @@ impl<E: EthSpec> ForkVersionDeserialize for Vec<Attestation<E>> {
     }
 }
 
+#[derive(
+    Debug,
+    Clone,
+    Serialize,
+    TreeHash,
+    Encode,
+    Derivative,
+    Deserialize,
+    arbitrary::Arbitrary,
+    PartialEq,
+)]
+pub struct SingleAttestation {
+    pub committee_index: u64,
+    pub attester_index: usize,
+    pub data: AttestationData,
+    pub signature: Signature,
+}
+
+impl SingleAttestation{
+    /// Produces a `SingleAttestation` with empty signature and empty attester index.
+    pub fn empty_for_signing(
+        committee_index: u64,
+        slot: Slot,
+        beacon_block_root: Hash256,
+        source: Checkpoint,
+        target: Checkpoint,
+    ) -> Result<Self, Error> {
+        let single_attestation = Self {
+            committee_index,
+            attester_index: 0,
+            data: AttestationData {
+                slot,
+                index: committee_index,
+                beacon_block_root,
+                source,
+                target,
+            },
+            signature: Signature::infinity().unwrap()
+        };
+
+        Ok(single_attestation)
+    }
+
+    pub fn add_signature(
+        &mut self,
+        signature: &Signature,
+        committee_position: usize,
+    ) {
+        self.attester_index = committee_position;
+        self.signature = signature.clone();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

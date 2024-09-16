@@ -3296,7 +3296,7 @@ pub fn serve<T: BeaconChainTypes>(
 
                     chain
                         .produce_unaggregated_attestation(query.slot, query.committee_index)
-                        .map(|attestation| attestation.data().clone())
+                        .map(|attestation| attestation.data.clone())
                         .map(api_types::GenericResponse::from)
                         .map_err(warp_utils::reject::beacon_chain_error)
                 })

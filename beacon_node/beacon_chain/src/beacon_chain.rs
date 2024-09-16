@@ -73,6 +73,7 @@ use crate::{
     kzg_utils, metrics, AvailabilityPendingExecutedBlock, BeaconChainError, BeaconForkChoiceStore,
     BeaconSnapshot, CachedHead,
 };
+use attestation::SingleAttestation;
 use eth2::types::{EventKind, SseBlobSidecar, SseBlock, SseExtendedPayloadAttributes};
 use execution_layer::{
     BlockProposalContents, BlockProposalContentsType, BuilderParams, ChainHealth, ExecutionLayer,
@@ -1803,7 +1804,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         &self,
         request_slot: Slot,
         request_index: CommitteeIndex,
-    ) -> Result<Attestation<T::EthSpec>, Error> {
+    ) -> Result<SingleAttestation, Error> {
         let _total_timer = metrics::start_timer(&metrics::ATTESTATION_PRODUCTION_SECONDS);
 
         // The early attester cache will return `Some(attestation)` in the scenario where there is a
@@ -1957,7 +1958,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
 
         let cache_timer =
             metrics::start_timer(&metrics::ATTESTATION_PRODUCTION_CACHE_INTERACTION_SECONDS);
-        let (justified_checkpoint, committee_len) =
+        let (justified_checkpoint, _) =
             if let Some((justified_checkpoint, committee_len)) = current_epoch_attesting_info {
                 // The head state is in the same epoch as the attestation, so there is no more
                 // required information.
@@ -1994,14 +1995,12 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             };
         drop(cache_timer);
 
-        Ok(Attestation::<T::EthSpec>::empty_for_signing(
+        Ok(SingleAttestation::empty_for_signing(
             request_index,
-            committee_len,
             request_slot,
             beacon_block_root,
             justified_checkpoint,
             target,
-            &self.spec,
         )?)
     }
 
@@ -2019,6 +2018,32 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         I: Iterator<Item = (&'a Attestation<T::EthSpec>, Option<SubnetId>)> + ExactSizeIterator,
     {
         batch_verify_unaggregated_attestations(attestations, self)
+    }
+
+    /// Accepts some `SingleAttestation` from the network and attempts to verify it, returning `Ok(_)` if
+    /// it is valid to be (re)broadcast on the gossip network.
+    pub fn verify_single_attestation_for_gossip<'a>(
+        &self,
+        unaggregated_attestation: &'a Attestation<T::EthSpec>,
+        subnet_id: Option<SubnetId>,
+    ) -> Result<VerifiedUnaggregatedAttestation<'a, T>, AttestationError> {
+        metrics::inc_counter(&metrics::UNAGGREGATED_ATTESTATION_PROCESSING_REQUESTS);
+        let _timer =
+            metrics::start_timer(&metrics::UNAGGREGATED_ATTESTATION_GOSSIP_VERIFICATION_TIMES);
+
+        VerifiedUnaggregatedAttestation::verify(unaggregated_attestation, subnet_id, self).inspect(
+            |v| {
+                // This method is called for API and gossip attestations, so this covers all unaggregated attestation events
+                if let Some(event_handler) = self.event_handler.as_ref() {
+                    if event_handler.has_attestation_subscribers() {
+                        event_handler.register(EventKind::Attestation(Box::new(
+                            v.attestation().clone_as_attestation(),
+                        )));
+                    }
+                }
+                metrics::inc_counter(&metrics::UNAGGREGATED_ATTESTATION_PROCESSING_SUCCESSES);
+            },
+        )
     }
 
     /// Accepts some `Attestation` from the network and attempts to verify it, returning `Ok(_)` if

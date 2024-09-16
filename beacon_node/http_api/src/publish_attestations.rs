@@ -50,7 +50,7 @@ use tokio::sync::{
     mpsc::{Sender, UnboundedSender},
     oneshot,
 };
-use types::Attestation;
+use types::{Attestation, SingleAttestation};
 
 // Error variants are only used in `Debug` and considered `dead_code` by the compiler.
 #[derive(Debug)]
@@ -69,6 +69,19 @@ enum PublishAttestationResult {
     AlreadyKnown,
     Reprocessing(oneshot::Receiver<Result<(), Error>>),
     Failure(Error),
+}
+
+fn verify_and_publish_attestation_v2(
+    chain: &Arc<BeaconChain<T>>,
+    attestation: &SingleAttestation,
+    seen_timestamp: Duration,
+    network_tx: &UnboundedSender<NetworkMessage<T::EthSpec>>,
+    log: &Logger,
+) -> Result<(), Error> {
+    let attestation = chain
+        .verify_unaggregated_attestation_for_gossip(attestation, None)
+        .map_err(Error::Validation)?;
+    Ok(())
 }
 
 fn verify_and_publish_attestation<T: BeaconChainTypes>(
@@ -127,6 +140,24 @@ fn verify_and_publish_attestation<T: BeaconChainTypes>(
     } else {
         Ok(())
     }
+}
+
+pub async fn publish_attestations_v2<T: BeaconChainTypes>(
+    task_spawner: TaskSpawner<T::EthSpec>,
+    chain: Arc<BeaconChain<T>>,
+    attestations: Vec<SingleAttestation>,
+    network_tx: UnboundedSender<NetworkMessage<T::EthSpec>>,
+    reprocess_send: Option<Sender<ReprocessQueueMessage>>,
+    log: Logger,
+) -> Result<(), warp::Rejection> {
+    // Collect metadata about attestations which we'll use to report failures. We need to
+    // move the `attestations` vec into the blocking task, so this small overhead is unavoidable.
+    let attestation_metadata = attestations
+        .iter()
+        .map(|att| (att.data.slot, att.committee_index))
+        .collect::<Vec<_>>();
+
+    Ok(())
 }
 
 pub async fn publish_attestations<T: BeaconChainTypes>(

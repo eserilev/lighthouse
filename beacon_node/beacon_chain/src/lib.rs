@@ -51,6 +51,7 @@ mod persisted_beacon_chain;
 mod persisted_fork_choice;
 mod pre_finalization_cache;
 pub mod proposer_prep_service;
+pub mod single_attestation_verification;
 pub mod schema_change;
 pub mod shuffling_cache;
 pub mod state_advance_timer;

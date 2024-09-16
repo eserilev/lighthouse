@@ -17,7 +17,7 @@ use std::path::Path;
 use std::sync::Arc;
 use task_executor::TaskExecutor;
 use types::{
-    attestation::Error as AttestationError, graffiti::GraffitiString, AbstractExecPayload, Address,
+    attestation::{Error as AttestationError, SingleAttestation}, graffiti::GraffitiString, AbstractExecPayload, Address,
     AggregateAndProof, Attestation, BeaconBlock, BlindedPayload, ChainSpec, ContributionAndProof,
     Domain, Epoch, EthSpec, Fork, ForkName, Graffiti, Hash256, PublicKeyBytes, SelectionProof,
     Signature, SignedAggregateAndProof, SignedBeaconBlock, SignedContributionAndProof, SignedRoot,
@@ -637,13 +637,13 @@ impl<T: SlotClock + 'static, E: EthSpec> ValidatorStore<T, E> {
         &self,
         validator_pubkey: PublicKeyBytes,
         validator_committee_position: usize,
-        attestation: &mut Attestation<E>,
+        attestation: &mut SingleAttestation,
         current_epoch: Epoch,
     ) -> Result<(), Error> {
         // Make sure the target epoch is not higher than the current epoch to avoid potential attacks.
-        if attestation.data().target.epoch > current_epoch {
+        if attestation.data.target.epoch > current_epoch {
             return Err(Error::GreaterThanCurrentEpoch {
-                epoch: attestation.data().target.epoch,
+                epoch: attestation.data.target.epoch,
                 current_epoch,
             });
         }
@@ -652,7 +652,7 @@ impl<T: SlotClock + 'static, E: EthSpec> ValidatorStore<T, E> {
         let signing_method = self.doppelganger_checked_signing_method(validator_pubkey)?;
 
         // Checking for slashing conditions.
-        let signing_epoch = attestation.data().target.epoch;
+        let signing_epoch = attestation.data.target.epoch;
         let signing_context = self.signing_context(Domain::BeaconAttester, signing_epoch);
         let domain_hash = signing_context.domain_hash(&self.spec);
         let slashing_status = if signing_method
@@ -660,7 +660,7 @@ impl<T: SlotClock + 'static, E: EthSpec> ValidatorStore<T, E> {
         {
             self.slashing_protection.check_and_insert_attestation(
                 &validator_pubkey,
-                attestation.data(),
+                &attestation.data,
                 domain_hash,
             )
         } else {
@@ -672,15 +672,14 @@ impl<T: SlotClock + 'static, E: EthSpec> ValidatorStore<T, E> {
             Ok(Safe::Valid) => {
                 let signature = signing_method
                     .get_signature::<E, BlindedPayload<E>>(
-                        SignableMessage::AttestationData(attestation.data()),
+                        SignableMessage::AttestationData(&attestation.data),
                         signing_context,
                         &self.spec,
                         &self.task_executor,
                     )
                     .await?;
                 attestation
-                    .add_signature(&signature, validator_committee_position)
-                    .map_err(Error::UnableToSignAttestation)?;
+                    .add_signature(&signature, validator_committee_position);
 
                 metrics::inc_counter_vec(&metrics::SIGNED_ATTESTATIONS_TOTAL, &[metrics::SUCCESS]);
 
@@ -714,7 +713,7 @@ impl<T: SlotClock + 'static, E: EthSpec> ValidatorStore<T, E> {
                 crit!(
                     self.log,
                     "Not signing slashable attestation";
-                    "attestation" => format!("{:?}", attestation.data()),
+                    "attestation" => format!("{:?}", attestation.data),
                     "error" => format!("{:?}", e)
                 );
                 metrics::inc_counter_vec(

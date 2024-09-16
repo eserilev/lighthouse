@@ -16,6 +16,7 @@ pub mod types;
 
 use self::mixin::{RequestAccept, ResponseOptional};
 use self::types::{Error as ResponseError, *};
+use attestation::SingleAttestation;
 use futures::Stream;
 use futures_util::StreamExt;
 use lighthouse_network::PeerId;
@@ -1309,9 +1310,9 @@ impl BeaconNodeHttpClient {
     }
 
     /// `POST v2/beacon/pool/attestations`
-    pub async fn post_beacon_pool_attestations_v2<E: EthSpec>(
+    pub async fn post_beacon_pool_attestations_v2(
         &self,
-        attestations: &[Attestation<E>],
+        attestations: &[SingleAttestation],
         fork_name: ForkName,
     ) -> Result<(), Error> {
         let mut path = self.eth_path(V2)?;

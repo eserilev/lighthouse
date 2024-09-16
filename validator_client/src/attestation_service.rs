@@ -14,7 +14,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use tokio::time::{sleep, sleep_until, Duration, Instant};
 use tree_hash::TreeHash;
-use types::{Attestation, AttestationData, ChainSpec, CommitteeIndex, EthSpec, Slot};
+use types::{Attestation, AttestationData, ChainSpec, CommitteeIndex, EthSpec, SingleAttestation, Slot};
 
 /// Builds an `AttestationService`.
 pub struct AttestationServiceBuilder<T: SlotClock + 'static, E: EthSpec> {
@@ -377,14 +377,12 @@ impl<T: SlotClock + 'static, E: EthSpec> AttestationService<T, E> {
                 return None;
             }
 
-            let mut attestation = match Attestation::<E>::empty_for_signing(
+            let mut attestation = match SingleAttestation::empty_for_signing(
                 duty.committee_index,
-                duty.committee_length as usize,
                 attestation_data.slot,
                 attestation_data.beacon_block_root,
                 attestation_data.source,
                 attestation_data.target,
-                &self.context.eth2_config.spec,
             ) {
                 Ok(attestation) => attestation,
                 Err(err) => {
@@ -472,8 +470,10 @@ impl<T: SlotClock + 'static, E: EthSpec> AttestationService<T, E> {
                             .post_beacon_pool_attestations_v2(attestations, fork_name)
                             .await
                     } else {
+                        // TODO(Electra) convert vec<SingleAttestation> to vec<Attestation>?
+                        let attestations: Vec<Attestation<E>> = vec![];
                         beacon_node
-                            .post_beacon_pool_attestations_v1(attestations)
+                            .post_beacon_pool_attestations_v1(&attestations)
                             .await
                     }
                 },
