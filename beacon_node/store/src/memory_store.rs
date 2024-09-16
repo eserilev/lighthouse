@@ -1,6 +1,6 @@
 use crate::{
-    get_key_for_col, hot_cold_store::BytesKey, ColumnIter, ColumnKeyIter, DBColumn, Error,
-    ItemStore, Key, KeyValueStore, KeyValueStoreOp, errors::Error as DBError
+    errors::Error as DBError, get_key_for_col, hot_cold_store::BytesKey, ColumnIter, ColumnKeyIter,
+    DBColumn, Error, ItemStore, Key, KeyValueStore, KeyValueStoreOp,
 };
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use std::collections::BTreeMap;
