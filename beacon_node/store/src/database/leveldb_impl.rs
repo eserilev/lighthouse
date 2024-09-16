@@ -1,7 +1,8 @@
 use crate::hot_cold_store::{BytesKey, HotColdDBError};
 use crate::Key;
 use crate::{
-    get_key_for_col, metrics, ColumnIter, ColumnKeyIter, DBColumn, Error, KeyValueStoreOp,
+    errors::Error as DBError, get_key_for_col, metrics, ColumnIter, ColumnKeyIter, DBColumn, Error,
+    KeyValueStoreOp,
 };
 use leveldb::{
     compaction::Compaction,
@@ -155,8 +156,12 @@ impl<E: EthSpec> LevelDB<E> {
             match op {
                 KeyValueStoreOp::PutKeyValue(column, key, value) => {
                     if col != column {
-                        // TODO return error
-                        todo!()
+                        return Err(DBError::DBError {
+                            message: format!(
+                                "Attempted to mutate unexpected column: {}. Expected: {}, ",
+                                column, col
+                            ),
+                        });
                     }
                     let _timer = metrics::start_timer(&metrics::DISK_DB_WRITE_TIMES);
                     metrics::inc_counter_vec_by(
@@ -171,8 +176,12 @@ impl<E: EthSpec> LevelDB<E> {
 
                 KeyValueStoreOp::DeleteKey(column, key) => {
                     if col != column {
-                        // TODO return error
-                        todo!()
+                        return Err(DBError::DBError {
+                            message: format!(
+                                "Attempted to mutate unexpected column: {}. Expected: {}, ",
+                                column, col
+                            ),
+                        });
                     }
                     let _timer = metrics::start_timer(&metrics::DISK_DB_DELETE_TIMES);
                     metrics::inc_counter_vec(&metrics::DISK_DB_DELETE_COUNT, &[&column]);

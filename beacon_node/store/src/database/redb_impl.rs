@@ -1,5 +1,5 @@
+use crate::{errors::Error as DBError, DBColumn, Error, KeyValueStoreOp};
 use crate::{metrics, ColumnIter, ColumnKeyIter, Key};
-use crate::{DBColumn, Error, KeyValueStoreOp};
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use redb::TableDefinition;
 use std::{borrow::BorrowMut, marker::PhantomData, path::Path};
@@ -178,8 +178,12 @@ impl<E: EthSpec> Redb<E> {
             match op {
                 KeyValueStoreOp::PutKeyValue(column, key, value) => {
                     if col != column {
-                        // TODO return error
-                        todo!()
+                        return Err(DBError::DBError {
+                            message: format!(
+                                "Attempted to mutate unexpected column: {}. Expected: {}, ",
+                                column, col
+                            ),
+                        });
                     }
                     let _timer = metrics::start_timer(&metrics::DISK_DB_WRITE_TIMES);
                     metrics::inc_counter_vec_by(
@@ -192,8 +196,12 @@ impl<E: EthSpec> Redb<E> {
                 }
                 KeyValueStoreOp::DeleteKey(column, key) => {
                     if col != column {
-                        // TODO return error
-                        todo!()
+                        return Err(DBError::DBError {
+                            message: format!(
+                                "Attempted to mutate unexpected column: {}. Expected: {}, ",
+                                column, col
+                            ),
+                        });
                     }
                     metrics::inc_counter_vec(&metrics::DISK_DB_DELETE_COUNT, &[&column]);
                     let _timer = metrics::start_timer(&metrics::DISK_DB_DELETE_TIMES);
