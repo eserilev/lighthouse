@@ -1,6 +1,6 @@
 use crate::{
     get_key_for_col, hot_cold_store::BytesKey, ColumnIter, ColumnKeyIter, DBColumn, Error,
-    ItemStore, Key, KeyValueStore, KeyValueStoreOp,
+    ItemStore, Key, KeyValueStore, KeyValueStoreOp, errors::Error as DBError
 };
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use std::collections::BTreeMap;
@@ -69,9 +69,12 @@ impl<E: EthSpec> KeyValueStore<E> for MemoryStore<E> {
             match op {
                 KeyValueStoreOp::PutKeyValue(column, key, value) => {
                     if col != column {
-                        // TODO(modularize-backend)
-                        // raise error
-                        todo!()
+                        return Err(DBError::DBError {
+                            message: format!(
+                                "Attempted to mutate unexpected column: {}. Expected: {}, ",
+                                column, col
+                            ),
+                        });
                     }
                     let column_key = get_key_for_col(&column, &key);
                     self.db
@@ -81,9 +84,12 @@ impl<E: EthSpec> KeyValueStore<E> for MemoryStore<E> {
 
                 KeyValueStoreOp::DeleteKey(column, key) => {
                     if col != column {
-                        // TODO(modularize-backend)
-                        // raise error
-                        todo!()
+                        return Err(DBError::DBError {
+                            message: format!(
+                                "Attempted to mutate unexpected column: {}. Expected: {}, ",
+                                column, col
+                            ),
+                        });
                     }
                     let column_key = get_key_for_col(&column, &key);
                     self.db.write().remove(&BytesKey::from_vec(column_key));
