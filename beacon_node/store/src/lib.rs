@@ -250,9 +250,12 @@ pub enum StoreOp<'a, E: EthSpec> {
     DeleteBlock(Hash256),
     DeleteBlobs(Hash256),
     DeleteDataColumns(Hash256, Vec<ColumnIndex>),
-    DeleteState(Hash256, Option<Slot>),
+    // Delete Summary and delete state if state is on an epoch boundary
+    DeleteStateAndSummary(Hash256, Option<Slot>),
+    DeleteState(Hash256),
     DeleteExecutionPayload(Hash256),
     DeleteSyncCommitteeBranch(Hash256),
+    DeleteSummary(Hash256),
     KeyValueOp(KeyValueStoreOp),
 }
 

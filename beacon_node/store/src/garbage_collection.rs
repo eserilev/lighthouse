@@ -18,30 +18,32 @@ where
     /// Delete the temporary states that were leftover by failed block imports.
 
     pub fn delete_temp_states(&self) -> Result<(), Error> {
-        let delete_state_ops =
-            self.iter_temporary_state_roots()?
-                .try_fold(vec![], |mut ops, state_root| {
-                    let state_root = state_root?;
-                    ops.push(StoreOp::DeleteState(state_root, None));
-                    Result::<_, Error>::Ok(ops)
-                })?;
-        let delete_temp_state_ops =
-            self.iter_temporary_state_roots()?
-                .try_fold(vec![], |mut ops, state_root| {
-                    let state_root = state_root?;
-                    ops.push(StoreOp::DeleteStateTemporaryFlag(state_root));
-                    Result::<_, Error>::Ok(ops)
-                })?;
-        if !delete_state_ops.is_empty() || !delete_temp_state_ops.is_empty() {
+        let mut delete_state_ops = vec![];
+        let mut delete_summary_ops = vec![];
+        let mut delete_temporary_state_ops = vec![];
+        let mut delete_states = false;
+        self.iter_temporary_state_roots()?.for_each(
+            |state_root| {
+                if let Ok(state_root) = state_root {
+                    delete_state_ops.push(StoreOp::DeleteState(state_root));
+                    delete_summary_ops.push(StoreOp::DeleteSummary(state_root));
+                    delete_temporary_state_ops.push(StoreOp::DeleteStateTemporaryFlag(state_root));
+                    delete_states = true
+                }
+            }
+        );
+        if delete_states {
             debug!(
                 self.log,
                 "Garbage collecting {} temporary states",
-                (delete_state_ops.len() / 2) + (delete_temp_state_ops.len() / 2)
+                delete_state_ops.len()
             );
-            let state_col: &str = DBColumn::BeaconStateSummary.into();
+            let state_col: &str = DBColumn::BeaconState.into();
+            let summary_col: &str = DBColumn::BeaconStateSummary.into();
             let temp_state_col: &str = DBColumn::BeaconStateTemporary.into();
             self.do_atomically_for_garbage_collection(state_col, delete_state_ops)?;
-            self.do_atomically_for_garbage_collection(temp_state_col, delete_temp_state_ops)?;
+            self.do_atomically_for_garbage_collection(summary_col, delete_summary_ops)?;
+            self.do_atomically_for_garbage_collection(temp_state_col, delete_temporary_state_ops)?;
         }
 
         Ok(())
