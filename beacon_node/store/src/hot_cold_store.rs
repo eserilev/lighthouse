@@ -2990,7 +2990,10 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> HotColdDB<E, Hot, Cold> 
                         "slot" => summary.slot,
                         "reason" => reason,
                     );
-                    state_delete_batch.push(StoreOp::DeleteStateAndSummary(state_root, Some(summary.slot)));
+                    state_delete_batch.push(StoreOp::DeleteStateAndSummary(
+                        state_root,
+                        Some(summary.slot),
+                    ));
                 }
             }
         }

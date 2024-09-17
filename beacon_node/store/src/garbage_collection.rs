@@ -22,16 +22,14 @@ where
         let mut delete_summary_ops = vec![];
         let mut delete_temporary_state_ops = vec![];
         let mut delete_states = false;
-        self.iter_temporary_state_roots()?.for_each(
-            |state_root| {
-                if let Ok(state_root) = state_root {
-                    delete_state_ops.push(StoreOp::DeleteState(state_root));
-                    delete_summary_ops.push(StoreOp::DeleteSummary(state_root));
-                    delete_temporary_state_ops.push(StoreOp::DeleteStateTemporaryFlag(state_root));
-                    delete_states = true
-                }
+        self.iter_temporary_state_roots()?.for_each(|state_root| {
+            if let Ok(state_root) = state_root {
+                delete_state_ops.push(StoreOp::DeleteState(state_root));
+                delete_summary_ops.push(StoreOp::DeleteSummary(state_root));
+                delete_temporary_state_ops.push(StoreOp::DeleteStateTemporaryFlag(state_root));
+                delete_states = true
             }
-        );
+        });
         if delete_states {
             debug!(
                 self.log,
