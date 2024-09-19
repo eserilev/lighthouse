@@ -170,7 +170,7 @@ impl<E: EthSpec> Redb<E> {
     ) -> Result<(), Error> {
         let open_db = self.db.read();
         let mut tx = open_db.begin_write()?;
-        tx.set_durability(self.write_options().into());
+        tx.set_durability(redb::Durability::None);
         let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(col);
         let mut table = tx.open_table(table_definition)?;
 
