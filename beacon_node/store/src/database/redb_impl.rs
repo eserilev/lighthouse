@@ -33,7 +33,9 @@ impl<E: EthSpec> Redb<E> {
         } else {
             path.to_path_buf()
         };
-        let db = redb::Database::create(path)?;
+        let db = redb::Builder::new()
+            .set_cache_size(2 * 1024 * 1024 * 1024)
+            .create(path)?;
         let transaction_mutex = Mutex::new(());
 
         for column in DBColumn::iter() {
