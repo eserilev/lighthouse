@@ -70,6 +70,9 @@ jobs:
             cache: false
       - name: Generate code coverage
         run: |
+          rustup show
+          ls /usr/local/rustup/toolchains/nightly-2024-05-21-x86_64-unknown-linux-gnu/lib
+          ldconfig -p | grep librustc_driver
           export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/rustup/toolchains/nightly-2024-05-21-x86_64-unknown-linux-gnu/lib
           cargo lockbud -k deadlock
 
