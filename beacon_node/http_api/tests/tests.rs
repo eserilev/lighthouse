@@ -1952,7 +1952,6 @@ impl ApiTester {
             .get_light_client_bootstrap(&self.chain.store, &block_root, 1u64, &self.chain.spec);
 
         assert!(expected.is_ok());
-
         assert_eq!(result.unwrap().data, expected.unwrap().unwrap().0);
 
         self
