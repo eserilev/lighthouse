@@ -66,6 +66,7 @@ jobs:
         uses: moonrepo/setup-rust@v1
         with:
             channel: nightly-2024-05-21
+            components: rust-src,rustc-dev,llvm-tools-preview,clippy
             cache: false
       - name: Generate code coverage
         run: |
