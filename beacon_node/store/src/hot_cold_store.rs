@@ -1239,6 +1239,12 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> HotColdDB<E, Hot, Cold> 
         Ok(key_value_batch)
     }
 
+    pub fn extract_if(&self, col: &str, ops: Vec<Hash256>) -> Result<(), Error> {
+        let new_ops = ops.iter().map(|v| v.as_slice()).collect();
+
+        self.hot_db.extract_if(col, new_ops)
+    }
+
     pub fn do_atomically_for_garbage_collection(
         &self,
         col: &str,

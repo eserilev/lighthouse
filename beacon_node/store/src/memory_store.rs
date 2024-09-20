@@ -3,7 +3,7 @@ use crate::{
     DBColumn, Error, ItemStore, Key, KeyValueStore, KeyValueStoreOp,
 };
 use parking_lot::{Mutex, MutexGuard, RwLock};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::marker::PhantomData;
 use types::*;
 
@@ -60,6 +60,11 @@ impl<E: EthSpec> KeyValueStore<E> for MemoryStore<E> {
     fn key_delete(&self, col: &str, key: &[u8]) -> Result<(), Error> {
         let column_key = BytesKey::from_vec(get_key_for_col(col, key));
         self.db.write().remove(&column_key);
+        Ok(())
+    }
+
+    // TODO(modularize-backend) extract if impl
+    fn extract_if(&self, _: &str, _: HashSet<&[u8]>) -> Result<(), DBError> {
         Ok(())
     }
 

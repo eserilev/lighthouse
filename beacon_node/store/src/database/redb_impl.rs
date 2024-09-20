@@ -2,6 +2,7 @@ use crate::{errors::Error as DBError, DBColumn, Error, KeyValueStoreOp};
 use crate::{metrics, ColumnIter, ColumnKeyIter, Key};
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use redb::TableDefinition;
+use std::collections::HashSet;
 use std::{borrow::BorrowMut, marker::PhantomData, path::Path};
 use strum::IntoEnumIterator;
 use types::EthSpec;
@@ -163,6 +164,20 @@ impl<E: EthSpec> Redb<E> {
         table.remove(key).map(|_| ())?;
         drop(table);
         tx.commit().map_err(Into::into)
+    }
+
+    pub fn extract_if(&self, col: &str, ops: HashSet<&[u8]>) -> Result<(), Error> {
+        let open_db = self.db.read();
+        let mut tx = open_db.begin_write()?;
+        tx.set_durability(redb::Durability::None);
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(col);
+        let mut table = tx.open_table(table_definition)?;
+
+        table.extract_if(|key, _| ops.contains(key))?;
+
+        drop(table);
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn do_atomically_for_col(

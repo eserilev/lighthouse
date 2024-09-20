@@ -121,6 +121,19 @@ impl<E: EthSpec> KeyValueStore<E> for BeaconNodeBackend<E> {
         }
     }
 
+    fn extract_if(
+        &self,
+        col: &str,
+        ops: std::collections::HashSet<&[u8]>,
+    ) -> Result<(), crate::Error> {
+        match self {
+            #[cfg(feature = "leveldb")]
+            BeaconNodeBackend::LevelDb(_) => Ok(()),
+            #[cfg(feature = "redb")]
+            BeaconNodeBackend::Redb(txn) => redb_impl::Redb::extract_if(txn, col, ops),
+        }
+    }
+
     fn begin_rw_transaction(&self) -> parking_lot::MutexGuard<()> {
         match self {
             #[cfg(feature = "leveldb")]
