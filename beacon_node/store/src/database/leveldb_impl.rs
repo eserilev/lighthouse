@@ -15,6 +15,7 @@ use leveldb::{
     options::{Options, ReadOptions},
 };
 use parking_lot::{Mutex, MutexGuard};
+use std::collections::HashSet;
 use std::marker::PhantomData;
 use std::path::Path;
 use types::{EthSpec, FixedBytesExtended, Hash256};
@@ -144,6 +145,20 @@ impl<E: EthSpec> LevelDB<E> {
         self.db
             .delete(self.write_options().into(), BytesKey::from_vec(column_key))
             .map_err(Into::into)
+    }
+
+    pub fn extract_if(
+        &self,
+        col: &str,
+        ops: HashSet<&[u8]>
+    ) -> Result<(), Error> {
+        let mut leveldb_batch = Writebatch::new();
+        for op in ops {
+            let column_key = get_key_for_col(col, op);
+            leveldb_batch.delete(BytesKey::from_vec(column_key));
+        }
+        self.db.write(self.write_options().into(), &leveldb_batch)?;
+        Ok(())
     }
 
     pub fn do_atomically_for_col(

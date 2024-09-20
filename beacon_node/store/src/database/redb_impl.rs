@@ -173,7 +173,9 @@ impl<E: EthSpec> Redb<E> {
         let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(col);
         let mut table = tx.open_table(table_definition)?;
 
-        table.extract_if(|key, _| ops.contains(key))?;
+        println!("YOOO");
+
+        table.retain(|key, _| !ops.contains(key))?;
 
         drop(table);
         tx.commit()?;
