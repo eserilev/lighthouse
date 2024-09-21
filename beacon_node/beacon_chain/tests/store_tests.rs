@@ -26,6 +26,7 @@ use std::convert::TryInto;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use store::chunked_vector::Chunk;
+use store::config::DatabaseBackend;
 use store::database::interface::BeaconNodeBackend;
 use store::metadata::{SchemaVersion, CURRENT_SCHEMA_VERSION, STATE_UPPER_LIMIT_NO_RETAIN};
 use store::{
@@ -36,7 +37,6 @@ use store::{
 use tempfile::{tempdir, TempDir};
 use tokio::time::sleep;
 use types::test_utils::{SeedableRng, XorShiftRng};
-use store::config::DatabaseBackend;
 use types::*;
 
 // Should ideally be divisible by 3.
@@ -51,7 +51,6 @@ type E = MinimalEthSpec;
 type TestHarness = BeaconChainHarness<DiskHarnessType<E>>;
 
 fn get_store(db_path: &TempDir) -> Arc<HotColdDB<E, BeaconNodeBackend<E>, BeaconNodeBackend<E>>> {
-
     let mut config = StoreConfig::default();
 
     get_store_generic(db_path, config, test_spec::<E>())

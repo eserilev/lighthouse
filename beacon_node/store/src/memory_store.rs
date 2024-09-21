@@ -66,7 +66,7 @@ impl<E: EthSpec> KeyValueStore<E> for MemoryStore<E> {
     // TODO(modularize-backend) extract if impl
     fn extract_if(&self, col: &str, ops: HashSet<&[u8]>) -> Result<(), DBError> {
         for op in ops {
-            let column_key = get_key_for_col(&col, op);
+            let column_key = get_key_for_col(col, op);
             self.db.write().remove(&BytesKey::from_vec(column_key));
         }
         Ok(())
