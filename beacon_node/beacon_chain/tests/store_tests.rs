@@ -26,7 +26,6 @@ use std::convert::TryInto;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use store::chunked_vector::Chunk;
-use store::config::DatabaseBackend;
 use store::database::interface::BeaconNodeBackend;
 use store::metadata::{SchemaVersion, CURRENT_SCHEMA_VERSION, STATE_UPPER_LIMIT_NO_RETAIN};
 use store::{
@@ -51,9 +50,7 @@ type E = MinimalEthSpec;
 type TestHarness = BeaconChainHarness<DiskHarnessType<E>>;
 
 fn get_store(db_path: &TempDir) -> Arc<HotColdDB<E, BeaconNodeBackend<E>, BeaconNodeBackend<E>>> {
-    let mut config = StoreConfig::default();
-
-    get_store_generic(db_path, config, test_spec::<E>())
+    get_store_generic(db_path, StoreConfig::default(), test_spec::<E>())
 }
 
 fn get_store_generic(
