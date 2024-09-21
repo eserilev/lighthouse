@@ -1,9 +1,9 @@
 use crate::{
-    get_key_for_col, hot_cold_store::BytesKey, ColumnIter, ColumnKeyIter, DBColumn, Error,
-    ItemStore, Key, KeyValueStore, KeyValueStoreOp,
+    errors::Error as DBError, get_key_for_col, hot_cold_store::BytesKey, ColumnIter, ColumnKeyIter,
+    DBColumn, Error, ItemStore, Key, KeyValueStore, KeyValueStoreOp,
 };
 use parking_lot::{Mutex, MutexGuard, RwLock};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::marker::PhantomData;
 use types::*;
 
@@ -60,6 +60,51 @@ impl<E: EthSpec> KeyValueStore<E> for MemoryStore<E> {
     fn key_delete(&self, col: &str, key: &[u8]) -> Result<(), Error> {
         let column_key = BytesKey::from_vec(get_key_for_col(col, key));
         self.db.write().remove(&column_key);
+        Ok(())
+    }
+
+    // TODO(modularize-backend) extract if impl
+    fn extract_if(&self, col: &str, ops: HashSet<&[u8]>) -> Result<(), DBError> {
+        for op in ops {
+            let column_key = get_key_for_col(col, op);
+            self.db.write().remove(&BytesKey::from_vec(column_key));
+        }
+        Ok(())
+    }
+
+    // TODO(modularize-backend) do atomcally for col impl
+    fn do_atomically_for_col(&self, col: &str, batch: Vec<KeyValueStoreOp>) -> Result<(), Error> {
+        for op in batch {
+            match op {
+                KeyValueStoreOp::PutKeyValue(column, key, value) => {
+                    if col != column {
+                        return Err(DBError::DBError {
+                            message: format!(
+                                "Attempted to mutate unexpected column: {}. Expected: {}, ",
+                                column, col
+                            ),
+                        });
+                    }
+                    let column_key = get_key_for_col(&column, &key);
+                    self.db
+                        .write()
+                        .insert(BytesKey::from_vec(column_key), value);
+                }
+
+                KeyValueStoreOp::DeleteKey(column, key) => {
+                    if col != column {
+                        return Err(DBError::DBError {
+                            message: format!(
+                                "Attempted to mutate unexpected column: {}. Expected: {}, ",
+                                column, col
+                            ),
+                        });
+                    }
+                    let column_key = get_key_for_col(&column, &key);
+                    self.db.write().remove(&BytesKey::from_vec(column_key));
+                }
+            }
+        }
         Ok(())
     }
 

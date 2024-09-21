@@ -1,7 +1,8 @@
+use crate::{errors::Error as DBError, DBColumn, Error, KeyValueStoreOp};
 use crate::{metrics, ColumnIter, ColumnKeyIter, Key};
-use crate::{DBColumn, Error, KeyValueStoreOp};
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use redb::TableDefinition;
+use std::collections::HashSet;
 use std::{borrow::BorrowMut, marker::PhantomData, path::Path};
 use strum::IntoEnumIterator;
 use types::EthSpec;
@@ -33,7 +34,9 @@ impl<E: EthSpec> Redb<E> {
         } else {
             path.to_path_buf()
         };
-        let db = redb::Database::create(path)?;
+        let db = redb::Builder::new()
+            .set_cache_size(2 * 1024 * 1024 * 1024)
+            .create(path)?;
         let transaction_mutex = Mutex::new(());
 
         for column in DBColumn::iter() {
@@ -161,6 +164,74 @@ impl<E: EthSpec> Redb<E> {
         table.remove(key).map(|_| ())?;
         drop(table);
         tx.commit().map_err(Into::into)
+    }
+
+    pub fn extract_if(&self, col: &str, ops: HashSet<&[u8]>) -> Result<(), Error> {
+        let open_db = self.db.read();
+        let mut tx = open_db.begin_write()?;
+
+        tx.set_durability(redb::Durability::None);
+
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(col);
+
+        let mut table = tx.open_table(table_definition)?;
+
+        table.retain(|key, _| !ops.contains(key))?;
+
+        drop(table);
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn do_atomically_for_col(
+        &self,
+        col: &str,
+        ops_batch: Vec<KeyValueStoreOp>,
+    ) -> Result<(), Error> {
+        let open_db = self.db.read();
+        let mut tx = open_db.begin_write()?;
+        tx.set_durability(redb::Durability::None);
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(col);
+        let mut table = tx.open_table(table_definition)?;
+
+        for op in ops_batch {
+            match op {
+                KeyValueStoreOp::PutKeyValue(column, key, value) => {
+                    if col != column {
+                        return Err(DBError::DBError {
+                            message: format!(
+                                "Attempted to mutate unexpected column: {}. Expected: {}, ",
+                                column, col
+                            ),
+                        });
+                    }
+                    let _timer = metrics::start_timer(&metrics::DISK_DB_WRITE_TIMES);
+                    metrics::inc_counter_vec_by(
+                        &metrics::DISK_DB_WRITE_BYTES,
+                        &[&column],
+                        value.len() as u64,
+                    );
+                    metrics::inc_counter_vec(&metrics::DISK_DB_WRITE_COUNT, &[&column]);
+                    table.insert(key.as_slice(), value.as_slice())?;
+                }
+                KeyValueStoreOp::DeleteKey(column, key) => {
+                    if col != column {
+                        return Err(DBError::DBError {
+                            message: format!(
+                                "Attempted to mutate unexpected column: {}. Expected: {}, ",
+                                column, col
+                            ),
+                        });
+                    }
+                    metrics::inc_counter_vec(&metrics::DISK_DB_DELETE_COUNT, &[&column]);
+                    let _timer = metrics::start_timer(&metrics::DISK_DB_DELETE_TIMES);
+                    table.remove(key.as_slice())?;
+                }
+            }
+        }
+        drop(table);
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn do_atomically(&self, ops_batch: Vec<KeyValueStoreOp>) -> Result<(), Error> {

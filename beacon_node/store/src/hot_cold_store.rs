@@ -1010,7 +1010,7 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> HotColdDB<E, Hot, Cold> 
     /// (which are frozen, and won't be deleted), or valid descendents of the finalized checkpoint
     /// (which will be deleted by this function but shouldn't be).
     pub fn delete_state(&self, state_root: &Hash256, slot: Slot) -> Result<(), Error> {
-        self.do_atomically_with_block_and_blobs_cache(vec![StoreOp::DeleteState(
+        self.do_atomically_with_block_and_blobs_cache(vec![StoreOp::DeleteStateAndSummary(
             *state_root,
             Some(slot),
         )])
@@ -1183,7 +1183,23 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> HotColdDB<E, Hot, Cold> 
                     }
                 }
 
-                StoreOp::DeleteState(state_root, slot) => {
+                StoreOp::DeleteSummary(state_root) => {
+                    let column_name: &str = DBColumn::BeaconStateSummary.into();
+                    key_value_batch.push(KeyValueStoreOp::DeleteKey(
+                        column_name.to_owned(),
+                        state_root.as_slice().to_vec(),
+                    ));
+                }
+
+                StoreOp::DeleteState(state_root) => {
+                    let column_name: &str = DBColumn::BeaconState.into();
+                    key_value_batch.push(KeyValueStoreOp::DeleteKey(
+                        column_name.to_owned(),
+                        state_root.as_slice().to_vec(),
+                    ));
+                }
+
+                StoreOp::DeleteStateAndSummary(state_root, slot) => {
                     let column_name: &str = DBColumn::BeaconStateSummary.into();
                     key_value_batch.push(KeyValueStoreOp::DeleteKey(
                         column_name.to_owned(),
@@ -1221,6 +1237,25 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> HotColdDB<E, Hot, Cold> 
             }
         }
         Ok(key_value_batch)
+    }
+
+    pub fn extract_if(&self, col: &str, ops: Vec<Hash256>) -> Result<(), Error> {
+        let new_ops = ops.iter().map(|v| v.as_slice()).collect();
+
+        self.hot_db.extract_if(col, new_ops)
+    }
+
+    pub fn do_atomically_for_garbage_collection(
+        &self,
+        col: &str,
+        batch: Vec<StoreOp<E>>,
+    ) -> Result<(), Error> {
+        match self.convert_to_kv_batch(batch) {
+            Ok(kv_store_ops) => self.hot_db.do_atomically_for_col(col, kv_store_ops)?,
+            Err(e) => return Err(e),
+        };
+
+        Ok(())
     }
 
     pub fn do_atomically_with_block_and_blobs_cache(
@@ -1350,9 +1385,15 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> HotColdDB<E, Hot, Cold> 
                     self.state_cache.lock().delete_block_states(&block_root);
                 }
 
-                StoreOp::DeleteState(state_root, _) => {
+                StoreOp::DeleteStateAndSummary(state_root, _) => {
                     self.state_cache.lock().delete_state(&state_root)
                 }
+
+                StoreOp::DeleteState(state_root) => {
+                    self.state_cache.lock().delete_state(&state_root)
+                }
+
+                StoreOp::DeleteSummary(_) => (),
 
                 StoreOp::DeleteBlobs(_) => (),
 
@@ -2955,7 +2996,10 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> HotColdDB<E, Hot, Cold> 
                         "slot" => summary.slot,
                         "reason" => reason,
                     );
-                    state_delete_batch.push(StoreOp::DeleteState(state_root, Some(summary.slot)));
+                    state_delete_batch.push(StoreOp::DeleteStateAndSummary(
+                        state_root,
+                        Some(summary.slot),
+                    ));
                 }
             }
         }
@@ -3052,7 +3096,7 @@ pub fn migrate_database<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>>(
         }
 
         // Delete the old summary, and the full state if we lie on an epoch boundary.
-        hot_db_ops.push(StoreOp::DeleteState(state_root, Some(slot)));
+        hot_db_ops.push(StoreOp::DeleteStateAndSummary(state_root, Some(slot)));
 
         // Store the block root for this slot in the linear array of frozen block roots.
         block_root_writer.set(slot.as_usize(), block_root, &mut cold_db_ops)?;

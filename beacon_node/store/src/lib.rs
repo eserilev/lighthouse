@@ -38,6 +38,7 @@ pub use impls::beacon_state::StorageContainer as BeaconStateStorageContainer;
 pub use metadata::AnchorInfo;
 pub use metrics::scrape_for_metrics;
 use parking_lot::MutexGuard;
+use std::collections::HashSet;
 use std::sync::Arc;
 use strum::{EnumIter, EnumString, IntoStaticStr};
 pub use types::*;
@@ -71,6 +72,9 @@ pub trait KeyValueStore<E: EthSpec>: Sync + Send + Sized + 'static {
 
     /// Removes `key` from `column`.
     fn key_delete(&self, column: &str, key: &[u8]) -> Result<(), Error>;
+
+    /// Execute either all of the operations in `batch` for a given `col` or none at all, returning an error.
+    fn do_atomically_for_col(&self, col: &str, batch: Vec<KeyValueStoreOp>) -> Result<(), Error>;
 
     /// Execute either all of the operations in `batch` or none at all, returning an error.
     fn do_atomically(&self, batch: Vec<KeyValueStoreOp>) -> Result<(), Error>;
@@ -119,6 +123,8 @@ pub trait KeyValueStore<E: EthSpec>: Sync + Send + Sized + 'static {
 
     /// Iterate through all keys in a particular column.
     fn iter_column_keys_from<K: Key>(&self, column: DBColumn, from: &[u8]) -> ColumnKeyIter<K>;
+
+    fn extract_if(&self, _: &str, ops: HashSet<&[u8]>) -> Result<(), Error>;
 }
 
 pub trait Key: Sized + 'static {
@@ -247,9 +253,12 @@ pub enum StoreOp<'a, E: EthSpec> {
     DeleteBlock(Hash256),
     DeleteBlobs(Hash256),
     DeleteDataColumns(Hash256, Vec<ColumnIndex>),
-    DeleteState(Hash256, Option<Slot>),
+    // Delete Summary and delete state if state is on an epoch boundary
+    DeleteStateAndSummary(Hash256, Option<Slot>),
+    DeleteState(Hash256),
     DeleteExecutionPayload(Hash256),
     DeleteSyncCommitteeBranch(Hash256),
+    DeleteSummary(Hash256),
     KeyValueOp(KeyValueStoreOp),
 }
 

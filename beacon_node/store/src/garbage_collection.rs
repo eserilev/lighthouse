@@ -1,7 +1,7 @@
 //! Garbage collection process that runs at start-up to clean up the database.
 use crate::database::interface::BeaconNodeBackend;
 use crate::hot_cold_store::HotColdDB;
-use crate::{Error, StoreOp};
+use crate::{DBColumn, Error};
 use slog::debug;
 use types::EthSpec;
 
@@ -18,22 +18,33 @@ where
     /// Delete the temporary states that were leftover by failed block imports.
 
     pub fn delete_temp_states(&self) -> Result<(), Error> {
-        let delete_ops =
-            self.iter_temporary_state_roots()?
-                .try_fold(vec![], |mut ops, state_root| {
-                    let state_root = state_root?;
-                    ops.push(StoreOp::DeleteState(state_root, None));
-                    ops.push(StoreOp::DeleteStateTemporaryFlag(state_root));
-                    Result::<_, Error>::Ok(ops)
-                })?;
-
-        if !delete_ops.is_empty() {
+        let mut ops = vec![];
+        // let mut delete_state_ops = vec![];
+        // let mut delete_summary_ops = vec![];
+        // let mut delete_temporary_state_ops = vec![];
+        let mut delete_states = false;
+        self.iter_temporary_state_roots()?.for_each(|state_root| {
+            if let Ok(state_root) = state_root {
+                ops.push(state_root);
+                delete_states = true
+            }
+        });
+        if delete_states {
             debug!(
                 self.log,
                 "Garbage collecting {} temporary states",
-                delete_ops.len() / 2
+                ops.len()
             );
-            self.do_atomically_with_block_and_blobs_cache(delete_ops)?;
+            let state_col: &str = DBColumn::BeaconState.into();
+            let summary_col: &str = DBColumn::BeaconStateSummary.into();
+            let temp_state_col: &str = DBColumn::BeaconStateTemporary.into();
+            // self.do_atomically_for_garbage_collection(state_col, delete_state_ops)?;
+            // self.do_atomically_for_garbage_collection(summary_col, delete_summary_ops)?;
+            // self.do_atomically_for_garbage_collection(temp_state_col, delete_temporary_state_ops)?;
+
+            self.extract_if(state_col, ops.clone())?;
+            self.extract_if(summary_col, ops.clone())?;
+            self.extract_if(temp_state_col, ops)?;
         }
 
         Ok(())

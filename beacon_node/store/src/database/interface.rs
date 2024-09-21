@@ -101,12 +101,36 @@ impl<E: EthSpec> KeyValueStore<E> for BeaconNodeBackend<E> {
         }
     }
 
+    fn do_atomically_for_col(&self, col: &str, batch: Vec<KeyValueStoreOp>) -> Result<(), Error> {
+        match self {
+            #[cfg(feature = "leveldb")]
+            BeaconNodeBackend::LevelDb(txn) => {
+                leveldb_impl::LevelDB::do_atomically_for_col(txn, col, batch)
+            }
+            #[cfg(feature = "redb")]
+            BeaconNodeBackend::Redb(txn) => redb_impl::Redb::do_atomically_for_col(txn, col, batch),
+        }
+    }
+
     fn do_atomically(&self, batch: Vec<KeyValueStoreOp>) -> Result<(), Error> {
         match self {
             #[cfg(feature = "leveldb")]
             BeaconNodeBackend::LevelDb(txn) => leveldb_impl::LevelDB::do_atomically(txn, batch),
             #[cfg(feature = "redb")]
             BeaconNodeBackend::Redb(txn) => redb_impl::Redb::do_atomically(txn, batch),
+        }
+    }
+
+    fn extract_if(
+        &self,
+        _col: &str,
+        _ops: std::collections::HashSet<&[u8]>,
+    ) -> Result<(), crate::Error> {
+        match self {
+            #[cfg(feature = "leveldb")]
+            BeaconNodeBackend::LevelDb(txn) => leveldb_impl::LevelDB::extract_if(txn, _col, _ops),
+            #[cfg(feature = "redb")]
+            BeaconNodeBackend::Redb(txn) => redb_impl::Redb::extract_if(txn, _col, _ops),
         }
     }
 

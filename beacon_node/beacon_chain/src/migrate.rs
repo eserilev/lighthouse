@@ -679,11 +679,9 @@ impl<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> BackgroundMigrator<E, Ho
                     StoreOp::DeleteSyncCommitteeBranch(block_root),
                 ]
             })
-            .chain(
-                abandoned_states
-                    .into_iter()
-                    .map(|(slot, state_hash)| StoreOp::DeleteState(state_hash.into(), Some(slot))),
-            )
+            .chain(abandoned_states.into_iter().map(|(slot, state_hash)| {
+                StoreOp::DeleteStateAndSummary(state_hash.into(), Some(slot))
+            }))
             .collect();
 
         // Persist the head in case the process is killed or crashes here. This prevents
