@@ -128,9 +128,13 @@ impl<E: EthSpec> KeyValueStore<E> for BeaconNodeBackend<E> {
     ) -> Result<(), crate::Error> {
         match self {
             #[cfg(feature = "leveldb")]
-            BeaconNodeBackend::LevelDb(_) => Ok(()),
+            BeaconNodeBackend::LevelDb(txn) => {
+                leveldb_impl::LevelDB::extract_if(txn, _col, _ops)
+            },
             #[cfg(feature = "redb")]
-            BeaconNodeBackend::Redb(txn) => redb_impl::Redb::extract_if(txn, _col, _ops),
+            BeaconNodeBackend::Redb(txn) => {
+                redb_impl::Redb::extract_if(txn, _col, _ops)
+            },
         }
     }
 

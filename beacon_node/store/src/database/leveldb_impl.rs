@@ -147,11 +147,7 @@ impl<E: EthSpec> LevelDB<E> {
             .map_err(Into::into)
     }
 
-    pub fn extract_if(
-        &self,
-        col: &str,
-        ops: HashSet<&[u8]>
-    ) -> Result<(), Error> {
+    pub fn extract_if(&self, col: &str, ops: HashSet<&[u8]>) -> Result<(), Error> {
         let mut leveldb_batch = Writebatch::new();
         for op in ops {
             let column_key = get_key_for_col(col, op);

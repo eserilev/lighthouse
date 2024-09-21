@@ -36,6 +36,7 @@ use store::{
 use tempfile::{tempdir, TempDir};
 use tokio::time::sleep;
 use types::test_utils::{SeedableRng, XorShiftRng};
+use store::config::DatabaseBackend;
 use types::*;
 
 // Should ideally be divisible by 3.
@@ -50,7 +51,10 @@ type E = MinimalEthSpec;
 type TestHarness = BeaconChainHarness<DiskHarnessType<E>>;
 
 fn get_store(db_path: &TempDir) -> Arc<HotColdDB<E, BeaconNodeBackend<E>, BeaconNodeBackend<E>>> {
-    get_store_generic(db_path, StoreConfig::default(), test_spec::<E>())
+
+    let mut config = StoreConfig::default();
+
+    get_store_generic(db_path, config, test_spec::<E>())
 }
 
 fn get_store_generic(
