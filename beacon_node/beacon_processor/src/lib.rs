@@ -62,7 +62,7 @@ use task_executor::TaskExecutor;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
 use types::{
-    Attestation, BeaconState, ChainSpec, Hash256, RelativeEpoch, SignedAggregateAndProof, SubnetId,
+    Attestation, BeaconState, ChainSpec, Hash256, RelativeEpoch, SignedAggregateAndProof, SingleAttestation, SubnetId
 };
 use types::{EthSpec, Slot};
 use work_reprocessing_queue::{
@@ -495,6 +495,18 @@ pub struct GossipAttestationPackage<E: EthSpec> {
     pub message_id: MessageId,
     pub peer_id: PeerId,
     pub attestation: Box<Attestation<E>>,
+    pub subnet_id: SubnetId,
+    pub should_import: bool,
+    pub seen_timestamp: Duration,
+}
+
+
+/// Items required to verify a batch of unaggregated gossip single attestations.
+#[derive(Debug)]
+pub struct GossipSingleAttestationPackage {
+    pub message_id: MessageId,
+    pub peer_id: PeerId,
+    pub attestation: Box<SingleAttestation>,
     pub subnet_id: SubnetId,
     pub should_import: bool,
     pub seen_timestamp: Duration,

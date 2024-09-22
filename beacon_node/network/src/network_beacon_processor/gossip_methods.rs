@@ -37,12 +37,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use store::hot_cold_store::HotColdDBError;
 use tokio::sync::mpsc;
 use types::{
-    beacon_block::BlockImportSource, Attestation, AttestationRef, AttesterSlashing, BlobSidecar,
-    DataColumnSidecar, DataColumnSubnetId, EthSpec, Hash256, IndexedAttestation,
-    LightClientFinalityUpdate, LightClientOptimisticUpdate, ProposerSlashing,
-    SignedAggregateAndProof, SignedBeaconBlock, SignedBlsToExecutionChange,
-    SignedContributionAndProof, SignedVoluntaryExit, Slot, SubnetId, SyncCommitteeMessage,
-    SyncSubnetId,
+    beacon_block::BlockImportSource, Attestation, AttestationRef, AttesterSlashing, BlobSidecar, DataColumnSidecar, DataColumnSubnetId, EthSpec, Hash256, IndexedAttestation, LightClientFinalityUpdate, LightClientOptimisticUpdate, ProposerSlashing, SignedAggregateAndProof, SignedBeaconBlock, SignedBlsToExecutionChange, SignedContributionAndProof, SignedVoluntaryExit, SingleAttestation, Slot, SubnetId, SyncCommitteeMessage, SyncSubnetId
 };
 
 use beacon_processor::{
@@ -225,6 +220,48 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
         message_id: MessageId,
         peer_id: PeerId,
         attestation: Box<Attestation<T::EthSpec>>,
+        subnet_id: SubnetId,
+        should_import: bool,
+        reprocess_tx: Option<mpsc::Sender<ReprocessQueueMessage>>,
+        seen_timestamp: Duration,
+    ) {
+        let result = match self
+            .chain
+            .verify_unaggregated_attestation_for_gossip(&attestation, Some(subnet_id))
+        {
+            Ok(verified_attestation) => Ok(VerifiedUnaggregate {
+                indexed_attestation: verified_attestation.into_indexed_attestation(),
+                attestation,
+            }),
+            Err(error) => Err(RejectedUnaggregate { attestation, error }),
+        };
+
+        self.process_gossip_attestation_result(
+            result,
+            message_id,
+            peer_id,
+            subnet_id,
+            reprocess_tx,
+            should_import,
+            seen_timestamp,
+        );
+    }
+
+    /* Processing functions */
+
+    /// Process the unaggregated attestation received from the gossip network and:
+    ///
+    /// - If it passes gossip propagation criteria, tell the network thread to forward it.
+    /// - Attempt to apply it to fork choice.
+    /// - Attempt to add it to the naive aggregation pool.
+    ///
+    /// Raises a log if there are errors.
+    #[allow(clippy::too_many_arguments)]
+    pub fn process_gossip_single_attestation(
+        self: Arc<Self>,
+        message_id: MessageId,
+        peer_id: PeerId,
+        attestation: Box<SingleAttestation>,
         subnet_id: SubnetId,
         should_import: bool,
         reprocess_tx: Option<mpsc::Sender<ReprocessQueueMessage>>,

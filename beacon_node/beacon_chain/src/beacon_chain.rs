@@ -1,7 +1,7 @@
 use crate::attestation_verification::{
     batch_verify_aggregated_attestations, batch_verify_unaggregated_attestations,
     Error as AttestationError, VerifiedAggregatedAttestation, VerifiedAttestation,
-    VerifiedUnaggregatedAttestation,
+    VerifiedUnaggregatedAttestation, VerifiedUnaggregatedAttestationV2,
 };
 use crate::attester_cache::{AttesterCache, AttesterCacheKey};
 use crate::beacon_block_streamer::{BeaconBlockStreamer, CheckCaches};
@@ -2020,9 +2020,12 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         batch_verify_unaggregated_attestations(attestations, self)
     }
 
-    /// Accepts some `SingleAttestation` from the network and attempts to verify it, returning `Ok(_)` if
+    /// Accepts some `Attestation` from the network and attempts to verify it, returning `Ok(_)` if
     /// it is valid to be (re)broadcast on the gossip network.
-    pub fn verify_single_attestation_for_gossip<'a>(
+    ///
+    /// The attestation must be "unaggregated", that is it must have exactly one
+    /// aggregation bit set.
+    pub fn verify_unaggregated_attestation_for_gossip<'a>(
         &self,
         unaggregated_attestation: &'a Attestation<T::EthSpec>,
         subnet_id: Option<SubnetId>,
@@ -2051,16 +2054,16 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
     ///
     /// The attestation must be "unaggregated", that is it must have exactly one
     /// aggregation bit set.
-    pub fn verify_unaggregated_attestation_for_gossip<'a>(
+    pub fn verify_single_attestation_for_gossip<'a>(
         &self,
-        unaggregated_attestation: &'a Attestation<T::EthSpec>,
+        single_attestation: &'a SingleAttestation,
         subnet_id: Option<SubnetId>,
-    ) -> Result<VerifiedUnaggregatedAttestation<'a, T>, AttestationError> {
+    ) -> Result<VerifiedUnaggregatedAttestationV2, AttestationError> {
         metrics::inc_counter(&metrics::UNAGGREGATED_ATTESTATION_PROCESSING_REQUESTS);
         let _timer =
             metrics::start_timer(&metrics::UNAGGREGATED_ATTESTATION_GOSSIP_VERIFICATION_TIMES);
 
-        VerifiedUnaggregatedAttestation::verify(unaggregated_attestation, subnet_id, self).inspect(
+        VerifiedUnaggregatedAttestationV2::verify(unaggregated_attestation, subnet_id, self).inspect(
             |v| {
                 // This method is called for API and gossip attestations, so this covers all unaggregated attestation events
                 if let Some(event_handler) = self.event_handler.as_ref() {

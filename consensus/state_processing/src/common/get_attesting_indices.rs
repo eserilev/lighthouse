@@ -1,5 +1,52 @@
 use types::*;
 
+pub mod attesting_indices_v2 {
+    use crate::per_block_processing::errors::{AttestationInvalid as Invalid, BlockOperationError};
+    use types::*;
+
+    /// Convert `attestation` to (almost) indexed-verifiable form.
+    ///
+    /// Spec v0.12.1
+    pub fn get_indexed_attestation<E: EthSpec>(
+        committee: &[usize],
+        attestation_data: &AttestationData,
+        attesting_index: usize,
+        signature: &AggregateSignature,
+        fork_name: ForkName,
+    ) -> Result<IndexedAttestation<E>, BlockOperationError<Invalid>> {
+        if fork_name.electra_enabled() {
+            let mut indices = Vec::with_capacity(E::MaxValidatorsPerSlot::to_usize());
+
+            for (i, validator_index) in committee.iter().enumerate() {
+                if i == attesting_index {
+                    indices.push(*validator_index as u64)
+                }
+            }
+            
+            Ok(IndexedAttestation::Electra(IndexedAttestationElectra {
+                attesting_indices: VariableList::new(indices)?,
+                data: attestation_data.clone(),
+                signature: signature.clone(),
+            }))
+        } else {
+            let mut indices = Vec::with_capacity(E::MaxValidatorsPerCommittee::to_usize());
+
+            for (i, validator_index) in committee.iter().enumerate() {
+                if i == attesting_index {
+                    indices.push(*validator_index as u64)
+                }
+            }
+    
+            indices.sort_unstable();
+            Ok(IndexedAttestation::Base(IndexedAttestationBase {
+                attesting_indices: VariableList::new(indices)?,
+                data: attestation_data.clone(),
+                signature: signature.clone(),
+            }))
+        }
+    }
+}
+
 pub mod attesting_indices_base {
     use crate::per_block_processing::errors::{AttestationInvalid as Invalid, BlockOperationError};
     use types::*;

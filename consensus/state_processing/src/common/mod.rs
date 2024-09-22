@@ -11,7 +11,7 @@ pub mod update_progressive_balances_cache;
 pub use deposit_data_tree::DepositDataTree;
 pub use get_attestation_participation::get_attestation_participation_flag_indices;
 pub use get_attesting_indices::{
-    attesting_indices_base, attesting_indices_electra, get_attesting_indices_from_state,
+    attesting_indices_base, attesting_indices_electra, attesting_indices_v2, get_attesting_indices_from_state,
 };
 pub use initiate_validator_exit::initiate_validator_exit;
 pub use slash_validator::slash_validator;

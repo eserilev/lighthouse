@@ -218,6 +218,23 @@ impl<E: EthSpec> Attestation<E> {
         }
     }
 
+    pub fn attesting_index(&self) -> Option<u64> {
+        self.get_attesting_indices().first().cloned()
+    }
+
+    fn get_attesting_indices(&self) -> Vec<u64> {
+        let aggregation_bits = match self {
+            Attestation::Base(att) => att.aggregation_bits.clone().into_bytes().to_vec(),
+            Attestation::Electra(att) => att.aggregation_bits.clone().into_bytes().to_vec(),
+        };
+
+        aggregation_bits
+            .iter()
+            .enumerate()
+            .filter_map(|(index, bit)| if *bit > 0u8 { Some(index as u64) } else { None })
+            .collect()
+    }
+
     pub fn num_set_aggregation_bits(&self) -> usize {
         match self {
             Attestation::Base(att) => att.aggregation_bits.num_set_bits(),
@@ -284,6 +301,10 @@ impl<'a, E: EthSpec> AttestationRef<'a, E> {
 
 impl<E: EthSpec> AttestationElectra<E> {
     pub fn committee_index(&self) -> Option<u64> {
+        self.get_committee_indices().first().cloned()
+    }
+
+    pub fn get_attesting_index(&self) -> Option<u64> {
         self.get_committee_indices().first().cloned()
     }
 
@@ -542,7 +563,7 @@ pub struct SingleAttestation {
     pub committee_index: u64,
     pub attester_index: usize,
     pub data: AttestationData,
-    pub signature: Signature,
+    pub signature: AggregateSignature,
 }
 
 impl SingleAttestation{
@@ -553,7 +574,7 @@ impl SingleAttestation{
         beacon_block_root: Hash256,
         source: Checkpoint,
         target: Checkpoint,
-    ) -> Result<Self, Error> {
+    ) -> Self {
         let single_attestation = Self {
             committee_index,
             attester_index: 0,
@@ -564,15 +585,15 @@ impl SingleAttestation{
                 source,
                 target,
             },
-            signature: Signature::infinity().unwrap()
+            signature: AggregateSignature::infinity()
         };
 
-        Ok(single_attestation)
+        single_attestation
     }
 
     pub fn add_signature(
         &mut self,
-        signature: &Signature,
+        signature: &AggregateSignature,
         committee_position: usize,
     ) {
         self.attester_index = committee_position;
