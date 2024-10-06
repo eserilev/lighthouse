@@ -65,7 +65,7 @@ jobs:
 
       - name: Generate code coverage
         run: |
-          cargo lockbud -k deadlock -b -l openssl-sys
+          cargo lockbud -k deadlock -b -l openssl-sys,itertools
 
   target-branch-check:
     name: target-branch-check
