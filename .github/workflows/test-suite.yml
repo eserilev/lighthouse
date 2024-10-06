@@ -56,7 +56,7 @@ jobs:
 
   lockbud:
     name: lockbud
-    runs-on: ubuntu-latest
+    runs-on: debian:12-slim
     container:
       image: eserilev/lockbud:latest
     steps:
