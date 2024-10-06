@@ -65,7 +65,7 @@ jobs:
 
       - name: Generate code coverage
         run: |
-          cargo lockbud -k deadlock -b -l=openssl,openssl-sys,native-tls,tokio,tokio-stream,tokio-util,ethereum_hashing
+          cargo lockbud -k deadlock -b -l=openssl,openssl-sys,native-tls,tokio,tokio-stream,tokio-util,ethereum_hashing,openssl-sys v0.9.103
 
   target-branch-check:
     name: target-branch-check
