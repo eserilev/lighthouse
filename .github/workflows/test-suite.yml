@@ -54,7 +54,7 @@ jobs:
          done
          echo "skip_ci=$SKIP_CI" >> $GITHUB_OUTPUT
 
-   lockbud:
+  lockbud:
     name: lockbud
     runs-on: ubuntu-latest
     container:
