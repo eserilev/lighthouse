@@ -62,7 +62,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
+      - name: Install dependencies
+        run: sudo apt update && sudo apt install -y git gcc g++ make cmake pkg-config llvm-dev libclang-dev clang
       - name: Generate code coverage
         run: |
           cargo lockbud -k deadlock -b -l=openssl,openssl-sys,native-tls,tokio,tokio-stream,tokio-util,ethereum_hashing
