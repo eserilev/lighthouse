@@ -5,12 +5,12 @@ use derivative::Derivative;
 use safe_arith::ArithError;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
+use ssz_types::typenum::Unsigned;
 use ssz_types::BitVector;
 use std::hash::{Hash, Hasher};
 use superstruct::superstruct;
 use test_random_derive::TestRandom;
 use tree_hash_derive::TreeHash;
-use ssz_types::typenum::Unsigned;
 
 use super::{
     AggregateSignature, AttestationData, BitList, ChainSpec, Domain, EthSpec, Fork, SecretKey,
@@ -684,7 +684,6 @@ impl SingleAttestation {
         //     });
 
         Ok(())
-
     }
 }
 

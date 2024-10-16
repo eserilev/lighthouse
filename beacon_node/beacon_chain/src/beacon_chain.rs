@@ -2275,15 +2275,22 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
     ) -> Result<(), AttestationError> {
         let _timer = metrics::start_timer(&metrics::ATTESTATION_PROCESSING_APPLY_TO_AGG_POOL);
 
-        let state = self.state_at_slot(attestation.data.slot, StateSkipConfig::WithoutStateRoots)?;
-        
+        let state =
+            self.state_at_slot(attestation.data.slot, StateSkipConfig::WithoutStateRoots)?;
+
         // TODO(single-attestation) unwrap
-        let _committees = state.get_beacon_committees_at_slot(attestation.data.slot).unwrap();
+        let _committees = state
+            .get_beacon_committees_at_slot(attestation.data.slot)
+            .unwrap();
 
+        let attestation =
+            Attestation::Electra(AttestationElectra::from_single_attestation(attestation).unwrap());
 
-        let attestation = Attestation::Electra(AttestationElectra::from_single_attestation(attestation).unwrap());
-
-        match self.naive_aggregation_pool.write().insert(attestation.to_ref()) {
+        match self
+            .naive_aggregation_pool
+            .write()
+            .insert(attestation.to_ref())
+        {
             Ok(outcome) => trace!(
                 self.log,
                 "Stored unaggregated attestation";

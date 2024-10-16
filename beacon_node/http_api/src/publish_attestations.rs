@@ -94,9 +94,7 @@ fn verify_and_publish_attestation<T: BeaconChainTypes>(
                 })
                 .map_err(|_| Error::Publication)?;
         }
-        types::AttestationRef::Electra(_) => {
-            return Err(Error::Publication)            
-        }
+        types::AttestationRef::Electra(_) => return Err(Error::Publication),
     };
 
     // Publish.
