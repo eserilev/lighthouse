@@ -18,6 +18,6 @@ additional_services:
 assertoor_params:
   run_stability_check: false
   run_block_proposal_check: false
-  run_blob_transaction_test: false
+  run_blob_transaction_test: true
   tests:
     - https://raw.githubusercontent.com/ethpandaops/assertoor-test/master/assertoor-tests/synchronized-check.yaml
