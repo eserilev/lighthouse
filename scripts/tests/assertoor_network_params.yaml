@@ -1,6 +1,8 @@
 # Full configuration reference [here](https://github.com/ethpandaops/ethereum-package?tab=readme-ov-file#configuration).
 participants:
   - el_type: geth
+    cl_type: teku
+  - el_type: geth
     el_image: ethereum/client-go:latest
     cl_type: lighthouse
     cl_image: lighthouse:local
