@@ -2,13 +2,14 @@
 participants:
   - el_type: geth
     cl_type: teku
+    count: 4
   - el_type: geth
     el_image: ethereum/client-go:latest
     cl_type: lighthouse
     cl_image: lighthouse:local
     cl_extra_params:
       - --target-peers=3
-    count: 4
+    count: 1
 network_params:
   deneb_fork_epoch: 0
   seconds_per_slot: 6
