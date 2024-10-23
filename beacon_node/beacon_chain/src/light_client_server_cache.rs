@@ -298,11 +298,11 @@ impl<T: BeaconChainTypes> LightClientServerCache<T> {
                 LightClientUpdate::from_ssz_bytes(&light_client_update_bytes, &fork_name)
                     .map_err(store::errors::Error::SszDecodeError)?;
 
-            light_client_updates.push(light_client_update);
-
             if sync_committee_period >= start_period + count {
                 break;
             }
+
+            light_client_updates.push(light_client_update);
         }
         Ok(light_client_updates)
     }

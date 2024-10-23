@@ -387,7 +387,13 @@ async fn light_client_updates_test() {
 
     // we should now have two light client updates in the db
     let lc_updates = beacon_chain
-        .get_light_client_updates(sync_period, 100)
+        .get_light_client_updates(sync_period, 1)
+        .unwrap();
+
+    assert_eq!(lc_updates.len(), 1);
+
+    let lc_updates = beacon_chain
+        .get_light_client_updates(sync_period, 2)
         .unwrap();
 
     assert_eq!(lc_updates.len(), 2);
