@@ -283,4 +283,21 @@ impl<E: EthSpec> LevelDB<E> {
             BytesKey::from_vec(key.to_vec()).matches_column(column)
         })
     }
+
+    pub fn delete_while(
+        &self,
+        column: DBColumn,
+        f: impl Fn(&[u8]) -> Result<bool, Error>,
+    ) -> Result<(), Error> {
+        let start_key = BytesKey::from_vec(get_key_for_col(column.into(), &vec![0; column.key_size()]));
+        let iter = self.db.iter(self.read_options());
+        iter.seek(&start_key);
+
+        iter.take_while(move |(key, value)| f(value).unwrap_or(false) && key.matches_column(column))
+            .for_each(move |(key, _)| {
+                self.db.delete(self.write_options().into(), key);
+            });
+
+        Ok(())
+    }
 }

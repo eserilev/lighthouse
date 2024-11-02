@@ -278,4 +278,17 @@ impl<E: EthSpec> Redb<E> {
     pub fn iter_column<K: Key>(&self, column: DBColumn) -> ColumnIter<K> {
         self.iter_column_from(column, &vec![0; column.key_size()], |_, _| true)
     }
+
+    pub fn delete_while(
+        &self,
+        column: DBColumn,
+        f: impl Fn(&[u8]) -> Result<bool, Error>,
+    ) -> Result<(), Error> {
+        let open_db = self.db.read();
+        let write_txn = open_db.begin_write()?;
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> =
+        TableDefinition::new(&self.db.table_name);
+        let table = self.txn.open_table(table_definition)?;
+        table.extract_if(|key, _| f(key).unwrap_or(false))?;  
+    }
 }

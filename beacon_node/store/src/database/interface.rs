@@ -265,6 +265,15 @@ impl<E: EthSpec> BeaconNodeBackend<E> {
             BeaconNodeBackend::Redb(txn) => redb_impl::Redb::iter_column(txn, column),
         }
     }
+
+    pub fn delete_while(&self, column: DBColumn, f: impl Fn(&[u8])) -> Result<(), Error> {
+        match self {
+            #[cfg(feature = "leveldb")]
+            BeaconNodeBackend::LevelDb(txn) => leveldb_impl::LevelDB::delete_while(txn, column, f),
+            #[cfg(feature = "redb")]
+            BeaconNodeBackend::Redb(txn) => redb_impl::Redb::delete_while(txn, column, f),
+        }
+    }
 }
 
 pub struct WriteOptions {

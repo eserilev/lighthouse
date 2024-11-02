@@ -140,6 +140,16 @@ impl<E: EthSpec> KeyValueStore<E> for MemoryStore<E> {
             keys.into_iter().map(move |key| K::from_bytes(&key)),
         ))
     }
+    
+    // TODO this probably is not optimal
+    fn delete_while(&self, column: DBColumn, f: impl Fn(&[u8]) -> Result<bool, crate::Error>) -> Result<(), crate::Error> {
+        let discard = |key: &BytesKey, value: &[u8]| {
+            key.remove_column_variable(column).is_some() && f(value).unwrap_or(false)
+        };
+        self.db.write().retain(|k, v| !discard(k, v));
+
+        Ok(())
+    }
 }
 
 impl<E: EthSpec> ItemStore<E> for MemoryStore<E> {}

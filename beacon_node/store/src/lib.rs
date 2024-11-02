@@ -119,6 +119,9 @@ pub trait KeyValueStore<E: EthSpec>: Sync + Send + Sized + 'static {
 
     /// Iterate through all keys in a particular column.
     fn iter_column_keys_from<K: Key>(&self, column: DBColumn, from: &[u8]) -> ColumnKeyIter<K>;
+
+    /// Delete all values in `column` where predicate `f` returns true
+    fn delete_while(&self, column: DBColumn, f: impl Fn(&[u8]) -> Result<bool, Error>) -> Result<(), Error>;
 }
 
 pub trait Key: Sized + 'static {
