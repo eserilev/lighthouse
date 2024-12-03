@@ -1,4 +1,4 @@
-mod earliest_deadline_scheduler;
+pub mod earliest_deadline_scheduler;
 
 use futures::stream::Stream;
 use futures::StreamExt;
@@ -108,7 +108,7 @@ pub trait GenericWork: Send + Sync {
     fn calculate_deadline<T>(&self, clock: T) -> Option<Duration>;
 }
 
-struct GenericWorkEvent<W: GenericWork> {
+pub struct GenericWorkEvent<W: GenericWork> {
     pub drop_during_sync: bool,
     pub work: W,
 }

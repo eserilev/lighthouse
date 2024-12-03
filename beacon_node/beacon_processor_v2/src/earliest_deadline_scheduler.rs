@@ -184,7 +184,7 @@ impl BeaconProcessor<BeaconProcessorConfig> {
         network_globals: Arc<NetworkGlobals<E>>,
         beacon_state: &BeaconState<E>,
         event_rx: mpsc::Receiver<GenericWorkEvent<Work<E>>>,
-        work_journal_tx: Option<mpsc::Sender<&'static str>>,
+        work_journal_tx: Option<mpfsc::Sender<&'static str>>,
         slot_clock: S,
         spec: &ChainSpec,
     ) -> Result<(), String>
