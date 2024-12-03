@@ -903,6 +903,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "beacon_processor_v2"
+version = "0.1.0"
+dependencies = [
+ "beacon_processor",
+ "fnv",
+ "futures",
+ "itertools 0.10.5",
+ "lighthouse_network",
+ "logging",
+ "metrics",
+ "num_cpus",
+ "parking_lot 0.12.3",
+ "serde",
+ "slog",
+ "slot_clock",
+ "strum",
+ "task_executor",
+ "tokio",
+ "tokio-util",
+ "types",
+]
+
+[[package]]
 name = "bincode"
 version = "1.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

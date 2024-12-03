@@ -37,7 +37,7 @@
 //! Whenever the manager receives a notification that a worker has finished a parcel of work, it
 //! checks the queues to see if there are more parcels of work that can be spawned in a new worker
 //! task.
-mod scheduler;
+pub mod scheduler;
 use crate::scheduler::interface::SchedulerType;
 use lighthouse_network::{MessageId, NetworkGlobals, PeerId};
 use parking_lot::Mutex;

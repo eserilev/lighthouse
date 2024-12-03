@@ -5,6 +5,7 @@ members = [
     "beacon_node",
     "beacon_node/beacon_chain",
     "beacon_node/beacon_processor",
+    "beacon_node/beacon_processor_v2",
     "beacon_node/builder_client",
     "beacon_node/client",
     "beacon_node/eth1",
@@ -210,6 +211,7 @@ beacon_chain = { path = "beacon_node/beacon_chain" }
 beacon_node = { path = "beacon_node" }
 beacon_node_fallback = { path = "validator_client/beacon_node_fallback" }
 beacon_processor = { path = "beacon_node/beacon_processor" }
+beacon_processor_v2 = { path = "beacon_node/beacon_processor_v2" }
 bls = { path = "crypto/bls" }
 clap_utils = { path = "common/clap_utils" }
 compare_fields = { path = "common/compare_fields" }
