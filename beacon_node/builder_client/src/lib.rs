@@ -348,6 +348,7 @@ impl BuilderHttpClient {
         slot: Slot,
         parent_hash: ExecutionBlockHash,
         pubkey: &PublicKeyBytes,
+        fork_name: ForkName,
     ) -> Result<Option<ForkVersionedResponse<SignedBuilderBid<E>>>, Error> {
         let mut path = self.server.full.clone();
 
@@ -367,6 +368,10 @@ impl BuilderHttpClient {
             SSZ_CONTENT_TYPE_HEADER, JSON_CONTENT_TYPE_HEADER
         )) {
             headers.insert(ACCEPT, ssz_content_type_header);
+        };
+
+        if let Ok(consensus_version_header) = HeaderValue::from_str(&fork_name.to_string()) {
+            headers.insert(CONSENSUS_VERSION_HEADER, consensus_version_header);
         };
 
         let resp = self

@@ -986,7 +986,12 @@ impl<E: EthSpec> ExecutionLayer<E> {
         let ((relay_result, relay_duration), (local_result, local_duration)) = tokio::join!(
             timed_future(metrics::GET_BLINDED_PAYLOAD_BUILDER, async {
                 builder
-                    .get_builder_header::<E>(slot, parent_hash, pubkey)
+                    .get_builder_header::<E>(
+                        slot,
+                        parent_hash,
+                        pubkey,
+                        payload_parameters.current_fork,
+                    )
                     .await
             }),
             timed_future(metrics::GET_BLINDED_PAYLOAD_LOCAL, async {
