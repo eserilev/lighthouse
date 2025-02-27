@@ -1,4 +1,4 @@
-use crate::metrics;
+use crate::metrics::{self, register_process_result_metrics};
 use crate::network_beacon_processor::{NetworkBeaconProcessor, FUTURE_SLOT_TOLERANCE};
 use crate::sync::BatchProcessResult;
 use crate::sync::{
@@ -163,8 +163,7 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
                 NotifyExecutionLayer::Yes,
             )
             .await;
-
-        metrics::inc_counter(&metrics::BEACON_PROCESSOR_RPC_BLOCK_IMPORTED_TOTAL);
+        register_process_result_metrics(&result, metrics::BlockSource::Rpc, "block");
 
         // RPC block imported, regardless of process type
         match result.as_ref() {
@@ -286,6 +285,7 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
         }
 
         let result = self.chain.process_rpc_blobs(slot, block_root, blobs).await;
+        register_process_result_metrics(&result, metrics::BlockSource::Rpc, "blobs");
 
         match &result {
             Ok(AvailabilityProcessingStatus::Imported(hash)) => {
@@ -343,6 +343,7 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
             .chain
             .process_rpc_custody_columns(custody_columns)
             .await;
+        register_process_result_metrics(&result, metrics::BlockSource::Rpc, "custody_columns");
 
         match &result {
             Ok(availability) => match availability {
@@ -482,6 +483,7 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
                         debug!(self.log, "Backfill batch processed";
                             "batch_epoch" => epoch,
                             "first_block_slot" => start_slot,
+                            "keep_execution_payload" => !self.chain.store.get_config().prune_payloads,
                             "last_block_slot" => end_slot,
                             "processed_blocks" => sent_blocks,
                             "processed_blobs" => n_blobs,
@@ -795,6 +797,18 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
                     // We need to penalise harshly in case this represents an actual attack. In case
                     // of a faulty EL it will usually require manual intervention to fix anyway, so
                     // it's not too bad if we drop most of our peers.
+                    peer_action: Some(PeerAction::LowToleranceError),
+                })
+            }
+            // Penalise peers for sending us banned blocks.
+            BlockError::KnownInvalidExecutionPayload(block_root) => {
+                warn!(
+                    self.log,
+                    "Received block known to be invalid";
+                    "block_root" => ?block_root,
+                );
+                Err(ChainSegmentFailed {
+                    message: format!("Banned block: {block_root:?}"),
                     peer_action: Some(PeerAction::LowToleranceError),
                 })
             }

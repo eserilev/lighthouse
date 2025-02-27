@@ -122,9 +122,7 @@ impl<E: EthSpec> StateCache<E> {
         if self
             .finalized_state
             .as_ref()
-            .map_or(false, |finalized_state| {
-                state.slot() < finalized_state.state.slot()
-            })
+            .is_some_and(|finalized_state| state.slot() < finalized_state.state.slot())
         {
             return Err(Error::FinalizedStateDecreasingSlot);
         }
@@ -184,9 +182,7 @@ impl<E: EthSpec> StateCache<E> {
         if self
             .finalized_state
             .as_ref()
-            .map_or(false, |finalized_state| {
-                finalized_state.state_root == state_root
-            })
+            .is_some_and(|finalized_state| finalized_state.state_root == state_root)
         {
             return Ok(PutStateOutcome::Finalized);
         }

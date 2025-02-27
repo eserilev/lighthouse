@@ -1,5 +1,6 @@
 use crate::duties_service::{DutiesService, DutyAndProof};
 use beacon_node_fallback::{ApiTopic, BeaconNodeFallback};
+use either::Either;
 use environment::RuntimeContext;
 use futures::future::join_all;
 use slog::{crit, debug, error, info, trace, warn};
@@ -20,6 +21,7 @@ pub struct AttestationServiceBuilder<T: SlotClock + 'static, E: EthSpec> {
     slot_clock: Option<T>,
     beacon_nodes: Option<Arc<BeaconNodeFallback<T, E>>>,
     context: Option<RuntimeContext<E>>,
+    disable: bool,
 }
 
 impl<T: SlotClock + 'static, E: EthSpec> AttestationServiceBuilder<T, E> {
@@ -30,6 +32,7 @@ impl<T: SlotClock + 'static, E: EthSpec> AttestationServiceBuilder<T, E> {
             slot_clock: None,
             beacon_nodes: None,
             context: None,
+            disable: false,
         }
     }
 
@@ -58,6 +61,11 @@ impl<T: SlotClock + 'static, E: EthSpec> AttestationServiceBuilder<T, E> {
         self
     }
 
+    pub fn disable(mut self, disable: bool) -> Self {
+        self.disable = disable;
+        self
+    }
+
     pub fn build(self) -> Result<AttestationService<T, E>, String> {
         Ok(AttestationService {
             inner: Arc::new(Inner {
@@ -76,6 +84,7 @@ impl<T: SlotClock + 'static, E: EthSpec> AttestationServiceBuilder<T, E> {
                 context: self
                     .context
                     .ok_or("Cannot build AttestationService without runtime_context")?,
+                disable: self.disable,
             }),
         })
     }
@@ -88,6 +97,7 @@ pub struct Inner<T, E: EthSpec> {
     slot_clock: T,
     beacon_nodes: Arc<BeaconNodeFallback<T, E>>,
     context: RuntimeContext<E>,
+    disable: bool,
 }
 
 /// Attempts to produce attestations for all known validators 1/3rd of the way through each slot.
@@ -119,6 +129,10 @@ impl<T: SlotClock + 'static, E: EthSpec> AttestationService<T, E> {
     /// Starts the service which periodically produces attestations.
     pub fn start_update_service(self, spec: &ChainSpec) -> Result<(), String> {
         let log = self.context.log().clone();
+        if self.disable {
+            info!(log, "Attestation service disabled");
+            return Ok(());
+        }
 
         let slot_duration = Duration::from_secs(spec.seconds_per_slot);
         let duration_to_next_slot = self
@@ -457,8 +471,34 @@ impl<T: SlotClock + 'static, E: EthSpec> AttestationService<T, E> {
                     &[validator_metrics::ATTESTATIONS_HTTP_POST],
                 );
                 if fork_name.electra_enabled() {
+                    let single_attestations = attestations
+                        .iter()
+                        .zip(validator_indices)
+                        .filter_map(|(a, i)| {
+                            match a.to_single_attestation_with_attester_index(*i) {
+                                Ok(a) => Some(a),
+                                Err(e) => {
+                                    // This shouldn't happen unless BN and VC are out of sync with
+                                    // respect to the Electra fork.
+                                    error!(
+                                        log,
+                                        "Unable to convert to SingleAttestation";
+                                        "error" => ?e,
+                                        "committee_index" => attestation_data.index,
+                                        "slot" => slot.as_u64(),
+                                        "type" => "unaggregated",
+                                    );
+                                    None
+                                }
+                            }
+                        })
+                        .collect::<Vec<_>>();
+
                     beacon_node
-                        .post_beacon_pool_attestations_v2(attestations, fork_name)
+                        .post_beacon_pool_attestations_v2::<E>(
+                            Either::Right(single_attestations),
+                            fork_name,
+                        )
                         .await
                 } else {
                     beacon_node

@@ -94,6 +94,8 @@ pub struct ChainConfig {
     /// The delay in milliseconds applied by the node between sending each blob or data column batch.
     /// This doesn't apply if the node is the block proposer.
     pub blob_publication_batch_interval: Duration,
+    pub disable_attesting: bool,
+    pub sync_tolerance_epochs: u64,
 }
 
 impl Default for ChainConfig {
@@ -124,11 +126,13 @@ impl Default for ChainConfig {
             genesis_backfill: false,
             always_prepare_payload: false,
             epochs_per_migration: crate::migrate::DEFAULT_EPOCHS_PER_MIGRATION,
-            enable_light_client_server: false,
+            enable_light_client_server: true,
             malicious_withhold_count: 0,
             enable_sampling: false,
             blob_publication_batches: 4,
             blob_publication_batch_interval: Duration::from_millis(300),
+            disable_attesting: false,
+            sync_tolerance_epochs: 16,
         }
     }
 }

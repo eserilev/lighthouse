@@ -90,8 +90,10 @@ use std::borrow::Cow;
 use std::fmt::Debug;
 use std::fs;
 use std::io::Write;
+use std::str::FromStr;
 use std::sync::Arc;
 use store::{Error as DBError, HotStateSummary, KeyValueStore, StoreOp};
+use strum::AsRefStr;
 use task_executor::JoinHandle;
 use types::{
     data_column_sidecar::DataColumnSidecarError, BeaconBlockRef, BeaconState, BeaconStateError,
@@ -137,7 +139,7 @@ const WRITE_BLOCK_PROCESSING_SSZ: bool = cfg!(feature = "write_ssz_files");
 ///
 /// - The block is malformed/invalid (indicated by all results other than `BeaconChainError`.
 /// - We encountered an error whilst trying to verify the block (a `BeaconChainError`).
-#[derive(Debug)]
+#[derive(Debug, AsRefStr)]
 pub enum BlockError {
     /// The parent block was unknown.
     ///
@@ -145,7 +147,9 @@ pub enum BlockError {
     ///
     /// It's unclear if this block is valid, but it cannot be processed without already knowing
     /// its parent.
-    ParentUnknown { parent_root: Hash256 },
+    ParentUnknown {
+        parent_root: Hash256,
+    },
     /// The block slot is greater than the present slot.
     ///
     /// ## Peer scoring
@@ -160,7 +164,10 @@ pub enum BlockError {
     /// ## Peer scoring
     ///
     /// The peer has incompatible state transition logic and is faulty.
-    StateRootMismatch { block: Hash256, local: Hash256 },
+    StateRootMismatch {
+        block: Hash256,
+        local: Hash256,
+    },
     /// The block was a genesis block, these blocks cannot be re-imported.
     GenesisBlock,
     /// The slot is finalized, no need to import.
@@ -179,7 +186,9 @@ pub enum BlockError {
     ///
     /// It's unclear if this block is valid, but it conflicts with finality and shouldn't be
     /// imported.
-    NotFinalizedDescendant { block_parent_root: Hash256 },
+    NotFinalizedDescendant {
+        block_parent_root: Hash256,
+    },
     /// Block is already known and valid, no need to re-import.
     ///
     /// ## Peer scoring
@@ -206,31 +215,31 @@ pub enum BlockError {
     /// ## Peer scoring
     ///
     /// The block is invalid and the peer is faulty.
-    IncorrectBlockProposer { block: u64, local_shuffling: u64 },
-    /// The proposal signature in invalid.
-    ///
-    /// ## Peer scoring
-    ///
-    /// The block is invalid and the peer is faulty.
-    ProposalSignatureInvalid,
+    IncorrectBlockProposer {
+        block: u64,
+        local_shuffling: u64,
+    },
     /// The `block.proposal_index` is not known.
     ///
     /// ## Peer scoring
     ///
     /// The block is invalid and the peer is faulty.
     UnknownValidator(u64),
-    /// A signature in the block is invalid (exactly which is unknown).
+    /// A signature in the block is invalid
     ///
     /// ## Peer scoring
     ///
     /// The block is invalid and the peer is faulty.
-    InvalidSignature,
+    InvalidSignature(InvalidSignature),
     /// The provided block is not from a later slot than its parent.
     ///
     /// ## Peer scoring
     ///
     /// The block is invalid and the peer is faulty.
-    BlockIsNotLaterThanParent { block_slot: Slot, parent_slot: Slot },
+    BlockIsNotLaterThanParent {
+        block_slot: Slot,
+        parent_slot: Slot,
+    },
     /// At least one block in the chain segment did not have it's parent root set to the root of
     /// the prior block.
     ///
@@ -286,7 +295,10 @@ pub enum BlockError {
     /// If it's actually our fault (e.g. our execution node database is corrupt) we have bigger
     /// problems to worry about than losing peers, and we're doing the network a favour by
     /// disconnecting.
-    ParentExecutionPayloadInvalid { parent_root: Hash256 },
+    ParentExecutionPayloadInvalid {
+        parent_root: Hash256,
+    },
+    KnownInvalidExecutionPayload(Hash256),
     /// The block is a slashable equivocation from the proposer.
     ///
     /// ## Peer scoring
@@ -326,6 +338,17 @@ pub enum BlockError {
     /// We were unable to process this block due to an internal error. It's unclear if the block is
     /// valid.
     InternalError(String),
+}
+
+/// Which specific signature(s) are invalid in a SignedBeaconBlock
+#[derive(Debug)]
+pub enum InvalidSignature {
+    // The outer signature in a SignedBeaconBlock
+    ProposerSignature,
+    // One or more signatures in BeaconBlockBody
+    BlockBodySignatures,
+    // One or more signatures in SignedBeaconBlock
+    Unknown,
 }
 
 impl From<AvailabilityCheckError> for BlockError {
@@ -522,7 +545,9 @@ pub enum BlockSlashInfo<TErr> {
 impl BlockSlashInfo<BlockError> {
     pub fn from_early_error_block(header: SignedBeaconBlockHeader, e: BlockError) -> Self {
         match e {
-            BlockError::ProposalSignatureInvalid => BlockSlashInfo::SignatureInvalid(e),
+            BlockError::InvalidSignature(InvalidSignature::ProposerSignature) => {
+                BlockSlashInfo::SignatureInvalid(e)
+            }
             // `InvalidSignature` could indicate any signature in the block, so we want
             // to recheck the proposer signature alone.
             _ => BlockSlashInfo::SignatureNotChecked(header, e),
@@ -651,7 +676,7 @@ pub fn signature_verify_chain_segment<T: BeaconChainTypes>(
     }
 
     if signature_verifier.verify().is_err() {
-        return Err(BlockError::InvalidSignature);
+        return Err(BlockError::InvalidSignature(InvalidSignature::Unknown));
     }
 
     drop(pubkey_cache);
@@ -963,7 +988,9 @@ impl<T: BeaconChainTypes> GossipVerifiedBlock<T> {
         };
 
         if !signature_is_valid {
-            return Err(BlockError::ProposalSignatureInvalid);
+            return Err(BlockError::InvalidSignature(
+                InvalidSignature::ProposerSignature,
+            ));
         }
 
         chain
@@ -1097,7 +1124,26 @@ impl<T: BeaconChainTypes> SignatureVerifiedBlock<T> {
                 parent: Some(parent),
             })
         } else {
-            Err(BlockError::InvalidSignature)
+            // Re-verify the proposer signature in isolation to attribute fault
+            let pubkey = pubkey_cache
+                .get(block.message().proposer_index() as usize)
+                .ok_or_else(|| BlockError::UnknownValidator(block.message().proposer_index()))?;
+            if block.as_block().verify_signature(
+                Some(block_root),
+                pubkey,
+                &state.fork(),
+                chain.genesis_validators_root,
+                &chain.spec,
+            ) {
+                // Proposer signature is valid, the invalid signature must be in the body
+                Err(BlockError::InvalidSignature(
+                    InvalidSignature::BlockBodySignatures,
+                ))
+            } else {
+                Err(BlockError::InvalidSignature(
+                    InvalidSignature::ProposerSignature,
+                ))
+            }
         }
     }
 
@@ -1152,7 +1198,9 @@ impl<T: BeaconChainTypes> SignatureVerifiedBlock<T> {
                 consensus_context,
             })
         } else {
-            Err(BlockError::InvalidSignature)
+            Err(BlockError::InvalidSignature(
+                InvalidSignature::BlockBodySignatures,
+            ))
         }
     }
 
@@ -1295,6 +1343,13 @@ impl<T: BeaconChainTypes> ExecutionPendingBlock<T> {
         chain: &Arc<BeaconChain<T>>,
         notify_execution_layer: NotifyExecutionLayer,
     ) -> Result<Self, BlockError> {
+        if block_root
+            == Hash256::from_str("2db899881ed8546476d0b92c6aa9110bea9a4cd0dbeb5519eb0ea69575f1f359")
+                .expect("valid hash")
+        {
+            return Err(BlockError::KnownInvalidExecutionPayload(block_root));
+        }
+
         chain
             .observed_slashable
             .write()
@@ -1676,6 +1731,7 @@ impl<T: BeaconChainTypes> ExecutionPendingBlock<T> {
                 parent_eth1_finalization_data,
                 confirmed_state_roots,
                 consensus_context,
+                data_column_recv: None,
             },
             payload_verification_handle,
         })
@@ -1979,7 +2035,7 @@ impl BlockBlobError for BlockError {
     }
 
     fn proposer_signature_invalid() -> Self {
-        BlockError::ProposalSignatureInvalid
+        BlockError::InvalidSignature(InvalidSignature::ProposerSignature)
     }
 }
 
@@ -2072,6 +2128,7 @@ pub fn get_validator_pubkey_cache<T: BeaconChainTypes>(
 ///
 /// The signature verifier is empty because it does not yet have any of this block's signatures
 /// added to it. Use `Self::apply_to_signature_verifier` to apply the signatures.
+#[allow(clippy::type_complexity)]
 fn get_signature_verifier<'a, T: BeaconChainTypes>(
     state: &'a BeaconState<T::EthSpec>,
     validator_pubkey_cache: &'a ValidatorPubkeyCache<T>,
