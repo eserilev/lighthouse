@@ -48,7 +48,9 @@ pub fn spawn_notifier<T: BeaconChainTypes>(
     // Store info if we are required to do a backfill sync.
     let original_oldest_block_slot = beacon_chain.store.get_anchor_info().oldest_block_slot;
 
+    let outer_executor = executor.clone();
     let interval_future = async move {
+        let executor = outer_executor.clone();
         // Perform pre-genesis logging.
         loop {
             match beacon_chain.slot_clock.duration_to_next_slot() {
@@ -317,6 +319,20 @@ pub fn spawn_notifier<T: BeaconChainTypes>(
             deneb_readiness_logging(current_slot, &beacon_chain, &log).await;
             electra_readiness_logging(current_slot, &beacon_chain, &log).await;
             fulu_readiness_logging(current_slot, &beacon_chain, &log).await;
+
+            let chain = beacon_chain.clone();
+            let log = log.clone();
+            executor.spawn_blocking(
+                move || {
+                    chain
+                        .store
+                        .state_cache
+                        .lock()
+                        .clone()
+                        .log_memory_stats(&log);
+                },
+                "memory_stats",
+            );
         }
     };
 

@@ -73,7 +73,7 @@ pub struct HotColdDB<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<E>> {
     /// Cache of beacon states.
     ///
     /// LOCK ORDERING: this lock must always be locked *after* the `split` if both are required.
-    state_cache: Mutex<StateCache<E>>,
+    pub state_cache: Mutex<StateCache<E>>,
     /// Cache of historic states and hierarchical diff buffers.
     ///
     /// This cache is never pruned. It is only populated in response to historical queries from the

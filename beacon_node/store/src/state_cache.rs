@@ -14,25 +14,25 @@ const CULL_EXEMPT_DENOMINATOR: usize = 10;
 /// be culled from the cache.
 const EPOCH_FINALIZATION_LIMIT: u64 = 4;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FinalizedState<E: EthSpec> {
     state_root: Hash256,
     state: BeaconState<E>,
 }
 
 /// Map from block_root -> slot -> state_root.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct BlockMap {
     blocks: HashMap<Hash256, SlotMap>,
 }
 
 /// Map from slot -> state_root.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct SlotMap {
     slots: BTreeMap<Slot, Hash256>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StateCache<E: EthSpec> {
     finalized_state: Option<FinalizedState<E>>,
     states: LruCache<Hash256, BeaconState<E>>,
@@ -66,7 +66,8 @@ impl<E: EthSpec> StateCache<E> {
         self.states.cap().get()
     }
 
-    fn log_memory_stats(&self, log: &Logger) {
+    pub fn log_memory_stats(&self, log: &Logger) {
+        let t = std::time::Instant::now();
         let mut mem_tracker = MemoryTracker::default();
         let mut total_usage = 0;
         if let Some(finalized_state) = &self.finalized_state {
@@ -105,6 +106,7 @@ impl<E: EthSpec> StateCache<E> {
             "Total memory stats";
             "num_states" => self.states.len(),
             "bytes_kb" => total_usage / 1024,
+            "time_elapsed_ms" => t.elapsed().as_millis()
         );
     }
 

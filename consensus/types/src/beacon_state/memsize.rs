@@ -71,6 +71,15 @@ impl<E: EthSpec> MemorySize for BeaconState<E> {
                     }
                 );
             }
+            Self::Fulu(self_inner) => {
+                map_beacon_state_fulu_tree_list_fields_immutable!(
+                    &'a _,
+                    self_inner,
+                    |_, self_field| {
+                        subtrees.push(self_field);
+                    }
+                );
+            }
         }
 
         if let Ok(current_sc) = self.current_sync_committee() {
