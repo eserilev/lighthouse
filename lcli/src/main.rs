@@ -1,5 +1,6 @@
 mod block_root;
 mod check_deposit_data;
+mod compare_states;
 mod generate_bootnode_enr;
 mod http_sync;
 mod indexed_attestations;
@@ -57,6 +58,56 @@ fn main() {
                 .help("The network to use. Defaults to mainnet.")
                 .conflicts_with("testnet-dir")
                 .display_order(0)
+        )
+        .subcommand(
+            Command::new("compare-states")
+            .about(
+                "Compare beacon states across a number of slots"
+            )
+            .arg(
+                Arg::new("beacon-url")
+                    .long("beacon-url")
+                    .value_name("URL")
+                    .action(ArgAction::Set)
+                    .help("URL to a beacon-API provider.")
+                    .display_order(0)
+            )
+            .arg(
+                Arg::new("slot")
+                    .long("slot")
+                    .value_name("STATE_ID")
+                    .action(ArgAction::Set)
+                    .requires("beacon-url")
+                    .help("Identifier for a state as per beacon-API standards (slot, root, etc.)")
+                    .display_order(0)
+            )
+            .arg(
+                Arg::new("runs")
+                    .long("runs")
+                    .value_name("INTEGER")
+                    .action(ArgAction::Set)
+                    .default_value("1")
+                    .help("Number of repeat runs, useful for benchmarking.")
+                    .display_order(0)
+            )
+            .arg(
+                Arg::new("slots")
+                    .long("slots")
+                    .value_name("INTEGER")
+                    .action(ArgAction::Set)
+                    .default_value("1")
+                    .help("Number of repeat runs, useful for benchmarking.")
+                    .display_order(0)
+            )
+            .arg(
+                Arg::new("current-slot")
+                    .long("current-slot")
+                    .value_name("INTEGER")
+                    .action(ArgAction::Set)
+                    .default_value("1")
+                    .help("Number of repeat runs, useful for benchmarking.")
+                    .display_order(0)
+            )
         )
         .subcommand(
             Command::new("skip-slots")
@@ -694,6 +745,11 @@ fn run<E: EthSpec>(env_builder: EnvironmentBuilder<E>, matches: &ArgMatches) -> 
             let network_config = get_network_config()?;
             transition_blocks::run::<E>(env, network_config, matches)
                 .map_err(|e| format!("Failed to transition blocks: {}", e))
+        }
+        Some(("compare-states", matches)) => {
+            let network_config = get_network_config()?;
+            compare_states::run::<E>(env, network_config, matches)
+                .map_err(|e| format!("Failed to compare states: {}", e))
         }
         Some(("skip-slots", matches)) => {
             let network_config = get_network_config()?;
