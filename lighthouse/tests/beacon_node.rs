@@ -2812,6 +2812,8 @@ fn data_column_publishing_delay_for_testing() {
             );
         });
 }
+
+#[test]
 fn invalid_block_roots_flag() {
     let dir = TempDir::new().expect("Unable to create temporary directory");
     let mut file =
