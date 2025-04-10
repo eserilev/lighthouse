@@ -164,7 +164,7 @@ impl<E: EthSpec> LoadCase for KzgInclusionMerkleProofValidity<E> {
             ForkName::Deneb => {
                 ssz_decode_file::<BeaconBlockBodyDeneb<E>>(&path.join("object.ssz_snappy"))?.into()
             }
-            ForkName::Electra => {
+            ForkName::Electra | ForkName::Eip7805 => {
                 ssz_decode_file::<BeaconBlockBodyElectra<E>>(&path.join("object.ssz_snappy"))?
                     .into()
             }
@@ -282,7 +282,7 @@ impl<E: EthSpec> LoadCase for BeaconBlockBodyMerkleProofValidity<E> {
             ForkName::Deneb => {
                 ssz_decode_file::<BeaconBlockBodyDeneb<E>>(&path.join("object.ssz_snappy"))?.into()
             }
-            ForkName::Electra => {
+            ForkName::Electra | ForkName::Eip7805 => {
                 ssz_decode_file::<BeaconBlockBodyElectra<E>>(&path.join("object.ssz_snappy"))?
                     .into()
             }

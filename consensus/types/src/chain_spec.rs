@@ -199,6 +199,7 @@ pub struct ChainSpec {
     pub domain_inclusion_list_committee: u32,
     pub inclusion_list_committee_size: u64,
     pub eip7805_fork_epoch: Option<Epoch>,
+    pub eip7805_fork_version: [u8; 4],
 
     /*
      * Fulu hard fork params
@@ -362,6 +363,7 @@ impl ChainSpec {
             ForkName::Capella => self.capella_fork_version,
             ForkName::Deneb => self.deneb_fork_version,
             ForkName::Electra => self.electra_fork_version,
+            ForkName::Eip7805 => self.eip7805_fork_version,
             ForkName::Fulu => self.fulu_fork_version,
         }
     }
@@ -375,6 +377,7 @@ impl ChainSpec {
             ForkName::Capella => self.capella_fork_epoch,
             ForkName::Deneb => self.deneb_fork_epoch,
             ForkName::Electra => self.electra_fork_epoch,
+            ForkName::Eip7805 => self.eip7805_fork_epoch,
             ForkName::Fulu => self.fulu_fork_epoch,
         }
     }
@@ -936,6 +939,7 @@ impl ChainSpec {
             domain_inclusion_list_committee: 13,
             inclusion_list_committee_size: 16,
             eip7805_fork_epoch: None,
+            eip7805_fork_version: [0x07, 0x00, 0x00, 0xfd],
 
             /*
              * Fulu hard fork params
@@ -1064,6 +1068,7 @@ impl ChainSpec {
             .expect("calculation does not overflow"),
             // FOCIL
             eip7805_fork_epoch: None,
+            eip7805_fork_version: [0x07, 0x00, 0x00, 0xfd],
             // Fulu
             fulu_fork_version: [0x06, 0x00, 0x00, 0x01],
             fulu_fork_epoch: None,
@@ -1275,6 +1280,7 @@ impl ChainSpec {
             domain_inclusion_list_committee: 13,
             inclusion_list_committee_size: 16,
             eip7805_fork_epoch: None,
+            eip7805_fork_version: [0x07, 0x00, 0x00, 0xfd],
 
             /*
              * Fulu hard fork params
@@ -1434,6 +1440,10 @@ pub struct Config {
     #[serde(deserialize_with = "deserialize_fork_epoch")]
     pub eip7805_fork_epoch: Option<MaybeQuoted<Epoch>>,
 
+    #[serde(default = "default_eip7805_fork_version")]
+    #[serde(with = "serde_utils::bytes_4_hex")]
+    pub eip7805_fork_version: [u8; 4],
+
     #[serde(with = "serde_utils::quoted_u64")]
     seconds_per_slot: u64,
     #[serde(with = "serde_utils::quoted_u64")]
@@ -1577,6 +1587,11 @@ fn default_deneb_fork_version() -> [u8; 4] {
 }
 
 fn default_electra_fork_version() -> [u8; 4] {
+    // This value shouldn't be used.
+    [0xff, 0xff, 0xff, 0xff]
+}
+
+fn default_eip7805_fork_version() -> [u8; 4] {
     // This value shouldn't be used.
     [0xff, 0xff, 0xff, 0xff]
 }
@@ -1879,6 +1894,7 @@ impl Config {
             eip7805_fork_epoch: spec
                 .eip7805_fork_epoch
                 .map(|epoch| MaybeQuoted { value: epoch }),
+            eip7805_fork_version: spec.eip7805_fork_version,
 
             seconds_per_slot: spec.seconds_per_slot,
             seconds_per_eth1_block: spec.seconds_per_eth1_block,
@@ -1965,6 +1981,7 @@ impl Config {
             electra_fork_epoch,
             electra_fork_version,
             eip7805_fork_epoch,
+            eip7805_fork_version,
             fulu_fork_epoch,
             fulu_fork_version,
             seconds_per_slot,
@@ -2035,6 +2052,7 @@ impl Config {
             electra_fork_epoch: electra_fork_epoch.map(|q| q.value),
             electra_fork_version,
             eip7805_fork_epoch: eip7805_fork_epoch.map(|q| q.value),
+            eip7805_fork_version,
             fulu_fork_epoch: fulu_fork_epoch.map(|q| q.value),
             fulu_fork_version,
             seconds_per_slot,

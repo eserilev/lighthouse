@@ -552,18 +552,20 @@ impl<E: EthSpec> MockBuilder<E> {
                         pubkey: self.builder_sk.public_key().compress(),
                         execution_requests: maybe_requests.unwrap_or_default(),
                     }),
-                    ForkName::Electra => BuilderBid::Electra(BuilderBidElectra {
-                        header: payload
-                            .as_electra()
-                            .map_err(|_| "incorrect payload variant".to_string())?
-                            .into(),
-                        blob_kzg_commitments: maybe_blobs_bundle
-                            .map(|b| b.commitments)
-                            .unwrap_or_default(),
-                        value: self.get_bid_value(value),
-                        pubkey: self.builder_sk.public_key().compress(),
-                        execution_requests: maybe_requests.unwrap_or_default(),
-                    }),
+                    ForkName::Electra | ForkName::Eip7805 => {
+                        BuilderBid::Electra(BuilderBidElectra {
+                            header: payload
+                                .as_electra()
+                                .map_err(|_| "incorrect payload variant".to_string())?
+                                .into(),
+                            blob_kzg_commitments: maybe_blobs_bundle
+                                .map(|b| b.commitments)
+                                .unwrap_or_default(),
+                            value: self.get_bid_value(value),
+                            pubkey: self.builder_sk.public_key().compress(),
+                            execution_requests: maybe_requests.unwrap_or_default(),
+                        })
+                    }
                     ForkName::Deneb => BuilderBid::Deneb(BuilderBidDeneb {
                         header: payload
                             .as_deneb()
@@ -845,13 +847,15 @@ impl<E: EthSpec> MockBuilder<E> {
                 expected_withdrawals,
                 None,
             ),
-            ForkName::Deneb | ForkName::Electra | ForkName::Fulu => PayloadAttributes::new(
-                timestamp,
-                *prev_randao,
-                fee_recipient,
-                expected_withdrawals,
-                Some(head_block_root),
-            ),
+            ForkName::Deneb | ForkName::Electra | ForkName::Fulu | ForkName::Eip7805 => {
+                PayloadAttributes::new(
+                    timestamp,
+                    *prev_randao,
+                    fee_recipient,
+                    expected_withdrawals,
+                    Some(head_block_root),
+                )
+            }
             ForkName::Base | ForkName::Altair => {
                 return Err("invalid fork".to_string());
             }

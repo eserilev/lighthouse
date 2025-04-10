@@ -41,7 +41,9 @@ pub fn fork_context(fork_name: ForkName) -> ForkContext {
         ForkName::Bellatrix => bellatrix_fork_epoch.start_slot(E::slots_per_epoch()),
         ForkName::Capella => capella_fork_epoch.start_slot(E::slots_per_epoch()),
         ForkName::Deneb => deneb_fork_epoch.start_slot(E::slots_per_epoch()),
-        ForkName::Electra => electra_fork_epoch.start_slot(E::slots_per_epoch()),
+        ForkName::Electra | ForkName::Eip7805 => {
+            electra_fork_epoch.start_slot(E::slots_per_epoch())
+        }
         ForkName::Fulu => fulu_fork_epoch.start_slot(E::slots_per_epoch()),
     };
     ForkContext::new::<E>(current_slot, Hash256::zero(), &chain_spec)

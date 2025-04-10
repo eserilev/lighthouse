@@ -1068,7 +1068,7 @@ impl ForkVersionDeserialize for SsePayloadAttributes {
             ForkName::Deneb => serde_json::from_value(value)
                 .map(Self::V3)
                 .map_err(serde::de::Error::custom),
-            ForkName::Electra => serde_json::from_value(value)
+            ForkName::Electra | ForkName::Eip7805 => serde_json::from_value(value)
                 .map(Self::V3)
                 .map_err(serde::de::Error::custom),
             ForkName::Fulu => serde_json::from_value(value)

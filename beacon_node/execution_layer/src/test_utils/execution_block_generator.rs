@@ -838,7 +838,7 @@ pub fn generate_genesis_header<E: EthSpec>(
             *header.transactions_root_mut() = empty_transactions_root;
             Some(header)
         }
-        ForkName::Electra => {
+        ForkName::Electra | ForkName::Eip7805 => {
             let mut header = ExecutionPayloadHeader::Electra(<_>::default());
             *header.block_hash_mut() = genesis_block_hash.unwrap_or_default();
             *header.transactions_root_mut() = empty_transactions_root;

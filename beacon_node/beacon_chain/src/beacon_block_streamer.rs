@@ -99,7 +99,7 @@ fn reconstruct_default_header_block<E: EthSpec>(
         ForkName::Bellatrix => ExecutionPayloadBellatrix::default().into(),
         ForkName::Capella => ExecutionPayloadCapella::default().into(),
         ForkName::Deneb => ExecutionPayloadDeneb::default().into(),
-        ForkName::Electra => ExecutionPayloadElectra::default().into(),
+        ForkName::Electra | ForkName::Eip7805 => ExecutionPayloadElectra::default().into(),
         ForkName::Fulu => ExecutionPayloadFulu::default().into(),
         ForkName::Base | ForkName::Altair => {
             return Err(Error::PayloadReconstruction(format!(

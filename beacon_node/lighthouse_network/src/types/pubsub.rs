@@ -247,10 +247,12 @@ impl<E: EthSpec> PubsubMessage<E> {
                                     SignedBeaconBlockDeneb::from_ssz_bytes(data)
                                         .map_err(|e| format!("{:?}", e))?,
                                 ),
-                                Some(ForkName::Electra) => SignedBeaconBlock::<E>::Electra(
-                                    SignedBeaconBlockElectra::from_ssz_bytes(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
+                                Some(ForkName::Electra) | Some(ForkName::Eip7805) => {
+                                    SignedBeaconBlock::<E>::Electra(
+                                        SignedBeaconBlockElectra::from_ssz_bytes(data)
+                                            .map_err(|e| format!("{:?}", e))?,
+                                    )
+                                }
                                 Some(ForkName::Fulu) => SignedBeaconBlock::<E>::Fulu(
                                     SignedBeaconBlockFulu::from_ssz_bytes(data)
                                         .map_err(|e| format!("{:?}", e))?,

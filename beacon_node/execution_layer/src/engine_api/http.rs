@@ -979,7 +979,7 @@ impl HttpJsonRpc {
         let params = json!([JsonPayloadIdRequest::from(payload_id)]);
 
         match fork_name {
-            ForkName::Electra => {
+            ForkName::Electra | ForkName::Eip7805 => {
                 let response: JsonGetPayloadResponseV4<E> = self
                     .rpc_request(
                         ENGINE_GET_PAYLOAD_V4,
@@ -1340,7 +1340,7 @@ impl HttpJsonRpc {
                     Err(Error::RequiredMethodUnsupported("engine_getPayloadv3"))
                 }
             }
-            ForkName::Electra => {
+            ForkName::Electra | ForkName::Eip7805 => {
                 if engine_capabilities.get_payload_v4 {
                     self.get_payload_v4(fork_name, payload_id).await
                 } else {

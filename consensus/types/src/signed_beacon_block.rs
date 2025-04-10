@@ -806,7 +806,7 @@ pub mod ssz_tagged_signed_beacon_block {
                 ForkName::Deneb => Ok(SignedBeaconBlock::Deneb(
                     SignedBeaconBlockDeneb::from_ssz_bytes(body)?,
                 )),
-                ForkName::Electra => Ok(SignedBeaconBlock::Electra(
+                ForkName::Electra | ForkName::Eip7805 => Ok(SignedBeaconBlock::Electra(
                     SignedBeaconBlockElectra::from_ssz_bytes(body)?,
                 )),
                 ForkName::Fulu => Ok(SignedBeaconBlock::Fulu(

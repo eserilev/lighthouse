@@ -91,7 +91,9 @@ impl<E: EthSpec> ForkVersionDecode for BuilderBid<E> {
             }
             ForkName::Capella => BuilderBid::Capella(BuilderBidCapella::from_ssz_bytes(bytes)?),
             ForkName::Deneb => BuilderBid::Deneb(BuilderBidDeneb::from_ssz_bytes(bytes)?),
-            ForkName::Electra => BuilderBid::Electra(BuilderBidElectra::from_ssz_bytes(bytes)?),
+            ForkName::Electra | ForkName::Eip7805 => {
+                BuilderBid::Electra(BuilderBidElectra::from_ssz_bytes(bytes)?)
+            }
             ForkName::Fulu => BuilderBid::Fulu(BuilderBidFulu::from_ssz_bytes(bytes)?),
         };
         Ok(builder_bid)
@@ -139,7 +141,9 @@ impl<E: EthSpec> ForkVersionDeserialize for BuilderBid<E> {
             }
             ForkName::Capella => Self::Capella(serde_json::from_value(value).map_err(convert_err)?),
             ForkName::Deneb => Self::Deneb(serde_json::from_value(value).map_err(convert_err)?),
-            ForkName::Electra => Self::Electra(serde_json::from_value(value).map_err(convert_err)?),
+            ForkName::Electra | ForkName::Eip7805 => {
+                Self::Electra(serde_json::from_value(value).map_err(convert_err)?)
+            }
             ForkName::Fulu => Self::Fulu(serde_json::from_value(value).map_err(convert_err)?),
             ForkName::Base | ForkName::Altair => {
                 return Err(serde::de::Error::custom(format!(

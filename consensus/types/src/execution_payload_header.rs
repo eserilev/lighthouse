@@ -105,7 +105,7 @@ impl<E: EthSpec> ExecutionPayloadHeader<E> {
                 ExecutionPayloadHeaderCapella::from_ssz_bytes(bytes).map(Self::Capella)
             }
             ForkName::Deneb => ExecutionPayloadHeaderDeneb::from_ssz_bytes(bytes).map(Self::Deneb),
-            ForkName::Electra => {
+            ForkName::Electra | ForkName::Eip7805 => {
                 ExecutionPayloadHeaderElectra::from_ssz_bytes(bytes).map(Self::Electra)
             }
             ForkName::Fulu => ExecutionPayloadHeaderFulu::from_ssz_bytes(bytes).map(Self::Fulu),
@@ -490,7 +490,9 @@ impl<E: EthSpec> ForkVersionDeserialize for ExecutionPayloadHeader<E> {
             }
             ForkName::Capella => Self::Capella(serde_json::from_value(value).map_err(convert_err)?),
             ForkName::Deneb => Self::Deneb(serde_json::from_value(value).map_err(convert_err)?),
-            ForkName::Electra => Self::Electra(serde_json::from_value(value).map_err(convert_err)?),
+            ForkName::Electra | ForkName::Eip7805 => {
+                Self::Electra(serde_json::from_value(value).map_err(convert_err)?)
+            }
             ForkName::Fulu => Self::Fulu(serde_json::from_value(value).map_err(convert_err)?),
             ForkName::Base | ForkName::Altair => {
                 return Err(serde::de::Error::custom(format!(

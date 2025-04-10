@@ -309,6 +309,30 @@ impl<E: EthSpec> LightClientUpdate<E> {
                     signature_slot: block_slot,
                 })
             }
+            fork_name @ ForkName::Eip7805 => {
+                let attested_header =
+                    LightClientHeaderElectra::block_to_light_client_header(attested_block)?;
+
+                let finalized_header = if let Some(finalized_block) = finalized_block {
+                    if finalized_block.fork_name_unchecked() == fork_name {
+                        LightClientHeaderElectra::block_to_light_client_header(finalized_block)?
+                    } else {
+                        LightClientHeaderElectra::default()
+                    }
+                } else {
+                    LightClientHeaderElectra::default()
+                };
+
+                Self::Electra(LightClientUpdateElectra {
+                    attested_header,
+                    next_sync_committee,
+                    next_sync_committee_branch: next_sync_committee_branch.into(),
+                    finalized_header,
+                    finality_branch: finality_branch.into(),
+                    sync_aggregate: sync_aggregate.clone(),
+                    signature_slot: block_slot,
+                })
+            }
             fork_name @ ForkName::Fulu => {
                 let attested_header =
                     LightClientHeaderFulu::block_to_light_client_header(attested_block)?;
@@ -347,7 +371,9 @@ impl<E: EthSpec> LightClientUpdate<E> {
             }
             ForkName::Capella => Self::Capella(LightClientUpdateCapella::from_ssz_bytes(bytes)?),
             ForkName::Deneb => Self::Deneb(LightClientUpdateDeneb::from_ssz_bytes(bytes)?),
-            ForkName::Electra => Self::Electra(LightClientUpdateElectra::from_ssz_bytes(bytes)?),
+            ForkName::Electra | ForkName::Eip7805 => {
+                Self::Electra(LightClientUpdateElectra::from_ssz_bytes(bytes)?)
+            }
             ForkName::Fulu => Self::Fulu(LightClientUpdateFulu::from_ssz_bytes(bytes)?),
             ForkName::Base => {
                 return Err(ssz::DecodeError::BytesInvalid(format!(
@@ -494,7 +520,9 @@ impl<E: EthSpec> LightClientUpdate<E> {
             ForkName::Altair => <LightClientUpdateAltair<E> as Encode>::ssz_fixed_len(),
             ForkName::Capella => <LightClientUpdateCapella<E> as Encode>::ssz_fixed_len(),
             ForkName::Deneb => <LightClientUpdateDeneb<E> as Encode>::ssz_fixed_len(),
-            ForkName::Electra => <LightClientUpdateElectra<E> as Encode>::ssz_fixed_len(),
+            ForkName::Electra | ForkName::Eip7805 => {
+                <LightClientUpdateElectra<E> as Encode>::ssz_fixed_len()
+            }
             ForkName::Fulu => <LightClientUpdateFulu<E> as Encode>::ssz_fixed_len(),
         };
         fixed_len + 2 * LightClientHeader::<E>::ssz_max_var_len_for_fork(fork_name)

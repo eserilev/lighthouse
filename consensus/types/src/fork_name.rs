@@ -17,6 +17,7 @@ pub enum ForkName {
     Capella,
     Deneb,
     Electra,
+    Eip7805,
     Fulu,
 }
 
@@ -65,6 +66,7 @@ impl ForkName {
                 spec.capella_fork_epoch = None;
                 spec.deneb_fork_epoch = None;
                 spec.electra_fork_epoch = None;
+                spec.eip7805_fork_epoch = None;
                 spec.fulu_fork_epoch = None;
                 spec
             }
@@ -74,6 +76,7 @@ impl ForkName {
                 spec.capella_fork_epoch = None;
                 spec.deneb_fork_epoch = None;
                 spec.electra_fork_epoch = None;
+                spec.eip7805_fork_epoch = None;
                 spec.fulu_fork_epoch = None;
                 spec
             }
@@ -83,6 +86,7 @@ impl ForkName {
                 spec.capella_fork_epoch = None;
                 spec.deneb_fork_epoch = None;
                 spec.electra_fork_epoch = None;
+                spec.eip7805_fork_epoch = None;
                 spec.fulu_fork_epoch = None;
                 spec
             }
@@ -92,6 +96,7 @@ impl ForkName {
                 spec.capella_fork_epoch = Some(Epoch::new(0));
                 spec.deneb_fork_epoch = None;
                 spec.electra_fork_epoch = None;
+                spec.eip7805_fork_epoch = None;
                 spec.fulu_fork_epoch = None;
                 spec
             }
@@ -101,6 +106,7 @@ impl ForkName {
                 spec.capella_fork_epoch = Some(Epoch::new(0));
                 spec.deneb_fork_epoch = Some(Epoch::new(0));
                 spec.electra_fork_epoch = None;
+                spec.eip7805_fork_epoch = None;
                 spec.fulu_fork_epoch = None;
                 spec
             }
@@ -110,6 +116,17 @@ impl ForkName {
                 spec.capella_fork_epoch = Some(Epoch::new(0));
                 spec.deneb_fork_epoch = Some(Epoch::new(0));
                 spec.electra_fork_epoch = Some(Epoch::new(0));
+                spec.eip7805_fork_epoch = None;
+                spec.fulu_fork_epoch = None;
+                spec
+            }
+            ForkName::Eip7805 => {
+                spec.altair_fork_epoch = Some(Epoch::new(0));
+                spec.bellatrix_fork_epoch = Some(Epoch::new(0));
+                spec.capella_fork_epoch = Some(Epoch::new(0));
+                spec.deneb_fork_epoch = Some(Epoch::new(0));
+                spec.electra_fork_epoch = Some(Epoch::new(0));
+                spec.eip7805_fork_epoch = Some(Epoch::new(0));
                 spec.fulu_fork_epoch = None;
                 spec
             }
@@ -119,6 +136,7 @@ impl ForkName {
                 spec.capella_fork_epoch = Some(Epoch::new(0));
                 spec.deneb_fork_epoch = Some(Epoch::new(0));
                 spec.electra_fork_epoch = Some(Epoch::new(0));
+                spec.eip7805_fork_epoch = Some(Epoch::new(0));
                 spec.fulu_fork_epoch = Some(Epoch::new(0));
                 spec
             }
@@ -136,7 +154,8 @@ impl ForkName {
             ForkName::Capella => Some(ForkName::Bellatrix),
             ForkName::Deneb => Some(ForkName::Capella),
             ForkName::Electra => Some(ForkName::Deneb),
-            ForkName::Fulu => Some(ForkName::Electra),
+            ForkName::Eip7805 => Some(ForkName::Electra),
+            ForkName::Fulu => Some(ForkName::Eip7805),
         }
     }
 
@@ -150,7 +169,8 @@ impl ForkName {
             ForkName::Bellatrix => Some(ForkName::Capella),
             ForkName::Capella => Some(ForkName::Deneb),
             ForkName::Deneb => Some(ForkName::Electra),
-            ForkName::Electra => Some(ForkName::Fulu),
+            ForkName::Electra => Some(ForkName::Eip7805),
+            ForkName::Eip7805 => Some(ForkName::Fulu),
             ForkName::Fulu => None,
         }
     }
@@ -225,7 +245,7 @@ macro_rules! map_fork_name_with {
                 let (value, extra_data) = $body;
                 ($t::Deneb(value), extra_data)
             }
-            ForkName::Electra => {
+            ForkName::Electra | ForkName::Eip7805 => {
                 let (value, extra_data) = $body;
                 ($t::Electra(value), extra_data)
             }
@@ -263,6 +283,7 @@ impl Display for ForkName {
             ForkName::Capella => "capella".fmt(f),
             ForkName::Deneb => "deneb".fmt(f),
             ForkName::Electra => "electra".fmt(f),
+            ForkName::Eip7805 => "eip7805".fmt(f),
             ForkName::Fulu => "fulu".fmt(f),
         }
     }

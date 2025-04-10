@@ -853,11 +853,11 @@ fn handle_rpc_response<E: EthSpec>(
             Some(ForkName::Deneb) => Ok(Some(RpcSuccessResponse::BlocksByRange(Arc::new(
                 SignedBeaconBlock::Deneb(SignedBeaconBlockDeneb::from_ssz_bytes(decoded_buffer)?),
             )))),
-            Some(ForkName::Electra) => Ok(Some(RpcSuccessResponse::BlocksByRange(Arc::new(
-                SignedBeaconBlock::Electra(SignedBeaconBlockElectra::from_ssz_bytes(
-                    decoded_buffer,
-                )?),
-            )))),
+            Some(ForkName::Electra) | Some(ForkName::Eip7805) => Ok(Some(
+                RpcSuccessResponse::BlocksByRange(Arc::new(SignedBeaconBlock::Electra(
+                    SignedBeaconBlockElectra::from_ssz_bytes(decoded_buffer)?,
+                ))),
+            )),
             Some(ForkName::Fulu) => Ok(Some(RpcSuccessResponse::BlocksByRange(Arc::new(
                 SignedBeaconBlock::Fulu(SignedBeaconBlockFulu::from_ssz_bytes(decoded_buffer)?),
             )))),
@@ -889,11 +889,11 @@ fn handle_rpc_response<E: EthSpec>(
             Some(ForkName::Deneb) => Ok(Some(RpcSuccessResponse::BlocksByRoot(Arc::new(
                 SignedBeaconBlock::Deneb(SignedBeaconBlockDeneb::from_ssz_bytes(decoded_buffer)?),
             )))),
-            Some(ForkName::Electra) => Ok(Some(RpcSuccessResponse::BlocksByRoot(Arc::new(
-                SignedBeaconBlock::Electra(SignedBeaconBlockElectra::from_ssz_bytes(
-                    decoded_buffer,
-                )?),
-            )))),
+            Some(ForkName::Electra) | Some(ForkName::Eip7805) => Ok(Some(
+                RpcSuccessResponse::BlocksByRoot(Arc::new(SignedBeaconBlock::Electra(
+                    SignedBeaconBlockElectra::from_ssz_bytes(decoded_buffer)?,
+                ))),
+            )),
             Some(ForkName::Fulu) => Ok(Some(RpcSuccessResponse::BlocksByRoot(Arc::new(
                 SignedBeaconBlock::Fulu(SignedBeaconBlockFulu::from_ssz_bytes(decoded_buffer)?),
             )))),
@@ -964,7 +964,9 @@ mod tests {
             ForkName::Bellatrix => bellatrix_fork_epoch.start_slot(Spec::slots_per_epoch()),
             ForkName::Capella => capella_fork_epoch.start_slot(Spec::slots_per_epoch()),
             ForkName::Deneb => deneb_fork_epoch.start_slot(Spec::slots_per_epoch()),
-            ForkName::Electra => electra_fork_epoch.start_slot(Spec::slots_per_epoch()),
+            ForkName::Electra | ForkName::Eip7805 => {
+                electra_fork_epoch.start_slot(Spec::slots_per_epoch())
+            }
             ForkName::Fulu => fulu_fork_epoch.start_slot(Spec::slots_per_epoch()),
         };
         ForkContext::new::<Spec>(current_slot, Hash256::zero(), &chain_spec)

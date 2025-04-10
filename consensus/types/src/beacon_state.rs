@@ -2601,7 +2601,9 @@ impl<E: EthSpec> BeaconState<E> {
             ForkName::Bellatrix => BeaconStateBellatrix::<E>::NUM_FIELDS.next_power_of_two(),
             ForkName::Capella => BeaconStateCapella::<E>::NUM_FIELDS.next_power_of_two(),
             ForkName::Deneb => BeaconStateDeneb::<E>::NUM_FIELDS.next_power_of_two(),
-            ForkName::Electra => BeaconStateElectra::<E>::NUM_FIELDS.next_power_of_two(),
+            ForkName::Electra | ForkName::Eip7805 => {
+                BeaconStateElectra::<E>::NUM_FIELDS.next_power_of_two()
+            }
             ForkName::Fulu => BeaconStateFulu::<E>::NUM_FIELDS.next_power_of_two(),
         }
     }

@@ -324,7 +324,7 @@ impl<E: EthSpec> FullPayload<E> {
             ForkName::Bellatrix => Ok(FullPayloadBellatrix::default().into()),
             ForkName::Capella => Ok(FullPayloadCapella::default().into()),
             ForkName::Deneb => Ok(FullPayloadDeneb::default().into()),
-            ForkName::Electra => Ok(FullPayloadElectra::default().into()),
+            ForkName::Electra | ForkName::Eip7805 => Ok(FullPayloadElectra::default().into()),
             ForkName::Fulu => Ok(FullPayloadFulu::default().into()),
         }
     }
