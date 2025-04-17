@@ -21,18 +21,15 @@ pub fn fork_versioned_response<T: Serialize>(
     fork_name: ForkName,
     data: T,
 ) -> Result<ForkVersionedResponse<T>, warp::reject::Rejection> {
-    let fork_name = if endpoint_version == V1 {
-        None
-    } else if endpoint_version == V2 || endpoint_version == V3 {
-        Some(fork_name)
+    if endpoint_version == V1 || endpoint_version == V2 || endpoint_version == V3 {
+        Ok(ForkVersionedResponse {
+            version: fork_name,
+            metadata: Default::default(),
+            data,
+        })
     } else {
-        return Err(unsupported_version_rejection(endpoint_version));
-    };
-    Ok(ForkVersionedResponse {
-        version: fork_name,
-        metadata: Default::default(),
-        data,
-    })
+        Err(unsupported_version_rejection(endpoint_version))
+    }
 }
 
 pub fn execution_optimistic_finalized_fork_versioned_response<T: Serialize>(
@@ -42,13 +39,10 @@ pub fn execution_optimistic_finalized_fork_versioned_response<T: Serialize>(
     finalized: bool,
     data: T,
 ) -> Result<ExecutionOptimisticFinalizedForkVersionedResponse<T>, warp::reject::Rejection> {
-    let fork_name = if endpoint_version == V1 {
-        None
-    } else if endpoint_version == V2 {
-        Some(fork_name)
-    } else {
+    if endpoint_version != V2 {
         return Err(unsupported_version_rejection(endpoint_version));
-    };
+    }
+
     Ok(ExecutionOptimisticFinalizedForkVersionedResponse {
         version: fork_name,
         metadata: ExecutionOptimisticFinalizedMetadata {

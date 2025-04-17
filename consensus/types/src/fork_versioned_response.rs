@@ -9,7 +9,7 @@ pub trait ForkVersionDecode: Sized {
     fn from_ssz_bytes_by_fork(bytes: &[u8], fork_name: ForkName) -> Result<Self, ssz::DecodeError>;
 }
 
-pub trait ForkVersionDeserialize: Sized + DeserializeOwned {
+pub trait ForkVersionDeserialize: Sized {
     fn deserialize_by_fork<'de, D: Deserializer<'de>>(
         value: Value,
         fork_name: ForkName,
@@ -23,8 +23,7 @@ pub trait ForkVersionDeserialize: Sized + DeserializeOwned {
 /// `Deserialize`.
 #[derive(Debug, PartialEq, Clone, Serialize)]
 pub struct ForkVersionedResponse<T, M = EmptyMetadata> {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub version: Option<ForkName>,
+    pub version: ForkName,
     #[serde(flatten)]
     pub metadata: M,
     pub data: T,
@@ -58,17 +57,14 @@ where
     {
         #[derive(Deserialize)]
         struct Helper {
-            version: Option<ForkName>,
+            version: ForkName,
             #[serde(flatten)]
             metadata: serde_json::Value,
             data: serde_json::Value,
         }
 
         let helper = Helper::deserialize(deserializer)?;
-        let data = match helper.version {
-            Some(fork_name) => F::deserialize_by_fork::<'de, D>(helper.data, fork_name)?,
-            None => serde_json::from_value(helper.data).map_err(serde::de::Error::custom)?,
-        };
+        let data = F::deserialize_by_fork::<'de, D>(helper.data, helper.version)?;
         let metadata = serde_json::from_value(helper.metadata).map_err(serde::de::Error::custom)?;
 
         Ok(ForkVersionedResponse {
@@ -120,7 +116,7 @@ mod fork_version_response_tests {
 
         let response_json =
             serde_json::to_string(&json!(ForkVersionedResponse::<ExecutionPayload<E>> {
-                version: Some(ForkName::Bellatrix),
+                version: ForkName::Bellatrix,
                 metadata: Default::default(),
                 data: ExecutionPayload::Bellatrix(ExecutionPayloadBellatrix::default()),
             }))
@@ -138,7 +134,7 @@ mod fork_version_response_tests {
 
         let response_json =
             serde_json::to_string(&json!(ForkVersionedResponse::<ExecutionPayload<E>> {
-                version: Some(ForkName::Capella),
+                version: ForkName::Capella,
                 metadata: Default::default(),
                 data: ExecutionPayload::Bellatrix(ExecutionPayloadBellatrix::default()),
             }))

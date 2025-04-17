@@ -147,7 +147,7 @@ impl BuilderHttpClient {
                 self.ssz_available.store(true, Ordering::SeqCst);
                 T::from_ssz_bytes_by_fork(&response_bytes, fork_name)
                     .map(|data| ForkVersionedResponse {
-                        version: Some(fork_name),
+                        version: fork_name,
                         metadata: EmptyMetadata {},
                         data,
                     })

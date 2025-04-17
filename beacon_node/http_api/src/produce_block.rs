@@ -115,7 +115,7 @@ pub fn build_response_v3<T: BeaconChainTypes>(
                 warp_utils::reject::custom_server_error(format!("failed to create response: {}", e))
             }),
         _ => Ok(warp::reply::json(&ForkVersionedResponse {
-            version: Some(fork_name),
+            version: fork_name,
             metadata,
             data: block_contents,
         })
