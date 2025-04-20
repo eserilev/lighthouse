@@ -2229,6 +2229,38 @@ where
         ((Arc::new(signed_block), blobs), state)
     }
 
+    pub fn make_deposit_request(&self, keypair: &Keypair) -> DepositRequest {
+        let withdrawal_credentials = Hash256::ZERO;
+        let amount = self.spec.min_per_epoch_churn_limit_electra;
+
+        let deposit_data = self.make_deposit_data(keypair, withdrawal_credentials, amount);
+
+        DepositRequest {
+            pubkey: deposit_data.pubkey,
+            withdrawal_credentials: deposit_data.withdrawal_credentials,
+            amount: deposit_data.amount,
+            signature: deposit_data.signature,
+            index: 0,
+        }
+    }
+
+    pub fn make_deposit_data(
+        &self,
+        keypair: &Keypair,
+        withdrawal_credentials: Hash256,
+        amount: u64,
+    ) -> DepositData {
+        let pubkey = PublicKeyBytes::from(keypair.pk.clone());
+        let mut data = DepositData {
+            pubkey,
+            withdrawal_credentials,
+            amount,
+            signature: SignatureBytes::empty(),
+        };
+        data.signature = data.create_signature(&keypair.sk, &self.spec);
+        data
+    }
+
     pub fn make_deposits<'a>(
         &self,
         state: &'a mut BeaconState<E>,

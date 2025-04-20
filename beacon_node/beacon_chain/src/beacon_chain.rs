@@ -3773,7 +3773,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
     /// An error is returned if the block was unable to be imported. It may be partially imported
     /// (i.e., this function is not atomic).
     #[allow(clippy::too_many_arguments)]
-    fn import_block(
+    pub fn import_block(
         &self,
         signed_block: AvailableBlock<T::EthSpec>,
         block_root: Hash256,

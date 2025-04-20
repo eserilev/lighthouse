@@ -4,12 +4,15 @@ use beacon_chain::attestation_verification::Error as AttnError;
 use beacon_chain::block_verification_types::RpcBlock;
 use beacon_chain::builder::BeaconChainBuilder;
 use beacon_chain::data_availability_checker::AvailableBlock;
+use beacon_chain::data_availability_checker::AvailableBlockData;
+use beacon_chain::eth1_finalization_cache::Eth1FinalizationData;
 use beacon_chain::schema_change::migrate_schema;
 use beacon_chain::test_utils::SyncCommitteeStrategy;
 use beacon_chain::test_utils::{
     get_kzg, mock_execution_layer_from_parts, test_spec, AttestationStrategy, BeaconChainHarness,
     BlockStrategy, DiskHarnessType,
 };
+use beacon_chain::PayloadVerificationStatus;
 use beacon_chain::{
     data_availability_checker::MaybeAvailableBlock, historical_blocks::HistoricalBlockError,
     migrate::MigratorConfig, BeaconChain, BeaconChainError, BeaconChainTypes, BeaconSnapshot,
@@ -20,6 +23,10 @@ use maplit::hashset;
 use rand::rngs::StdRng;
 use rand::Rng;
 use slot_clock::{SlotClock, TestingSlotClock};
+use state_processing::per_block_processing;
+use state_processing::BlockSignatureStrategy;
+use state_processing::ConsensusContext;
+use state_processing::VerifyBlockRoot;
 use state_processing::{state_advance::complete_state_advance, BlockReplayer};
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -2464,7 +2471,6 @@ async fn weak_subjectivity_sync_test(slots: Vec<Slot>, checkpoint_slot: Slot) {
         .filter(|s| s.beacon_block.slot() != 0)
         .map(|s| s.beacon_block.clone())
         .collect::<Vec<_>>();
-
     let mut available_blocks = vec![];
     for blinded in historical_blocks {
         let block_root = blinded.canonical_root();
@@ -3679,4 +3685,181 @@ fn get_blocks(
 
 fn clone_block<E: EthSpec>(block: &AvailableBlock<E>) -> AvailableBlock<E> {
     block.__clone_without_recv().unwrap()
+}
+
+/// Checks that the validator pubkey cache is able to sync with the db even after a failed
+/// block import
+#[tokio::test]
+async fn test_validator_store_cache_sync() {
+    let initial_validator_count = 32;
+    let spec = ForkName::Electra.make_genesis_spec(E::default_spec());
+    let db_path = tempdir().unwrap();
+    let deposit_slot = Slot::new(4 * E::slots_per_epoch() - 1);
+    let pre_deposit_slot = deposit_slot - 1;
+    let store = get_store_generic(&db_path, StoreConfig::default(), spec.clone());
+    let harness = get_harness(store.clone(), initial_validator_count);
+    // Create a block with a deposit for a new validator.
+    harness
+        .execution_block_generator()
+        .move_to_terminal_block()
+        .unwrap();
+
+    Box::pin(harness.extend_to_slot(pre_deposit_slot)).await;
+    let pre_deposit_state = harness.get_current_state();
+
+    assert_eq!(pre_deposit_state.slot(), pre_deposit_slot);
+    assert_eq!(pre_deposit_state.fork_name_unchecked(), ForkName::Electra);
+
+    // FIXME: Probably need to make this deterministic?
+    let new_keypair = Keypair::random();
+    let new_validator_pk_bytes = PublicKeyBytes::from(&new_keypair.pk);
+    let deposit_request = harness.make_deposit_request(&new_keypair);
+
+    let ((some_block, blobs), mut state) = harness
+        .make_block_with_modifier(pre_deposit_state, deposit_slot, |block| {
+            block
+                .body_mut()
+                .execution_requests_mut()
+                .unwrap()
+                .deposits
+                .push(deposit_request)
+                .unwrap();
+        })
+        .await;
+
+    let mut ctxt = ConsensusContext::new(some_block.slot());
+    per_block_processing(
+        &mut state,
+        &some_block,
+        BlockSignatureStrategy::VerifyIndividual,
+        VerifyBlockRoot::True,
+        &mut ctxt,
+        &spec,
+    )
+    .unwrap();
+    let (mut block, _) = (*some_block).clone().deconstruct();
+    *block.state_root_mut() = state.update_tree_hash_cache().unwrap();
+    let proposer_index = block.proposer_index() as usize;
+    let signed_block = Arc::new(block.sign(
+        &harness.validator_keypairs[proposer_index].sk,
+        &state.fork(),
+        state.genesis_validators_root(),
+        &spec,
+    ));
+    let block_root = signed_block.canonical_root();
+    let block_contents = (signed_block, blobs);
+
+    println!("PRE PROCESS");
+    harness
+        .process_block(deposit_slot, block_root, block_contents)
+        .await
+        .unwrap();
+
+    println!("POST PROCESS");
+
+    let post_block_state = harness.get_current_state();
+    assert_eq!(post_block_state.pending_deposits().unwrap().len(), 1);
+    assert_eq!(post_block_state.validators().len(), initial_validator_count);
+
+    let pre_finalized_deposit_state = harness.get_current_state();
+    assert_eq!(
+        pre_finalized_deposit_state.validators().len(),
+        initial_validator_count
+    );
+    let new_epoch_start_slot = pre_finalized_deposit_state.slot() + 3 * E::slots_per_epoch() + 1;
+
+    // New validator should not be in the pubkey cache yet.
+    assert_eq!(
+        harness
+            .chain
+            .validator_index(&new_validator_pk_bytes)
+            .unwrap(),
+        None
+    );
+    let new_validator_index = initial_validator_count;
+    
+    // Advance to one slot before the finalization of the deposit.
+    Box::pin(harness.extend_to_slot(deposit_slot + 2 * E::slots_per_epoch())).await;
+    
+    let head_block = harness
+        .chain
+        .get_block(&harness.head_block_root())
+        .await
+        .unwrap()
+        .unwrap();
+
+    let state = harness.get_current_state();
+
+
+    println!("make_block");
+    // let ((signed_block, _), state) = harness.make_block(state.clone(), state.slot()).await;
+    let ((signed_block, blobs), mut state) = harness
+        .make_block_with_modifier(state.clone(), state.slot(), |block| {
+
+        })
+    .await;
+    println!("make block after");
+    let (mut block, _) = (*signed_block).clone().deconstruct();
+    let bad_block_parent_root = block.parent_root();
+
+    // Mutate the block to make it invalid, and re-sign it.
+    *block.state_root_mut() = Hash256::repeat_byte(0xff);
+    let proposer_index = block.proposer_index() as usize;
+
+    let signed_invalid_block = Arc::new(block.sign(
+        &harness.validator_keypairs[proposer_index].sk,
+        &state.fork(),
+        state.genesis_validators_root(),
+        &harness.spec,
+    ));
+
+    let invalid_block_root = signed_invalid_block.canonical_root();
+    let invalid_block_slot = signed_invalid_block.slot();
+
+    let invalid_available_block = AvailableBlock::__new_for_testing(
+        invalid_block_root,
+        signed_invalid_block,
+        AvailableBlockData::NoData,
+        harness.spec,
+    );
+
+    println!("avail block");
+
+    let mut consensus_context =
+        ConsensusContext::<E>::new(invalid_block_slot).set_current_block_root(invalid_block_root);
+
+    let mut state = &harness.chain.head_snapshot().beacon_state;
+
+    let current_eth1_finalization_data = Eth1FinalizationData {
+        eth1_data: state.eth1_data().clone(),
+        eth1_deposit_index: state.eth1_deposit_index(),
+    };
+
+    println!("import block");
+    harness
+        .chain
+        .import_block(
+            invalid_available_block,
+            invalid_block_root,
+            state.clone(),
+            PayloadVerificationStatus::Verified,
+            head_block.into(),
+            current_eth1_finalization_data,
+            consensus_context,
+        )
+        .unwrap();
+
+    println!("fin");
+    // harness
+    //     .chain
+    //     .import_block()
+
+    // let block = Arc::new(block.sign(
+    //     &harness.validator_keypairs[proposer_index].sk,
+    //     &state.fork(),
+    //     state.genesis_validators_root(),
+    //     &harness.spec,
+    // ));
+
+    // let gossip_block_b = GossipVerifiedBlock::new(block, &tester.harness.chain, CGC);
 }

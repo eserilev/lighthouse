@@ -25,7 +25,7 @@ mod early_attester_cache;
 pub mod electra_readiness;
 mod errors;
 pub mod eth1_chain;
-mod eth1_finalization_cache;
+pub mod eth1_finalization_cache;
 pub mod events;
 pub mod execution_payload;
 pub mod fetch_blobs;
