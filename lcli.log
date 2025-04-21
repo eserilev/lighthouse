@@ -1,6 +1,0 @@
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.45s
-     Running `target/debug/lcli mock-el --jwt-output-path /Users/eitan/.secrets/jwt-sigma-prime.hex --all-payloads-valid true --shanghai-time 0 --cancun-time 0 --prague-time 0 --osaka-time 1744212912`
-No logfile path provided, logging to file is disabled
-Using --all-payloads-valid=true can be dangerous. Never use this flag when operating validators.
-This tool is for TESTING PURPOSES ONLY. Do not use in production or on mainnet. It cannot perform validator duties. It may cause nodes to follow an invalid chain.
-Server listening on 127.0.0.1:8551
