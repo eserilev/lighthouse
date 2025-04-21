@@ -4604,7 +4604,7 @@ pub fn serve<T: BeaconChainTypes>(
     let post_lighthouse_block_rewards = warp::path("lighthouse")
         .and(warp::path("analysis"))
         .and(warp::path("block_rewards"))
-        .and(warp_utils::json::json())
+        .and(warp_utils::json::fork_version_json())
         .and(warp::path::end())
         .and(task_spawner_filter.clone())
         .and(chain_filter.clone())

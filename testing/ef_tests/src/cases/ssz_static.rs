@@ -1,3 +1,4 @@
+use super::common::ForkVersionedSszStaticType;
 use super::*;
 use crate::case_result::compare_result;
 use crate::decode::{snappy_decode_file, yaml_decode_file};
@@ -76,6 +77,24 @@ impl<T: SszStaticType> LoadCase for SszStaticWithSpec<T> {
     }
 }
 
+
+pub fn check_fork_version_serialization<T: ForkVersionedSszStaticType>(
+    value: &T,
+    serialized: &[u8],
+    deserializer: impl FnOnce(&[u8]) -> Result<T, ssz::DecodeError>,
+) -> Result<(), Error> {
+    // Check serialization
+    let serialized_result = value.as_ssz_bytes();
+    compare_result::<usize, Error>(&Ok(value.ssz_bytes_len()), &Some(serialized.len()))?;
+    compare_result::<Vec<u8>, Error>(&Ok(serialized_result), &Some(serialized.to_vec()))?;
+
+    // Check deserialization
+    let deserialized_result = deserializer(serialized);
+    compare_result(&deserialized_result, &Some(value.clone()))?;
+
+    Ok(())
+}
+
 pub fn check_serialization<T: SszStaticType>(
     value: &T,
     serialized: &[u8],
@@ -127,7 +146,7 @@ impl<E: EthSpec> Case for SszStaticTHC<BeaconState<E>> {
 impl<E: EthSpec> Case for SszStaticWithSpec<BeaconBlock<E>> {
     fn result(&self, _case_index: usize, fork_name: ForkName) -> Result<(), Error> {
         let spec = &testing_spec::<E>(fork_name);
-        check_serialization(&self.value, &self.serialized, |bytes| {
+        check_fork_version_serialization(&self.value, &self.serialized, |bytes| {
             BeaconBlock::from_ssz_bytes(bytes, spec)
         })?;
         check_tree_hash(&self.roots.root, self.value.tree_hash_root().as_slice())?;

@@ -1150,9 +1150,14 @@ impl<E: EthSpec> EventKind<E> {
 
     pub fn from_sse_bytes(event: &str, data: &str) -> Result<Self, ServerError> {
         match event {
-            "attestation" => Ok(EventKind::Attestation(serde_json::from_str(data).map_err(
-                |e| ServerError::InvalidServerSentEvent(format!("Attestation: {:?}", e)),
-            )?)),
+            // TODO(fork-deserialize) is this always a base attestation?
+            "attestation" => Ok(EventKind::Attestation(Box::new(
+                serde_json::from_str(data)
+                    .map(Attestation::Base)
+                    .map_err(|e| {
+                        ServerError::InvalidServerSentEvent(format!("Attestation: {:?}", e))
+                    })?,
+            ))),
             "single_attestation" => Ok(EventKind::SingleAttestation(
                 serde_json::from_str(data).map_err(|e| {
                     ServerError::InvalidServerSentEvent(format!("SingleAttestation: {:?}", e))

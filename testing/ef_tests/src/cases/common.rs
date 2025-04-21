@@ -2,7 +2,7 @@ use serde::Deserialize;
 use ssz::Encode;
 use ssz_derive::{Decode, Encode};
 use std::fmt::Debug;
-use types::ForkName;
+use types::{ForkName, ForkVersionDeserialize};
 
 /// Macro to wrap U128 and U256 so they deserialize correctly.
 macro_rules! uint_wrapper {
@@ -54,6 +54,18 @@ pub trait SszStaticType:
 
 impl<T> SszStaticType for T where
     T: serde::de::DeserializeOwned + Encode + Clone + PartialEq + Debug + Sync
+{
+}
+
+
+/// Trait for types that can be used in SSZ static tests.
+pub trait ForkVersionedSszStaticType:
+    ForkVersionDeserialize + Encode + Clone + PartialEq + Debug + Sync
+{
+}
+
+impl<T> ForkVersionedSszStaticType for T where
+    T: ForkVersionDeserialize + Encode + Clone + PartialEq + Debug + Sync
 {
 }
 

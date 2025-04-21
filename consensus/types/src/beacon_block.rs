@@ -11,6 +11,7 @@ use superstruct::superstruct;
 use test_random_derive::TestRandom;
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
+use crate::fork_versioned_response::ForkVersionDeserializeError;
 
 use self::indexed_attestation::IndexedAttestationBase;
 
@@ -45,7 +46,7 @@ use self::indexed_attestation::IndexedAttestationBase;
     map_ref_mut_into(BeaconBlockBodyRefMut)
 )]
 #[derive(
-    Debug, Clone, Serialize, Deserialize, Encode, TreeHash, Derivative, arbitrary::Arbitrary,
+    Debug, Clone, Serialize, Encode, TreeHash, Derivative, arbitrary::Arbitrary,
 )]
 #[derivative(PartialEq, Hash(bound = "E: EthSpec"))]
 #[serde(untagged)]
@@ -768,17 +769,14 @@ impl<E: EthSpec> From<BeaconBlock<E, FullPayload<E>>>
 impl<E: EthSpec, Payload: AbstractExecPayload<E>> ForkVersionDeserialize
     for BeaconBlock<E, Payload>
 {
-    fn deserialize_by_fork<'de, D: serde::Deserializer<'de>>(
+    fn deserialize_by_fork(
         value: serde_json::value::Value,
         fork_name: ForkName,
-    ) -> Result<Self, D::Error> {
+    ) -> Result<Self, ForkVersionDeserializeError> {
         Ok(map_fork_name!(
             fork_name,
             Self,
-            serde_json::from_value(value).map_err(|e| serde::de::Error::custom(format!(
-                "BeaconBlock failed to deserialize: {:?}",
-                e
-            )))?
+            serde_json::from_value(value).map_err(ForkVersionDeserializeError::SerdeJsonError)?
         ))
     }
 }
