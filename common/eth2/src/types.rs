@@ -1017,7 +1017,7 @@ pub struct SseLateHead {
     variants(V1, V2, V3),
     variant_attributes(derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize))
 )]
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
 #[serde(untagged)]
 pub struct SsePayloadAttributes {
     #[superstruct(getter(copy))]
@@ -1034,7 +1034,7 @@ pub struct SsePayloadAttributes {
     pub parent_beacon_block_root: Hash256,
 }
 
-#[derive(PartialEq, Debug, Deserialize, Serialize, Clone)]
+#[derive(PartialEq, Debug, Serialize, Deserialize, Clone)]
 pub struct SseExtendedPayloadAttributesGeneric<T> {
     pub proposal_slot: Slot,
     #[serde(with = "serde_utils::quoted_u64")]
@@ -1597,7 +1597,7 @@ mod tests {
     }
 }
 
-#[derive(Debug, Encode, Serialize, Deserialize)]
+#[derive(Debug, Encode, Serialize)]
 #[serde(untagged)]
 #[serde(bound = "E: EthSpec")]
 #[ssz(enum_behaviour = "transparent")]
@@ -1610,7 +1610,7 @@ pub type JsonProduceBlockV3Response<E> =
     ForkVersionedResponse<ProduceBlockV3Response<E>, ProduceBlockV3Metadata>;
 
 /// A wrapper over a [`BeaconBlock`] or a [`BlockContents`].
-#[derive(Debug, Encode, Serialize, Deserialize)]
+#[derive(Debug, Encode, Serialize)]
 #[serde(untagged)]
 #[serde(bound = "E: EthSpec")]
 #[ssz(enum_behaviour = "transparent")]
@@ -1896,7 +1896,7 @@ pub struct SignedBlockContents<E: EthSpec> {
     pub blobs: BlobsList<E>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode)]
+#[derive(Debug, Clone, Serialize, Encode)]
 #[serde(bound = "E: EthSpec")]
 pub struct BlockContents<E: EthSpec> {
     pub block: BeaconBlock<E>,
@@ -1928,7 +1928,7 @@ impl<E: EthSpec> ForkVersionDeserialize for BlockContents<E> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Encode)]
+#[derive(Clone, Debug, PartialEq, Serialize, Encode)]
 #[serde(untagged)]
 #[serde(bound = "E: EthSpec")]
 #[ssz(enum_behaviour = "transparent")]
@@ -2014,7 +2014,7 @@ impl<E: EthSpec> ForkVersionDeserialize for FullPayloadContents<E> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Encode)]
+#[derive(Clone, Debug, PartialEq, Serialize, Encode)]
 #[serde(bound = "E: EthSpec")]
 pub struct ExecutionPayloadAndBlobs<E: EthSpec> {
     pub execution_payload: ExecutionPayload<E>,
