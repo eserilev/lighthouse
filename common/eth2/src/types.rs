@@ -9,7 +9,7 @@ use enr::{CombinedKey, Enr};
 use mediatype::{names, MediaType, MediaTypeList};
 use multiaddr::Multiaddr;
 use reqwest::header::HeaderMap;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_utils::quoted_u64::Quoted;
 use ssz::{Decode, DecodeError};
@@ -2285,7 +2285,7 @@ mod test {
 
     fn generic_deserialize_by_fork<
         'de,
-        D: Deserializer<'de>,
+        D: serde::Deserializer<'de>,
         O: ForkVersionDeserialize + PartialEq + Debug,
     >(
         deserializer: D,
