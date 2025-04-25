@@ -9,9 +9,7 @@ use crate::{
 use beacon_chain::{
     BeaconBlockResponseWrapper, BeaconChain, BeaconChainTypes, ProduceBlockVerification,
 };
-use eth2::types::{
-    self as api_types, EndpointVersion, ProduceBlockV3Metadata, SkipRandaoVerification,
-};
+use eth2::types::{self as api_types, ProduceBlockV3Metadata, SkipRandaoVerification};
 use ssz::Encode;
 use std::sync::Arc;
 use types::{payload::BlockProductionVersion, *};
@@ -129,7 +127,6 @@ pub fn build_response_v3<T: BeaconChainTypes>(
 }
 
 pub async fn produce_blinded_block_v2<T: BeaconChainTypes>(
-    endpoint_version: EndpointVersion,
     accept_header: Option<api_types::Accept>,
     chain: Arc<BeaconChain<T>>,
     slot: Slot,
@@ -155,11 +152,10 @@ pub async fn produce_blinded_block_v2<T: BeaconChainTypes>(
         .await
         .map_err(warp_utils::reject::unhandled_error)?;
 
-    build_response_v2(chain, block_response_type, endpoint_version, accept_header)
+    build_response_v2(chain, block_response_type, accept_header)
 }
 
 pub async fn produce_block_v2<T: BeaconChainTypes>(
-    endpoint_version: EndpointVersion,
     accept_header: Option<api_types::Accept>,
     chain: Arc<BeaconChain<T>>,
     slot: Slot,
@@ -186,13 +182,12 @@ pub async fn produce_block_v2<T: BeaconChainTypes>(
         .await
         .map_err(warp_utils::reject::unhandled_error)?;
 
-    build_response_v2(chain, block_response_type, endpoint_version, accept_header)
+    build_response_v2(chain, block_response_type, accept_header)
 }
 
 pub fn build_response_v2<T: BeaconChainTypes>(
     chain: Arc<BeaconChain<T>>,
     block_response: BeaconBlockResponseWrapper<T::EthSpec>,
-    endpoint_version: EndpointVersion,
     accept_header: Option<api_types::Accept>,
 ) -> Result<Response<Body>, warp::Rejection> {
     let fork_name = block_response
@@ -210,8 +205,10 @@ pub fn build_response_v2<T: BeaconChainTypes>(
             .map_err(|e| {
                 warp_utils::reject::custom_server_error(format!("failed to create response: {}", e))
             }),
-        _ => fork_versioned_response(endpoint_version, fork_name, block_contents)
-            .map(|response| warp::reply::json(&response).into_response())
-            .map(|res| add_consensus_version_header(res, fork_name)),
+        _ => {
+            let res = warp::reply::json(&fork_versioned_response(fork_name, block_contents))
+                .into_response();
+            Ok(add_consensus_version_header(res, fork_name))
+        }
     }
 }

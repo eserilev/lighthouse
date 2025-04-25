@@ -2026,7 +2026,7 @@ pub fn serve<T: BeaconChainTypes>(
         .and(warp::path::end())
         .and(warp::query::<api_types::AttestationPoolQuery>())
         .then(
-            |endpoint_version: EndpointVersion,
+            |_endpoint_version: EndpointVersion,
              task_spawner: TaskSpawner<T::EthSpec>,
              chain: Arc<BeaconChain<T>>,
              query: api_types::AttestationPoolQuery| {
@@ -2069,7 +2069,7 @@ pub fn serve<T: BeaconChainTypes>(
                         })
                         .collect::<Vec<_>>();
 
-                    let res = fork_versioned_response(endpoint_version, fork_name, &attestations)?;
+                    let res = fork_versioned_response(fork_name, &attestations);
                     Ok(add_consensus_version_header(
                         warp::reply::json(&res).into_response(),
                         fork_name,
@@ -2133,7 +2133,7 @@ pub fn serve<T: BeaconChainTypes>(
             .and(warp::path("attester_slashings"))
             .and(warp::path::end())
             .then(
-                |endpoint_version: EndpointVersion,
+                |_endpoint_version: EndpointVersion,
                  task_spawner: TaskSpawner<T::EthSpec>,
                  chain: Arc<BeaconChain<T>>| {
                     task_spawner.blocking_response_task(Priority::P1, move || {
@@ -2158,7 +2158,7 @@ pub fn serve<T: BeaconChainTypes>(
                             })
                             .collect::<Vec<_>>();
 
-                        let res = fork_versioned_response(endpoint_version, fork_name, &slashings)?;
+                        let res = fork_versioned_response(fork_name, &slashings);
                         Ok(add_consensus_version_header(
                             warp::reply::json(&res).into_response(),
                             fork_name,
@@ -3377,7 +3377,7 @@ pub fn serve<T: BeaconChainTypes>(
                     if endpoint_version == V3 {
                         produce_block_v3(accept_header, chain, slot, query).await
                     } else {
-                        produce_block_v2(endpoint_version, accept_header, chain, slot, query).await
+                        produce_block_v2(accept_header, chain, slot, query).await
                     }
                 })
             },
@@ -3407,8 +3407,7 @@ pub fn serve<T: BeaconChainTypes>(
              chain: Arc<BeaconChain<T>>| {
                 task_spawner.spawn_async_with_rejection(Priority::P0, async move {
                     not_synced_filter?;
-                    produce_blinded_block_v2(EndpointVersion(2), accept_header, chain, slot, query)
-                        .await
+                    produce_blinded_block_v2(accept_header, chain, slot, query).await
                 })
             },
         );

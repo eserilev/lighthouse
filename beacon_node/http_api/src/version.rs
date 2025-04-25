@@ -17,18 +17,13 @@ pub const V2: EndpointVersion = EndpointVersion(2);
 pub const V3: EndpointVersion = EndpointVersion(3);
 
 pub fn fork_versioned_response<T: Serialize>(
-    endpoint_version: EndpointVersion,
     fork_name: ForkName,
     data: T,
-) -> Result<ForkVersionedResponse<T>, warp::reject::Rejection> {
-    if endpoint_version == V1 || endpoint_version == V2 || endpoint_version == V3 {
-        Ok(ForkVersionedResponse {
-            version: fork_name,
-            metadata: Default::default(),
-            data,
-        })
-    } else {
-        Err(unsupported_version_rejection(endpoint_version))
+) -> ForkVersionedResponse<T> {
+    ForkVersionedResponse {
+        version: fork_name,
+        metadata: Default::default(),
+        data,
     }
 }
 

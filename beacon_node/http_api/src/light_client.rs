@@ -1,5 +1,5 @@
 use crate::version::{
-    add_consensus_version_header, add_ssz_content_type_header, fork_versioned_response, V1,
+    add_consensus_version_header, add_ssz_content_type_header, fork_versioned_response,
 };
 use beacon_chain::{BeaconChain, BeaconChainError, BeaconChainTypes};
 use eth2::types::{
@@ -52,7 +52,7 @@ pub fn get_light_client_updates<T: BeaconChainTypes>(
             let fork_versioned_response = light_client_updates
                 .iter()
                 .map(|update| map_light_client_update_to_json_response::<T>(&chain, update.clone()))
-                .collect::<Result<Vec<ForkVersionedResponse<LightClientUpdate<T::EthSpec>>>, Rejection>>()?;
+                .collect::<Vec<ForkVersionedResponse<LightClientUpdate<T::EthSpec>>>>();
             Ok(warp::reply::json(&fork_versioned_response).into_response())
         }
     }
@@ -88,10 +88,8 @@ pub fn get_light_client_bootstrap<T: BeaconChainTypes>(
                 warp_utils::reject::custom_server_error(format!("failed to create response: {}", e))
             }),
         _ => {
-            let fork_versioned_response = map_light_client_bootstrap_to_json_response::<T>(
-                fork_name,
-                light_client_bootstrap,
-            )?;
+            let fork_versioned_response =
+                map_light_client_bootstrap_to_json_response::<T>(fork_name, light_client_bootstrap);
             Ok(warp::reply::json(&fork_versioned_response).into_response())
         }
     }
@@ -177,17 +175,17 @@ fn map_light_client_update_to_ssz_chunk<T: BeaconChainTypes>(
 fn map_light_client_bootstrap_to_json_response<T: BeaconChainTypes>(
     fork_name: ForkName,
     light_client_bootstrap: LightClientBootstrap<T::EthSpec>,
-) -> Result<ForkVersionedResponse<LightClientBootstrap<T::EthSpec>>, Rejection> {
-    fork_versioned_response(V1, fork_name, light_client_bootstrap)
+) -> ForkVersionedResponse<LightClientBootstrap<T::EthSpec>> {
+    fork_versioned_response(fork_name, light_client_bootstrap)
 }
 
 fn map_light_client_update_to_json_response<T: BeaconChainTypes>(
     chain: &BeaconChain<T>,
     light_client_update: LightClientUpdate<T::EthSpec>,
-) -> Result<ForkVersionedResponse<LightClientUpdate<T::EthSpec>>, Rejection> {
+) -> ForkVersionedResponse<LightClientUpdate<T::EthSpec>> {
     let fork_name = chain
         .spec
         .fork_name_at_slot::<T::EthSpec>(*light_client_update.signature_slot());
 
-    fork_versioned_response(V1, fork_name, light_client_update)
+    fork_versioned_response(fork_name, light_client_update)
 }
