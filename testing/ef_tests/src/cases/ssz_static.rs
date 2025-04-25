@@ -77,7 +77,6 @@ impl<T: SszStaticType> LoadCase for SszStaticWithSpec<T> {
     }
 }
 
-
 pub fn check_fork_version_serialization<T: ForkVersionedSszStaticType>(
     value: &T,
     serialized: &[u8],

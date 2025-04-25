@@ -2,14 +2,16 @@ use crate::ForkName;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::value::Value;
-use std::error::Error as StdError;
 use std::sync::Arc;
 
+#[derive(Debug)]
 pub enum ForkVersionDeserializeError {
     // TODO(fork-deserialize) we probably don't need these two similar variants
     SerdeJsonError(serde_json::Error),
     SerdeValueError(serde::de::value::Error),
-    UnsupportedForkVersion(String)
+    UnsupportedForkVersion(String),
+    SsePayloadDeserializationError(String),
+    FullPayloadDeserializationError(String),
 }
 
 impl From<serde::de::value::Error> for ForkVersionDeserializeError {
@@ -30,9 +32,25 @@ impl std::fmt::Display for ForkVersionDeserializeError {
             ForkVersionDeserializeError::UnsupportedForkVersion(ref fork) => {
                 write!(f, "Unsupported fork: {}", fork)
             }
+            ForkVersionDeserializeError::SsePayloadDeserializationError(ref fork) => {
+                write!(
+                    f,
+                    "SsePayloadAttributes deserialization for {} not implemented",
+                    fork
+                )
+            }
+            ForkVersionDeserializeError::FullPayloadDeserializationError(ref fork) => {
+                write!(
+                    f,
+                    "FullPayloadContents deserialization for {} not implemented",
+                    fork
+                )
+            }
         }
     }
 }
+
+impl std::error::Error for ForkVersionDeserializeError {}
 
 pub trait ForkVersionDecode: Sized {
     /// SSZ decode with explicit fork variant.
@@ -94,7 +112,8 @@ where
         }
 
         let helper = Helper::deserialize(deserializer)?;
-        let data = F::deserialize_by_fork(helper.data, helper.version).map_err(serde::de::Error::custom)?;
+        let data = F::deserialize_by_fork(helper.data, helper.version)
+            .map_err(serde::de::Error::custom)?;
         let metadata = serde_json::from_value(helper.metadata).map_err(serde::de::Error::custom)?;
 
         Ok(ForkVersionedResponse {
@@ -110,9 +129,7 @@ impl<F: ForkVersionDeserialize> ForkVersionDeserialize for Arc<F> {
         value: Value,
         fork_name: ForkName,
     ) -> Result<Self, ForkVersionDeserializeError> {
-        Ok(Arc::new(F::deserialize_by_fork(
-            value, fork_name,
-        )?))
+        Ok(Arc::new(F::deserialize_by_fork(value, fork_name)?))
     }
 }
 

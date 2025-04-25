@@ -1,7 +1,10 @@
 use crate::indexed_attestation::{
     IndexedAttestationBase, IndexedAttestationElectra, IndexedAttestationRef,
 };
-use crate::{test_utils::TestRandom, EthSpec};
+use crate::{
+    fork_versioned_response::ForkVersionDeserializeError, test_utils::TestRandom, EthSpec,
+};
+
 use derivative::Derivative;
 use rand::{Rng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -172,20 +175,20 @@ impl<E: EthSpec> TestRandom for AttesterSlashing<E> {
 }
 
 impl<E: EthSpec> crate::ForkVersionDeserialize for Vec<AttesterSlashing<E>> {
-    fn deserialize_by_fork<'de, D: serde::Deserializer<'de>>(
+    fn deserialize_by_fork(
         value: serde_json::Value,
         fork_name: crate::ForkName,
-    ) -> Result<Self, D::Error> {
+    ) -> Result<Self, ForkVersionDeserializeError> {
         if fork_name.electra_enabled() {
-            let slashings: Vec<AttesterSlashingElectra<E>> =
-                serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+            let slashings: Vec<AttesterSlashingElectra<E>> = serde_json::from_value(value)
+                .map_err(ForkVersionDeserializeError::SerdeJsonError)?;
             Ok(slashings
                 .into_iter()
                 .map(AttesterSlashing::Electra)
                 .collect::<Vec<_>>())
         } else {
-            let slashings: Vec<AttesterSlashingBase<E>> =
-                serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+            let slashings: Vec<AttesterSlashingBase<E>> = serde_json::from_value(value)
+                .map_err(ForkVersionDeserializeError::SerdeJsonError)?;
             Ok(slashings
                 .into_iter()
                 .map(AttesterSlashing::Base)

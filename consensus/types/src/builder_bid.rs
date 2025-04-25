@@ -1,4 +1,5 @@
 use crate::beacon_block_body::KzgCommitments;
+use crate::fork_versioned_response::ForkVersionDeserializeError;
 use crate::{
     ChainSpec, EthSpec, ExecutionPayloadHeaderBellatrix, ExecutionPayloadHeaderCapella,
     ExecutionPayloadHeaderDeneb, ExecutionPayloadHeaderElectra, ExecutionPayloadHeaderFulu,
@@ -9,7 +10,6 @@ use bls::PublicKeyBytes;
 use bls::Signature;
 use serde::{Deserialize, Serialize};
 use ssz::Decode;
-use crate::fork_versioned_response::ForkVersionDeserializeError;
 use ssz_derive::{Decode, Encode};
 use superstruct::superstruct;
 use tree_hash_derive::TreeHash;
@@ -131,8 +131,12 @@ impl<E: EthSpec> ForkVersionDeserialize for BuilderBid<E> {
         value: serde_json::value::Value,
         fork_name: ForkName,
     ) -> Result<Self, ForkVersionDeserializeError> {
-        let convert_err =
-            |e| ForkVersionDeserializeError::SerdeValueError(serde::de::Error::custom(format!("BuilderBid failed to deserialize: {:?}", e)));
+        let convert_err = |e| {
+            ForkVersionDeserializeError::SerdeValueError(serde::de::Error::custom(format!(
+                "BuilderBid failed to deserialize: {:?}",
+                e
+            )))
+        };
 
         Ok(match fork_name {
             ForkName::Bellatrix => {
@@ -143,10 +147,12 @@ impl<E: EthSpec> ForkVersionDeserialize for BuilderBid<E> {
             ForkName::Electra => Self::Electra(serde_json::from_value(value).map_err(convert_err)?),
             ForkName::Fulu => Self::Fulu(serde_json::from_value(value).map_err(convert_err)?),
             ForkName::Base | ForkName::Altair => {
-                return Err(ForkVersionDeserializeError::UnsupportedForkVersion(format!(
-                    "BuilderBid failed to deserialize: unsupported fork '{}'",
-                    fork_name
-                )))
+                return Err(ForkVersionDeserializeError::UnsupportedForkVersion(
+                    format!(
+                        "BuilderBid failed to deserialize: unsupported fork '{}'",
+                        fork_name
+                    ),
+                ))
             }
         })
     }
@@ -162,7 +168,8 @@ impl<E: EthSpec> ForkVersionDeserialize for SignedBuilderBid<E> {
             pub message: serde_json::Value,
             pub signature: Signature,
         }
-        let helper: Helper = serde_json::from_value(value).map_err(ForkVersionDeserializeError::SerdeJsonError)?;
+        let helper: Helper =
+            serde_json::from_value(value).map_err(ForkVersionDeserializeError::SerdeJsonError)?;
 
         Ok(Self {
             message: BuilderBid::deserialize_by_fork(helper.message, fork_name)?,

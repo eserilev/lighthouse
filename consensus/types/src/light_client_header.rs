@@ -1,12 +1,12 @@
 use crate::ChainSpec;
 use crate::ForkName;
 use crate::ForkVersionDeserialize;
-use crate::{light_client_update::*, BeaconBlockBody};
 use crate::{
-    test_utils::TestRandom, EthSpec, ExecutionPayloadHeaderCapella, ExecutionPayloadHeaderDeneb,
-    ExecutionPayloadHeaderElectra, ExecutionPayloadHeaderFulu, FixedVector, Hash256,
-    SignedBlindedBeaconBlock,
+    fork_versioned_response::ForkVersionDeserializeError, test_utils::TestRandom, EthSpec,
+    ExecutionPayloadHeaderCapella, ExecutionPayloadHeaderDeneb, ExecutionPayloadHeaderElectra,
+    ExecutionPayloadHeaderFulu, FixedVector, Hash256, SignedBlindedBeaconBlock,
 };
+use crate::{light_client_update::*, BeaconBlockBody};
 use crate::{BeaconBlockHeader, ExecutionPayloadHeader};
 use derivative::Derivative;
 use serde::{Deserialize, Serialize};
@@ -335,29 +335,29 @@ impl<E: EthSpec> Default for LightClientHeaderFulu<E> {
 }
 
 impl<E: EthSpec> ForkVersionDeserialize for LightClientHeader<E> {
-    fn deserialize_by_fork<'de, D: serde::Deserializer<'de>>(
+    fn deserialize_by_fork(
         value: serde_json::value::Value,
         fork_name: ForkName,
-    ) -> Result<Self, D::Error> {
+    ) -> Result<Self, ForkVersionDeserializeError> {
         match fork_name {
             ForkName::Altair | ForkName::Bellatrix => serde_json::from_value(value)
                 .map(|light_client_header| Self::Altair(light_client_header))
-                .map_err(serde::de::Error::custom),
+                .map_err(ForkVersionDeserializeError::SerdeJsonError),
             ForkName::Capella => serde_json::from_value(value)
                 .map(|light_client_header| Self::Capella(light_client_header))
-                .map_err(serde::de::Error::custom),
+                .map_err(ForkVersionDeserializeError::SerdeJsonError),
             ForkName::Deneb => serde_json::from_value(value)
                 .map(|light_client_header| Self::Deneb(light_client_header))
-                .map_err(serde::de::Error::custom),
+                .map_err(ForkVersionDeserializeError::SerdeJsonError),
             ForkName::Electra => serde_json::from_value(value)
                 .map(|light_client_header| Self::Electra(light_client_header))
-                .map_err(serde::de::Error::custom),
+                .map_err(ForkVersionDeserializeError::SerdeJsonError),
             ForkName::Fulu => serde_json::from_value(value)
                 .map(|light_client_header| Self::Fulu(light_client_header))
-                .map_err(serde::de::Error::custom),
-            ForkName::Base => Err(serde::de::Error::custom(format!(
-                "LightClientHeader deserialization for {fork_name} not implemented"
-            ))),
+                .map_err(ForkVersionDeserializeError::SerdeJsonError),
+            ForkName::Base => Err(ForkVersionDeserializeError::UnsupportedForkVersion(
+                format!("LightClientHeader deserialization for {fork_name} not implemented"),
+            )),
         }
     }
 }

@@ -1,4 +1,5 @@
 use crate::beacon_block_body::{format_kzg_commitments, BLOB_KZG_COMMITMENTS_INDEX};
+use crate::fork_versioned_response::ForkVersionDeserializeError;
 use crate::*;
 use derivative::Derivative;
 use merkle_proof::MerkleTree;
@@ -703,17 +704,15 @@ impl<E: EthSpec> SignedBeaconBlock<E> {
 impl<E: EthSpec, Payload: AbstractExecPayload<E>> ForkVersionDeserialize
     for SignedBeaconBlock<E, Payload>
 {
-    fn deserialize_by_fork<'de, D: serde::Deserializer<'de>>(
+    fn deserialize_by_fork(
         value: serde_json::value::Value,
         fork_name: ForkName,
-    ) -> Result<Self, D::Error> {
+    ) -> Result<Self, ForkVersionDeserializeError> {
         Ok(map_fork_name!(
             fork_name,
             Self,
-            serde_json::from_value(value).map_err(|e| serde::de::Error::custom(format!(
-                "SignedBeaconBlock failed to deserialize: {:?}",
-                e
-            )))?
+            serde_json::from_value(value)
+                .map_err(|e| ForkVersionDeserializeError::SerdeJsonError(e))?
         ))
     }
 }

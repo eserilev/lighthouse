@@ -1,4 +1,5 @@
 use crate::attestation::AttestationBase;
+use crate::fork_versioned_response::{ForkVersionDeserialize, ForkVersionDeserializeError};
 use crate::test_utils::TestRandom;
 use crate::*;
 use derivative::Derivative;
@@ -11,7 +12,6 @@ use superstruct::superstruct;
 use test_random_derive::TestRandom;
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
-use crate::fork_versioned_response::ForkVersionDeserializeError;
 
 use self::indexed_attestation::IndexedAttestationBase;
 
@@ -45,9 +45,7 @@ use self::indexed_attestation::IndexedAttestationBase;
     map_ref_into(BeaconBlockBodyRef, BeaconBlock),
     map_ref_mut_into(BeaconBlockBodyRefMut)
 )]
-#[derive(
-    Debug, Clone, Serialize, Encode, TreeHash, Derivative, arbitrary::Arbitrary,
-)]
+#[derive(Debug, Clone, Serialize, Encode, TreeHash, Derivative, arbitrary::Arbitrary)]
 #[derivative(PartialEq, Hash(bound = "E: EthSpec"))]
 #[serde(untagged)]
 #[serde(bound = "E: EthSpec, Payload: AbstractExecPayload<E>")]
@@ -780,6 +778,22 @@ impl<E: EthSpec, Payload: AbstractExecPayload<E>> ForkVersionDeserialize
         ))
     }
 }
+
+impl<E: EthSpec> ForkVersionDeserialize for Vec<BeaconBlock<E, BlindedPayload<E>>> {
+    fn deserialize_by_fork(
+        value: serde_json::value::Value,
+        fork_name: ForkName,
+    ) -> Result<Self, ForkVersionDeserializeError> {
+        let blocks: Vec<serde_json::value::Value> =
+            serde_json::from_value(value).map_err(ForkVersionDeserializeError::SerdeJsonError)?;
+
+        blocks
+            .into_iter()
+            .map(|block_value| BeaconBlock::deserialize_by_fork(block_value, fork_name))
+            .collect()
+    }
+}
+
 pub enum BlockImportSource {
     Gossip,
     Lookup,

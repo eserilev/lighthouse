@@ -57,7 +57,6 @@ impl<T> SszStaticType for T where
 {
 }
 
-
 /// Trait for types that can be used in SSZ static tests.
 pub trait ForkVersionedSszStaticType:
     ForkVersionDeserialize + Encode + Clone + PartialEq + Debug + Sync

@@ -2,14 +2,15 @@ use super::{EthSpec, FixedVector, Hash256, Slot, SyncAggregate, SyncCommittee};
 use crate::light_client_header::LightClientHeaderElectra;
 use crate::LightClientHeader;
 use crate::{
-    beacon_state, test_utils::TestRandom, ChainSpec, Epoch, ForkName, ForkVersionDeserialize,
-    LightClientHeaderAltair, LightClientHeaderCapella, LightClientHeaderDeneb,
-    LightClientHeaderFulu, SignedBlindedBeaconBlock,
+    beacon_state, fork_versioned_response::ForkVersionDeserializeError, test_utils::TestRandom,
+    ChainSpec, Epoch, ForkName, ForkVersionDeserialize, LightClientHeaderAltair,
+    LightClientHeaderCapella, LightClientHeaderDeneb, LightClientHeaderFulu,
+    SignedBlindedBeaconBlock,
 };
 use derivative::Derivative;
 use safe_arith::ArithError;
 use safe_arith::SafeArith;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ssz::{Decode, Encode};
 use ssz_derive::Decode;
@@ -181,17 +182,20 @@ pub struct LightClientUpdate<E: EthSpec> {
 }
 
 impl<E: EthSpec> ForkVersionDeserialize for LightClientUpdate<E> {
-    fn deserialize_by_fork<'de, D: Deserializer<'de>>(
+    fn deserialize_by_fork(
         value: Value,
         fork_name: ForkName,
-    ) -> Result<Self, D::Error> {
+    ) -> Result<Self, ForkVersionDeserializeError> {
         match fork_name {
-            ForkName::Base => Err(serde::de::Error::custom(format!(
-                "LightClientUpdate failed to deserialize: unsupported fork '{}'",
-                fork_name
-            ))),
-            _ => Ok(serde_json::from_value::<LightClientUpdate<E>>(value)
-                .map_err(serde::de::Error::custom))?,
+            ForkName::Base => Err(ForkVersionDeserializeError::UnsupportedForkVersion(
+                format!(
+                    "LightClientUpdate failed to deserialize: unsupported fork
+                '{}'",
+                    fork_name
+                ),
+            )),
+            _ => serde_json::from_value::<LightClientUpdate<E>>(value)
+                .map_err(ForkVersionDeserializeError::SerdeJsonError),
         }
     }
 }

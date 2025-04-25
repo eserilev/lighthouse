@@ -1,3 +1,4 @@
+use crate::fork_versioned_response::ForkVersionDeserializeError;
 use crate::slot_data::SlotData;
 use crate::{test_utils::TestRandom, Hash256, Slot};
 use crate::{Checkpoint, ForkVersionDeserialize};
@@ -7,7 +8,6 @@ use ssz_derive::{Decode, Encode};
 use ssz_types::BitVector;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
-use crate::fork_versioned_response::ForkVersionDeserializeError; 
 use superstruct::superstruct;
 use test_random_derive::TestRandom;
 use tree_hash_derive::TreeHash;
@@ -539,12 +539,12 @@ impl<E: EthSpec> ForkVersionDeserialize for Attestation<E> {
         fork_name: crate::ForkName,
     ) -> Result<Self, ForkVersionDeserializeError> {
         if fork_name.electra_enabled() {
-            let attestation: AttestationElectra<E> =
-                serde_json::from_value(value).map_err(ForkVersionDeserializeError::SerdeJsonError)?;
+            let attestation: AttestationElectra<E> = serde_json::from_value(value)
+                .map_err(ForkVersionDeserializeError::SerdeJsonError)?;
             Ok(Attestation::Electra(attestation))
         } else {
-            let attestation: AttestationBase<E> =
-                serde_json::from_value(value).map_err(ForkVersionDeserializeError::SerdeJsonError)?;
+            let attestation: AttestationBase<E> = serde_json::from_value(value)
+                .map_err(ForkVersionDeserializeError::SerdeJsonError)?;
             Ok(Attestation::Base(attestation))
         }
     }
@@ -556,15 +556,15 @@ impl<E: EthSpec> ForkVersionDeserialize for Vec<Attestation<E>> {
         fork_name: crate::ForkName,
     ) -> Result<Self, ForkVersionDeserializeError> {
         if fork_name.electra_enabled() {
-            let attestations: Vec<AttestationElectra<E>> =
-                serde_json::from_value(value).map_err(ForkVersionDeserializeError::SerdeJsonError)?;
+            let attestations: Vec<AttestationElectra<E>> = serde_json::from_value(value)
+                .map_err(ForkVersionDeserializeError::SerdeJsonError)?;
             Ok(attestations
                 .into_iter()
                 .map(Attestation::Electra)
                 .collect::<Vec<_>>())
         } else {
-            let attestations: Vec<AttestationBase<E>> =
-                serde_json::from_value(value).map_err(ForkVersionDeserializeError::SerdeJsonError)?;
+            let attestations: Vec<AttestationBase<E>> = serde_json::from_value(value)
+                .map_err(ForkVersionDeserializeError::SerdeJsonError)?;
             Ok(attestations
                 .into_iter()
                 .map(Attestation::Base)

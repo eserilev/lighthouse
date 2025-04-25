@@ -1,4 +1,4 @@
-use crate::{test_utils::TestRandom, *};
+use crate::{fork_versioned_response::ForkVersionDeserializeError, test_utils::TestRandom, *};
 use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use ssz::{Decode, Encode};
@@ -473,16 +473,11 @@ impl<E: EthSpec> TryFrom<ExecutionPayloadHeader<E>> for ExecutionPayloadHeaderFu
 }
 
 impl<E: EthSpec> ForkVersionDeserialize for ExecutionPayloadHeader<E> {
-    fn deserialize_by_fork<'de, D: serde::Deserializer<'de>>(
+    fn deserialize_by_fork(
         value: serde_json::value::Value,
         fork_name: ForkName,
-    ) -> Result<Self, D::Error> {
-        let convert_err = |e| {
-            serde::de::Error::custom(format!(
-                "ExecutionPayloadHeader failed to deserialize: {:?}",
-                e
-            ))
-        };
+    ) -> Result<Self, ForkVersionDeserializeError> {
+        let convert_err = |e| ForkVersionDeserializeError::SerdeJsonError(e);
 
         Ok(match fork_name {
             ForkName::Bellatrix => {
@@ -493,10 +488,12 @@ impl<E: EthSpec> ForkVersionDeserialize for ExecutionPayloadHeader<E> {
             ForkName::Electra => Self::Electra(serde_json::from_value(value).map_err(convert_err)?),
             ForkName::Fulu => Self::Fulu(serde_json::from_value(value).map_err(convert_err)?),
             ForkName::Base | ForkName::Altair => {
-                return Err(serde::de::Error::custom(format!(
-                    "ExecutionPayloadHeader failed to deserialize: unsupported fork '{}'",
-                    fork_name
-                )));
+                return Err(ForkVersionDeserializeError::UnsupportedForkVersion(
+                    format!(
+                        "ExecutionPayloadHeader failed to deserialize: unsupported fork '{}'",
+                        fork_name
+                    ),
+                ));
             }
         })
     }

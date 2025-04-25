@@ -1,12 +1,13 @@
 use super::{EthSpec, FixedVector, Hash256, LightClientHeader, Slot, SyncAggregate};
 use crate::ChainSpec;
 use crate::{
-    light_client_update::*, test_utils::TestRandom, ForkName, ForkVersionDeserialize,
-    LightClientHeaderAltair, LightClientHeaderCapella, LightClientHeaderDeneb,
-    LightClientHeaderElectra, LightClientHeaderFulu, SignedBlindedBeaconBlock,
+    fork_versioned_response::ForkVersionDeserializeError, light_client_update::*,
+    test_utils::TestRandom, ForkName, ForkVersionDeserialize, LightClientHeaderAltair,
+    LightClientHeaderCapella, LightClientHeaderDeneb, LightClientHeaderElectra,
+    LightClientHeaderFulu, SignedBlindedBeaconBlock,
 };
 use derivative::Derivative;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ssz::{Decode, Encode};
 use ssz_derive::Decode;
@@ -234,18 +235,20 @@ impl<E: EthSpec> LightClientFinalityUpdate<E> {
 }
 
 impl<E: EthSpec> ForkVersionDeserialize for LightClientFinalityUpdate<E> {
-    fn deserialize_by_fork<'de, D: Deserializer<'de>>(
+    fn deserialize_by_fork(
         value: Value,
         fork_name: ForkName,
-    ) -> Result<Self, D::Error> {
+    ) -> Result<Self, ForkVersionDeserializeError> {
         if fork_name.altair_enabled() {
             serde_json::from_value::<LightClientFinalityUpdate<E>>(value)
-                .map_err(serde::de::Error::custom)
+                .map_err(ForkVersionDeserializeError::SerdeJsonError)
         } else {
-            Err(serde::de::Error::custom(format!(
-                "LightClientFinalityUpdate failed to deserialize: unsupported fork '{}'",
-                fork_name
-            )))
+            Err(ForkVersionDeserializeError::UnsupportedForkVersion(
+                format!(
+                    "LightClientFinalityUpdate failed to deserialize: unsupported fork '{}'",
+                    fork_name
+                ),
+            ))
         }
     }
 }

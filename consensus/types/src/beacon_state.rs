@@ -1,4 +1,5 @@
 use self::committee_cache::get_active_validator_indices;
+use crate::fork_versioned_response::ForkVersionDeserializeError;
 use crate::historical_summary::HistoricalSummary;
 use crate::test_utils::TestRandom;
 use crate::FixedBytesExtended;
@@ -2749,17 +2750,15 @@ impl<E: EthSpec> CompareFields for BeaconState<E> {
 }
 
 impl<E: EthSpec> ForkVersionDeserialize for BeaconState<E> {
-    fn deserialize_by_fork<'de, D: serde::Deserializer<'de>>(
+    fn deserialize_by_fork(
         value: serde_json::value::Value,
         fork_name: ForkName,
-    ) -> Result<Self, D::Error> {
+    ) -> Result<Self, ForkVersionDeserializeError> {
         Ok(map_fork_name!(
             fork_name,
             Self,
-            serde_json::from_value(value).map_err(|e| serde::de::Error::custom(format!(
-                "BeaconState failed to deserialize: {:?}",
-                e
-            )))?
+            serde_json::from_value(value)
+                .map_err(|e| ForkVersionDeserializeError::SerdeJsonError(e))?
         ))
     }
 }
