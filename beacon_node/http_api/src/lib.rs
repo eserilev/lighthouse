@@ -1698,6 +1698,13 @@ pub fn serve<T: BeaconChainTypes>(
         .and(task_spawner_filter.clone())
         .and(chain_filter.clone());
 
+    let beacon_blocks_path_v2 = eth_v2
+        .and(warp::path("beacon"))
+        .and(warp::path("blocks"))
+        .and(block_id_or_err)
+        .and(task_spawner_filter.clone())
+        .and(chain_filter.clone());
+
     let beacon_blocks_path_any = any_version
         .and(warp::path("beacon"))
         .and(warp::path("blocks"))
@@ -1706,13 +1713,12 @@ pub fn serve<T: BeaconChainTypes>(
         .and(chain_filter.clone());
 
     // GET beacon/blocks/{block_id}
-    let get_beacon_block = beacon_blocks_path_any
+    let get_beacon_block_v2 = beacon_blocks_path_v2
         .clone()
         .and(warp::path::end())
         .and(warp::header::optional::<api_types::Accept>("accept"))
         .then(
-            |endpoint_version: EndpointVersion,
-             block_id: BlockId,
+            |block_id: BlockId,
              task_spawner: TaskSpawner<T::EthSpec>,
              chain: Arc<BeaconChain<T>>,
              accept_header: Option<api_types::Accept>| {
@@ -1735,7 +1741,7 @@ pub fn serve<T: BeaconChainTypes>(
                                 ))
                             }),
                         _ => execution_optimistic_finalized_fork_versioned_response(
-                            endpoint_version,
+                            V2,
                             fork_name,
                             execution_optimistic,
                             finalized,
@@ -4840,7 +4846,7 @@ pub fn serve<T: BeaconChainTypes>(
                 .uor(get_beacon_state_pending_consolidations)
                 .uor(get_beacon_headers)
                 .uor(get_beacon_headers_block_id)
-                .uor(get_beacon_block)
+                .uor(get_beacon_block_v2)
                 .uor(get_beacon_block_attestations)
                 .uor(get_beacon_blinded_block)
                 .uor(get_beacon_block_root)

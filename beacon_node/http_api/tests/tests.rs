@@ -1617,14 +1617,6 @@ impl ApiTester {
                 block_id
             );
 
-            // Check that the legacy v1 API still works.
-            let v1_result = self.client.get_beacon_blocks_v1(block_id.0).await.unwrap();
-            if let (Some(v1_result), Some(expected)) = (&v1_result, &expected) {
-                assert_eq!(&v1_result.data, expected.as_ref());
-            } else {
-                assert_eq!(expected, None);
-            }
-
             // Check that version headers are provided.
             let url = self.client.get_beacon_blocks_path(block_id.0).unwrap();
 

@@ -1260,7 +1260,7 @@ impl BeaconNodeHttpClient {
     pub async fn get_beacon_blocks_v1<E: EthSpec>(
         &self,
         block_id: BlockId,
-    ) -> Result<Option<ForkVersionedResponse<SignedBeaconBlock<E>>>, Error> {
+    ) -> Result<Option<GenericResponse<SignedBeaconBlock<E>>>, Error> {
         let mut path = self.eth_path(V1)?;
 
         path.path_segments_mut()
