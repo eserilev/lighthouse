@@ -711,8 +711,7 @@ impl<E: EthSpec, Payload: AbstractExecPayload<E>> ForkVersionDeserialize
         Ok(map_fork_name!(
             fork_name,
             Self,
-            serde_json::from_value(value)
-                .map_err(ForkVersionDeserializeError::SerdeJsonError)?
+            serde_json::from_value(value).map_err(ForkVersionDeserializeError::SerdeJsonError)?
         ))
     }
 }
