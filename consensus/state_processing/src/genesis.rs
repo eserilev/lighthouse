@@ -4,7 +4,8 @@ use super::per_block_processing::{
 use crate::common::DepositDataTree;
 use crate::upgrade::electra::upgrade_state_to_electra;
 use crate::upgrade::{
-    upgrade_to_altair, upgrade_to_bellatrix, upgrade_to_capella, upgrade_to_deneb, upgrade_to_eip7805, upgrade_to_fulu
+    upgrade_to_altair, upgrade_to_bellatrix, upgrade_to_capella, upgrade_to_deneb,
+    upgrade_to_eip7805, upgrade_to_fulu,
 };
 use safe_arith::{ArithError, SafeArith};
 use std::sync::Arc;
@@ -123,8 +124,7 @@ pub fn initialize_beacon_state_from_eth1<E: EthSpec>(
         // Remove intermediate Deneb fork from `state.fork`.
         state.fork_mut().previous_version = spec.electra_fork_version;
 
-        // TODO(electra): think about this more and determine the best way to
-        // do this. The spec tests will expect that the sync committees are
+        // The spec tests will expect that the sync committees are
         // calculated using the electra value for MAX_EFFECTIVE_BALANCE when
         // calling `initialize_beacon_state_from_eth1()`. But the sync committees
         // are actually calcuated back in `upgrade_to_altair()`. We need to
@@ -143,17 +143,17 @@ pub fn initialize_beacon_state_from_eth1<E: EthSpec>(
     if spec
         .eip7805_fork_epoch
         .is_some_and(|fork_epoch| fork_epoch == E::genesis_epoch())
-        {
-            upgrade_to_eip7805(&mut state, spec)?;
+    {
+        upgrade_to_eip7805(&mut state, spec)?;
 
-            // Remove intermediate Electra fork from `state.fork`.
-            state.fork_mut().previous_version = spec.eip7805_fork_version;
+        // Remove intermediate Electra fork from `state.fork`.
+        state.fork_mut().previous_version = spec.eip7805_fork_version;
 
-            // Override latest execution payload header.
-            if let Some(ExecutionPayloadHeader::Electra(header)) = execution_payload_header.clone() {
-                *state.latest_execution_payload_header_electra_mut()? = header.clone();
-            }
+        // Override latest execution payload header.
+        if let Some(ExecutionPayloadHeader::Electra(header)) = execution_payload_header.clone() {
+            *state.latest_execution_payload_header_electra_mut()? = header.clone();
         }
+    }
 
     // Upgrade to fulu if configured from genesis.
     if spec
