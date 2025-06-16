@@ -328,6 +328,22 @@ impl GossipTester {
             single_attestation_to_attestation(&valid_attestation, committee.committee, fork_name)
                 .unwrap();
 
+        let head = harness.chain.head_snapshot();
+        let state = &head.beacon_state;
+        let committee = state
+            .get_beacon_committee(
+                valid_attestation.data.slot,
+                valid_attestation.committee_index,
+            )
+            .unwrap();
+        let fork_name = harness
+            .chain
+            .spec
+            .fork_name_at_slot::<E>(valid_attestation.data.slot);
+        let valid_aggregate_attestation =
+            single_attestation_to_attestation(&valid_attestation, committee.committee, fork_name)
+                .unwrap();
+
         let (valid_aggregate, aggregator_validator_index, aggregator_sk) =
             get_valid_aggregated_attestation(&harness.chain, valid_aggregate_attestation.clone());
 
