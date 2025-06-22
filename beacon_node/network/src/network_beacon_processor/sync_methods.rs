@@ -8,7 +8,9 @@ use crate::sync::{
 use beacon_chain::block_verification_types::{AsBlock, RpcBlock};
 use beacon_chain::data_availability_checker::AvailabilityCheckError;
 use beacon_chain::data_availability_checker::MaybeAvailableBlock;
-use beacon_chain::data_column_verification::verify_kzg_for_data_column_list;
+use beacon_chain::data_column_verification::{
+    verify_kzg_for_data_column_list, verify_kzg_for_data_column_list_with_scoring,
+};
 use beacon_chain::{
     validator_monitor::get_slot_delay_ms, AvailabilityProcessingStatus, BeaconChainTypes,
     BlockError, ChainSegmentResult, HistoricalBlockError, NotifyExecutionLayer,
@@ -25,7 +27,10 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 use types::beacon_block_body::format_kzg_commitments;
 use types::blob_sidecar::FixedBlobSidecarList;
-use types::{BlockImportSource, DataColumnSidecar, DataColumnSidecarList, Epoch, Hash256};
+use types::{
+    BlockImportSource, DataColumnSidecar, DataColumnSidecarList, Epoch, Hash256,
+    RuntimeVariableList,
+};
 
 /// Id associated to a batch processing request, either a sync batch or a parent lookup.
 #[derive(Clone, Debug, PartialEq)]
@@ -582,6 +587,49 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
                 }
                 (imported_blocks.len(), r)
             }
+        }
+    }
+
+    fn process_backfill_data_columns(
+        &self,
+        downloaded_data_columns: Vec<DataColumnSidecarList<T::EthSpec>>,
+    ) -> (usize, Result<(), ChainSegmentFailed>) {
+        let all_data_columns = downloaded_data_columns
+            .clone()
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+
+        let all_data_columns = RuntimeVariableList::from_vec(
+            all_data_columns,
+            self.chain.spec.number_of_columns as usize,
+        );
+
+        // Attributes fault to the specific peer that sent an invalid column
+        match verify_kzg_for_data_column_list_with_scoring(all_data_columns.iter(), &self.chain.kzg)
+        {
+            Ok(_) => {}
+            Err(e) => {
+                // TODO(cgc-backfill) what error to return here and down below
+                return (
+                    0,
+                    Err(ChainSegmentFailed {
+                        peer_action: Some(PeerAction::LowToleranceError),
+                        message: format!(
+                            "Failed to check block availability : {:?}",
+                            e.first().unwrap().1
+                        ),
+                    }),
+                );
+            }
+        }
+
+        match self
+            .chain
+            .import_historical_data_column_batch(downloaded_data_columns)
+        {
+            Ok(count) => (count, Ok(())),
+            Err(_) => todo!(),
         }
     }
 
