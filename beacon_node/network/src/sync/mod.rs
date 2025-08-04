@@ -4,6 +4,7 @@
 mod backfill_sync;
 mod block_lookups;
 mod block_sidecar_coupling;
+mod custody_sync;
 pub mod manager;
 mod network_context;
 mod peer_sampling;
@@ -14,4 +15,5 @@ mod tests;
 
 pub use lighthouse_network::service::api_types::SamplingId;
 pub use manager::{BatchProcessResult, SyncMessage};
+pub use network_context::requests::DataColumnsByRootRequestItems;
 pub use range_sync::{BatchOperationOutcome, ChainId};

@@ -43,7 +43,7 @@ const GOSSIPSUB_POSITIVE_SCORE_WEIGHT: f64 = GOSSIPSUB_NEGATIVE_SCORE_WEIGHT;
 /// Each variant has an associated score change.
 // To easily assess the behaviour of scores changes the number of variants should stay low, and
 // somewhat generic.
-#[derive(Debug, Clone, Copy, AsRefStr)]
+#[derive(Debug, Clone, Copy, AsRefStr, Eq, PartialEq, Hash)]
 #[strum(serialize_all = "snake_case")]
 pub enum PeerAction {
     /// We should not communicate more with this peer.
@@ -72,6 +72,7 @@ pub enum ReportSource {
     RPC,
     Processor,
     SyncService,
+    CustodySyncService,
     PeerManager,
 }
 
@@ -82,6 +83,7 @@ impl From<ReportSource> for &'static str {
             ReportSource::RPC => "rpc_error",
             ReportSource::Processor => "processor",
             ReportSource::SyncService => "sync",
+            ReportSource::CustodySyncService => "custody_sync",
             ReportSource::PeerManager => "peer_manager",
         }
     }

@@ -128,6 +128,7 @@ pub struct CustodyRequester(pub SingleLookupReqId);
 #[derive(Debug, Clone, Copy)]
 pub enum AppRequestId {
     Sync(SyncRequestId),
+    CustodySync(SyncRequestId),
     Router,
     Internal,
 }

@@ -53,7 +53,7 @@ use types::{
 };
 
 pub mod custody;
-mod requests;
+pub mod requests;
 
 #[derive(Debug)]
 pub enum RpcEvent<T> {

@@ -34,6 +34,8 @@ pub struct Router<T: BeaconChainTypes> {
     chain: Arc<BeaconChain<T>>,
     /// A channel to the syncing thread.
     sync_send: mpsc::UnboundedSender<SyncMessage<T::EthSpec>>,
+    /// A channel to the custody syncing thread.
+    custody_sync_send: mpsc::UnboundedSender<SyncMessage<T::EthSpec>>,
     /// A network context to return and handle RPC requests.
     network: HandlerNetworkContext<T::EthSpec>,
     /// A multi-threaded, non-blocking processor for applying messages to the beacon chain.
@@ -91,8 +93,10 @@ impl<T: BeaconChainTypes> Router<T> {
 
         let (handler_send, handler_recv) = mpsc::unbounded_channel();
 
-        // generate the message channel
+        // generate the message channels
         let (sync_send, sync_recv) = mpsc::unbounded_channel::<SyncMessage<T::EthSpec>>();
+        let (custody_sync_send, custody_sync_recv) =
+            mpsc::unbounded_channel::<SyncMessage<T::EthSpec>>();
 
         let network_beacon_processor = NetworkBeaconProcessor {
             beacon_processor_send,
@@ -121,6 +125,7 @@ impl<T: BeaconChainTypes> Router<T> {
             network_globals,
             chain: beacon_chain,
             sync_send,
+            custody_sync_send,
             network: HandlerNetworkContext::new(network_send),
             network_beacon_processor,
             logger_debounce: TimeLatch::default(),
@@ -507,6 +512,15 @@ impl<T: BeaconChainTypes> Router<T> {
         });
     }
 
+    fn send_to_custody_sync(&mut self, message: SyncMessage<T::EthSpec>) {
+        self.custody_sync_send.send(message).unwrap_or_else(|e| {
+            warn!(
+                error = %e,
+                "Could not send message to the sync service"
+            )
+        });
+    }
+
     /// An error occurred during an RPC request. The state is maintained by the sync manager, so
     /// this function notifies the sync manager of the error.
     pub fn on_rpc_error(&mut self, peer_id: PeerId, app_request_id: AppRequestId, error: RPCError) {
@@ -560,7 +574,7 @@ impl<T: BeaconChainTypes> Router<T> {
                     return;
                 }
             },
-            AppRequestId::Router => {
+            AppRequestId::Router | AppRequestId::CustodySync(_) => {
                 crit!(%peer_id, "All BBRange requests belong to sync");
                 return;
             }
@@ -619,7 +633,7 @@ impl<T: BeaconChainTypes> Router<T> {
                     return;
                 }
             },
-            AppRequestId::Router => {
+            AppRequestId::Router | AppRequestId::CustodySync(_) => {
                 crit!(%peer_id, "All BBRoot requests belong to sync");
                 return;
             }
@@ -653,7 +667,7 @@ impl<T: BeaconChainTypes> Router<T> {
                     return;
                 }
             },
-            AppRequestId::Router => {
+            AppRequestId::Router | AppRequestId::CustodySync(_) => {
                 crit!(%peer_id, "All BlobsByRoot requests belong to sync");
                 return;
             }
@@ -687,6 +701,8 @@ impl<T: BeaconChainTypes> Router<T> {
                     return;
                 }
             },
+            // TODO(custody-sync)
+            AppRequestId::CustodySync(_) => todo!(),
             AppRequestId::Router => {
                 crit!(%peer_id, "All DataColumnsByRoot requests belong to sync");
                 return;
