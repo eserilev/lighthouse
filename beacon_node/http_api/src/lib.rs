@@ -3325,6 +3325,25 @@ pub fn serve<T: BeaconChainTypes>(
      * validator
      */
 
+    fn with_trace_context() -> impl Filter<Extract = (opentelemetry::Context), Error = std::convert::Infallible> + Clone {
+        warp::header::headers_cloned()
+        .map(|headers| {
+            // Extract OpenTelemetry context
+            let parent_context = global::get_text_map_propagator(|propagator| {
+                propagator.extract(&opentelemetry_http::HeaderExtractor(&headers))
+            });
+            
+            // Create a tracing span with the extracted context as parent
+            let span = info_span!("http_request");
+            span.set_parent(parent_context);
+            
+            // Enter the span
+            span.entered()
+        })
+    }
+    
+    
+
     // GET validator/duties/proposer/{epoch}
     let get_validator_duties_proposer = eth_v1
         .and(warp::path("validator"))
@@ -3339,11 +3358,14 @@ pub fn serve<T: BeaconChainTypes>(
         .and(not_while_syncing_filter.clone())
         .and(task_spawner_filter.clone())
         .and(chain_filter.clone())
+        .and(with_trace_context())
         .then(
             |epoch: Epoch,
              not_synced_filter: Result<(), Rejection>,
              task_spawner: TaskSpawner<T::EthSpec>,
-             chain: Arc<BeaconChain<T>>| {
+             chain: Arc<BeaconChain<T>>
+             context: opentelemetry::Context | {
+                context.
                 task_spawner.blocking_json_task(Priority::P0, move || {
                     not_synced_filter?;
                     proposer_duties::proposer_duties(epoch, &chain)

@@ -16,6 +16,10 @@ pub mod types;
 
 use self::mixin::{RequestAccept, ResponseOptional};
 use self::types::{Error as ResponseError, *};
+use opentelemetry::trace::{SpanKind, TraceContextExt, Tracer};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+use tracing::info_span;
 use ::types::beacon_response::ExecutionOptimisticFinalizedBeaconResponse;
 use derivative::Derivative;
 use futures::Stream;
@@ -310,6 +314,31 @@ impl BeaconNodeHttpClient {
     ) -> Result<Option<T>, Error> {
         let opt_response = self
             .get_response(url, |b| b.timeout(timeout).accept(Accept::Json))
+            .await
+            .optional()?;
+        match opt_response {
+            Some(response) => Ok(Some(response.json().await?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Perform a HTTP GET request with a custom timeout, returning `None` on a 404 error.
+    async fn get_opt_with_timeout_and_tracing_span<T: DeserializeOwned, U: IntoUrl>(
+        &self,
+        url: U,
+        timeout: Duration,
+    ) -> Result<Option<T>, Error> {
+        let span = tracing::info_span!("test");
+        let _guard = span.enter();
+        // Get OpenTelemetry context from tracing span
+        let cx = span.context();
+        // Inject the span context into the header
+        let mut headers = HeaderMap::new();
+        opentelemetry::global::get_text_map_propagator(|propagator| {
+            propagator.inject_context(&cx, &mut opentelemetry_http::HeaderInjector(&mut headers))
+        });
+        let opt_response = self
+            .get_response(url, |b| b.timeout(timeout).headers(headers).accept(Accept::Json))
             .await
             .optional()?;
         match opt_response {
