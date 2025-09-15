@@ -52,6 +52,8 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         epoch: Epoch,
         historical_data_column_sidecar_list: DataColumnSidecarList<T::EthSpec>,
     ) -> Result<usize, HistoricalDataColumnError> {
+        // TODO(custody-sync) delete this
+        tracing::info!(?epoch, "IMPORTING BATCH");
         let mut total_imported = 0;
         let mut ops = vec![];
 

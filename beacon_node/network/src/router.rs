@@ -309,6 +309,7 @@ impl<T: BeaconChainTypes> Router<T> {
                 self.on_data_columns_by_root_response(peer_id, app_request_id, data_column);
             }
             Response::DataColumnsByRange(data_column) => {
+                tracing::info!("YOOO");
                 self.on_data_columns_by_range_response(peer_id, app_request_id, data_column);
             }
             // Light client responses should not be received

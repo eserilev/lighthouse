@@ -4187,7 +4187,7 @@ pub fn serve<T: BeaconChainTypes>(
                         .num_of_custody_groups_to_sample(effective_epoch, &chain.spec);
 
                     let _ = chain.store.put_data_column_custody_info(Some(
-                        (effective_epoch).end_slot(T::EthSpec::slots_per_epoch()),
+                        (effective_epoch - 1).end_slot(T::EthSpec::slots_per_epoch()),
                     ));
 
                     let updated_custody_columns = chain

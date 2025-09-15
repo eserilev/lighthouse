@@ -136,70 +136,11 @@ impl<T: BeaconChainTypes> CustodyBackFillSync<T> {
         &mut self,
         column_indices: HashSet<ColumnIndex>,
     ) -> Result<(), CustodyBackfillError> {
-        self.set_state(CustodyBackFillState::AwaitingFinalization);
+        self.pause("Awaiting Finalization".to_string());
         self.set_start_epoch()?;
         self.columns = column_indices;
         info!(requested_epoch=?self.current_start, "Custody sync will begin as soon as the requested epoch finalizes");
         Ok(())
-    }
-
-    /// Pauses the custody sync if it's currently syncing.
-    pub fn pause(&mut self) {
-        if let CustodyBackFillState::Syncing = self.state() {
-            debug!(processed_epochs = %self.validated_batches, to_be_processed = %self.current_start,"Custody backfill sync paused");
-            self.set_state(CustodyBackFillState::Paused);
-        }
-    }
-
-    pub fn resume_pending_sync(
-        &mut self,
-        network: &mut SyncNetworkContext<T>,
-    ) -> Result<SyncStart, CustodyBackfillError> {
-        match self.state() {
-            CustodyBackFillState::Pending => {
-                if self.check_completed() {
-                    self.set_state(CustodyBackFillState::Completed);
-                    return Ok(SyncStart::NotSyncing);
-                }
-                if self
-                    .network_globals
-                    .peers
-                    .read()
-                    .synced_peers()
-                    .next()
-                    .is_some()
-                {
-                    // If there are peers to resume with, begin the resume.
-                    self.set_state(CustodyBackFillState::Syncing);
-                    // Resume any previously failed batches.
-                    self.resume_batches(network)?;
-                    // begin requesting blocks from the peer pool, until all peers are exhausted.
-                    self.request_batches(network)?;
-
-                    // start processing batches if needed
-                    self.process_completed_batches(network)?;
-                } else {
-                    return Ok(SyncStart::NotSyncing);
-                }
-            }
-            CustodyBackFillState::Syncing => {}
-            _ => return Ok(SyncStart::NotSyncing),
-        }
-
-        let Some(column_da_boundary) = self.get_column_da_boundary() else {
-            return Ok(SyncStart::NotSyncing);
-        };
-
-        Ok(SyncStart::Syncing {
-            completed: (self.validated_batches
-                * CUSTODY_BACKFILL_EPOCHS_PER_BATCH
-                * T::EthSpec::slots_per_epoch()) as usize,
-            remaining: self
-                .current_start
-                .end_slot(T::EthSpec::slots_per_epoch())
-                .saturating_sub(column_da_boundary.start_slot(T::EthSpec::slots_per_epoch()))
-                .as_usize(),
-        })
     }
 
     /// Starts syncing.
@@ -215,12 +156,21 @@ impl<T: BeaconChainTypes> CustodyBackFillSync<T> {
                     return Ok(SyncStart::NotSyncing);
                 }
             }
-            CustodyBackFillState::Paused => {
+            CustodyBackFillState::Pending(_) => {
                 if self.check_completed() {
                     self.set_state(CustodyBackFillState::Completed);
                     return Ok(SyncStart::NotSyncing);
                 }
+
+                if !self.earliest_column_epoch_is_finalized() {
+                    self.pause(
+                        "Earliest available column belongs to a non-finalized epoch".to_string(),
+                    );
+                    return Ok(SyncStart::NotSyncing);
+                }
+
                 self.set_start_epoch()?;
+
                 if self
                     .network_globals
                     .peers
@@ -242,56 +192,42 @@ impl<T: BeaconChainTypes> CustodyBackFillSync<T> {
                     return Ok(SyncStart::NotSyncing);
                 }
             }
-            CustodyBackFillState::Failed => {
-                // Attempt to recover from a failed sync. All local variables should be reset and
-                // cleared already for a fresh start.
-                // We only attempt to restart a failed custody backfill sync if a new synced peer has been
-                // added.
-                // TODO(custody-sync) check `restart_failed_sync`
-                // if !self.restart_failed_sync {
-                //    return Ok(SyncStart::NotSyncing);
-                // }
-
-                self.set_state(CustodyBackFillState::Syncing);
-
-                debug!(start_epoch = %self.current_start, "Resuming a failed custody backfill sync");
-
-                // begin requesting data columns from the peer pool, until all peers are exhausted.
-                self.request_batches(network)?;
-            }
             CustodyBackFillState::Completed => {
-                if !self.check_completed() {
-                    self.last_batch_downloaded = false;
-                    self.validated_batches = 0;
-                    self.current_processing_batch = None;
-                    self.batches = BTreeMap::new();
+                if self.check_completed() {
+                    // No need to update the state, just return not syncing.
+                    return Ok(SyncStart::NotSyncing);
+                }
 
-                    if self
-                        .network_globals
-                        .peers
-                        .read()
-                        .synced_peers()
-                        .next()
-                        .is_some()
-                    {
-                        // If there are peers to resume with, begin the resume.
-                        self.set_state(CustodyBackFillState::Syncing);
-                        // Resume any previously failed batches.
-                        self.resume_batches(network)?;
-                        // begin requesting columns from the peer pool, until all peers are exhausted.
-                        self.request_batches(network)?;
+                if !self.earliest_column_epoch_is_finalized() {
+                    self.pause(
+                        "Earliest available column belongs to a non-finalized epoch".to_string(),
+                    );
+                    return Ok(SyncStart::NotSyncing);
+                }
 
-                        // start processing batches if needed
-                        self.process_completed_batches(network)?;
-                    } else {
-                        return Ok(SyncStart::NotSyncing);
-                    }
+                self.reset_custody_sync();
+                self.set_start_epoch()?;
+
+                if self
+                    .network_globals
+                    .peers
+                    .read()
+                    .synced_peers()
+                    .next()
+                    .is_some()
+                {
+                    // If there are peers to resume with, begin the resume.
+                    self.set_state(CustodyBackFillState::Syncing);
+                    // Resume any previously failed batches.
+                    self.resume_batches(network)?;
+                    // begin requesting blocks from the peer pool, until all peers are exhausted.
+                    self.request_batches(network)?;
+
+                    // start processing batches if needed
+                    self.process_completed_batches(network)?;
                 } else {
                     return Ok(SyncStart::NotSyncing);
                 }
-            }
-            CustodyBackFillState::Pending | CustodyBackFillState::AwaitingFinalization => {
-                return Ok(SyncStart::NotSyncing);
             }
         }
 
@@ -309,6 +245,13 @@ impl<T: BeaconChainTypes> CustodyBackFillSync<T> {
                 .saturating_sub(column_da_boundary.start_slot(T::EthSpec::slots_per_epoch()))
                 .as_usize(),
         })
+    }
+
+    fn reset_custody_sync(&mut self) {
+        self.last_batch_downloaded = false;
+        self.validated_batches = 0;
+        self.current_processing_batch = None;
+        self.batches = BTreeMap::new();
     }
 
     fn set_start_epoch(&mut self) -> Result<(), CustodyBackfillError> {
@@ -344,6 +287,7 @@ impl<T: BeaconChainTypes> CustodyBackFillSync<T> {
         while let Some(batch_id) = self.include_next_batch() {
             // send the batch
             self.send_batch(network, batch_id)?;
+            info!(?batch_id, "SEND_BATCH");
         }
 
         // No more batches, simply stop
@@ -518,9 +462,10 @@ impl<T: BeaconChainTypes> CustodyBackFillSync<T> {
             ColumnsByRangeParentRequestId::CustodyBackfillSync(custody_sync_request_id) => {
                 // check if we have this batch
                 let Some(batch) = self.batches.get_mut(&custody_sync_request_id.epoch) else {
-                    if !matches!(self.state(), CustodyBackFillState::Failed) {
+                    info!("We have the batch");
+                    if !matches!(self.state(), CustodyBackFillState::Pending(..)) {
                         // A batch might get removed when custody sync advances, so this is non fatal.
-                        debug!(epoch = %custody_sync_request_id.epoch, "Received a column for unknown batch");
+                        info!(epoch = %custody_sync_request_id.epoch, "Received a column for unknown batch");
                     }
                     return Ok(ProcessResult::Successful);
                 };
@@ -535,6 +480,7 @@ impl<T: BeaconChainTypes> CustodyBackFillSync<T> {
 
                 match batch.download_completed(data_columns, *peer_id) {
                     Ok(received) => {
+                        info!("DOWNLOAD COMPLETE");
                         let awaiting_batches = self
                             .processing_target
                             .saturating_sub(custody_sync_request_id.epoch)
@@ -559,9 +505,12 @@ impl<T: BeaconChainTypes> CustodyBackFillSync<T> {
                     }
                 }
             }
-            _ => Err(CustodyBackfillError::InvalidSyncState(
+            _ => {
+                info!("AM I HERE");
+                Err(CustodyBackfillError::InvalidSyncState(
                 "Custody backfill sync received an incorrect response type".to_string(),
-            )),
+            ))
+            },
         }
     }
 
@@ -867,6 +816,29 @@ impl<T: BeaconChainTypes> CustodyBackFillSync<T> {
         self.send_batch(network, batch_id)
     }
 
+    /// Checks that that earliest slot we can fulfill our cgc requirements on
+    /// belongs to a finalized epoch.
+    fn earliest_column_epoch_is_finalized(&mut self) -> bool {
+        let Some(earliest_data_column_slot) = self
+            .beacon_chain
+            .store
+            .get_data_column_custody_info()
+            .unwrap_or(None)
+            .and_then(|info| info.earliest_data_column_slot)
+        else {
+            return false;
+        };
+
+        let latest_finalized_epoch = self
+            .beacon_chain
+            .canonical_head
+            .cached_head()
+            .finalized_checkpoint()
+            .epoch;
+
+        earliest_data_column_slot.epoch(T::EthSpec::slots_per_epoch()) <= latest_finalized_epoch
+    }
+
     /// Checks with the beacon chain if custody sync has completed.
     fn check_completed(&mut self) -> bool {
         if self.would_complete(self.current_start) {
@@ -964,12 +936,7 @@ impl<T: BeaconChainTypes> CustodyBackFillSync<T> {
                 }
                 Err(e) => match e {
                     crate::sync::network_context::RpcRequestSendError::NoPeer(no_peer) => {
-                        // If we are here we have no more synced peers
-                        info!(
-                            "reason" = format!("insufficient_synced_peers({no_peer:?})"),
-                            "Custody sync paused"
-                        );
-                        self.set_state(CustodyBackFillState::Paused);
+                        self.pause(format!("Insufficient synced peers({no_peer:?})"));
                         return Err(CustodyBackfillError::Paused);
                     }
                     crate::sync::network_context::RpcRequestSendError::InternalError(e) => {
@@ -1010,7 +977,8 @@ impl<T: BeaconChainTypes> CustodyBackFillSync<T> {
         }
 
         // Set the state
-        self.set_state(CustodyBackFillState::Failed);
+        // TODO(custody-sync) set the reason based on the CustodyBackFill error
+        self.pause("Custody backfill sync has failed, pausing".to_string());
         // Remove all batches and active requests.
         self.batches.clear();
         self.restart_failed_sync = false;
@@ -1022,7 +990,7 @@ impl<T: BeaconChainTypes> CustodyBackFillSync<T> {
         self.last_batch_downloaded = false;
         self.current_processing_batch = None;
 
-        error!(?error, "Custody Backfill sync failed");
+        self.set_start_epoch()?;
 
         Err(error)
     }
@@ -1040,15 +1008,15 @@ impl<T: BeaconChainTypes> CustodyBackFillSync<T> {
     /// If we are in a failed state, update a local variable to indicate we are able to restart
     /// the failed sync on the next attempt.
     pub fn fully_synced_peer_joined(&mut self) {
-        if matches!(self.state(), CustodyBackFillState::Failed) {
+        if matches!(self.state(), CustodyBackFillState::Pending(..)) {
             self.restart_failed_sync = true;
         }
     }
 
-    pub fn set_status_to_pending(&mut self) -> Result<(), CustodyBackfillError> {
-        self.set_start_epoch()?;
-        self.set_state(CustodyBackFillState::Pending);
-        Ok(())
+    pub fn pause(&mut self, reason: String) {
+        // TODO(custody-sync) set to debug
+        info!(?reason, "Custody BackFill Sync paused");
+        self.set_state(CustodyBackFillState::Pending(reason));
     }
 
     /// An RPC error has occurred.

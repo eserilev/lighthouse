@@ -222,6 +222,8 @@ impl<E: EthSpec, B: BatchConfig, D: std::fmt::Debug + Hash> BatchInfo<E, B, D> {
                 self.state = if self.failed_download_attempts.len()
                     >= B::max_batch_download_attempts() as usize
                 {
+                    // TODO(custody-sync) delete
+                    tracing::info!(?self.failed_download_attempts, len=self.failed_download_attempts.len(), "FAILED DOWNLOAD ATTEMPTS");
                     BatchState::Failed
                 } else {
                     // drop the blocks

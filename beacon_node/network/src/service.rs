@@ -754,12 +754,6 @@ impl<T: BeaconChainTypes> NetworkService<T> {
                     );
                 }
 
-                // TODO(custody-sync) delete this (this skips waiting for finalization)
-                let _ = self
-                    .beacon_chain
-                    .sync_service_send
-                    .send(SyncServiceMessage::EarliestCustodyEpochFinalized);
-
                 if self
                     .network_globals
                     .config

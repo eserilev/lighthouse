@@ -1267,6 +1267,7 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
             DataColumnsByRangeRequestItems::new(request),
             request_span,
         );
+        tracing::info!("Inserted request");
         Ok((id, requested_columns))
     }
 
@@ -1488,6 +1489,7 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
         peer_id: PeerId,
         rpc_event: RpcEvent<Arc<DataColumnSidecar<T::EthSpec>>>,
     ) -> Option<RpcResponseResult<DataColumnSidecarList<T::EthSpec>>> {
+        tracing::info!("RESPONSE");
         let resp = self
             .data_columns_by_range_requests
             .on_response(id, rpc_event);
@@ -1712,7 +1714,8 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
                     request.clone(),
                     ColumnsByRangeParentRequestId::CustodyBackfillSync(id),
                     Span::none(),
-                ).ok()
+                )
+                .ok()
             })
             .collect::<Vec<_>>();
 
@@ -1763,6 +1766,7 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
 
                 if let Some(data_column_result) = entry.get_mut().responses(&self.chain.spec) {
                     if data_column_result.is_ok() {
+                        tracing::info!("Result is ok");
                         // remove the entry only if it coupled successfully with
                         // no errors
                         entry.remove();

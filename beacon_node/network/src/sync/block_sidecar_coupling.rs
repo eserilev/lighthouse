@@ -102,6 +102,8 @@ impl<E: EthSpec> RangeDataColumnBatchRequest<E> {
             .requests
             .get_mut(&req_id)
             .ok_or(format!("unknown data columns by range req_id {req_id}"))?;
+        // TODO(Custody-sync) remove
+        tracing::info!("add_custody_columns");
         req.finish(req_id, columns)
     }
 
