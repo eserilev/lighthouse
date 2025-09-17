@@ -1489,7 +1489,6 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
         peer_id: PeerId,
         rpc_event: RpcEvent<Arc<DataColumnSidecar<T::EthSpec>>>,
     ) -> Option<RpcResponseResult<DataColumnSidecarList<T::EthSpec>>> {
-        tracing::info!("RESPONSE");
         let resp = self
             .data_columns_by_range_requests
             .on_response(id, rpc_event);

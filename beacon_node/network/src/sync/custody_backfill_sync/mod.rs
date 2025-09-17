@@ -1015,7 +1015,7 @@ impl<T: BeaconChainTypes> CustodyBackFillSync<T> {
 
     pub fn pause(&mut self, reason: String) {
         // TODO(custody-sync) set to debug
-        info!(?reason, "Custody BackFill Sync paused");
+        debug!(?reason, "Custody BackFill Sync paused");
         self.set_state(CustodyBackFillState::Pending(reason));
     }
 
