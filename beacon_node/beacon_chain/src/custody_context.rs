@@ -275,6 +275,7 @@ impl<E: EthSpec> CustodyContext<E> {
             mut validator_custody_at_head,
             mut epoch_validator_custody_requirements,
             persisted_is_supernode: _,
+            all_custody_columns_ordered: _,
         } = ssz_context;
 
         let mut custody_count_changed = None;
@@ -352,6 +353,7 @@ impl<E: EthSpec> CustodyContext<E> {
     pub fn init_ordered_data_columns_from_custody_groups(
         &self,
         all_custody_groups_ordered: Vec<CustodyIndex>,
+        opt_expected_custody_columns_ordered: Option<Vec<ColumnIndex>>,
         spec: &ChainSpec,
     ) -> Result<(), String> {
         let mut ordered_custody_columns = vec![];
@@ -359,6 +361,18 @@ impl<E: EthSpec> CustodyContext<E> {
             let columns = compute_columns_for_custody_group::<E>(custody_index, spec)
                 .map_err(|e| format!("Failed to compute columns for custody group {e:?}"))?;
             ordered_custody_columns.extend(columns);
+        }
+
+        let current_cgc = self.validator_custody_count.load(Ordering::Relaxed);
+
+        if let Some(expected_custody_columns_ordered) = opt_expected_custody_columns_ordered
+            && expected_custody_columns_ordered != ordered_custody_columns
+            && current_cgc != spec.number_of_custody_groups
+        {
+            return Err("The on-disk custody columns ordering does not match the calculated custody columns ordering. 
+                To prevent being downscored by peers, the node must be resynced. Alternatively, you may
+                convert to a supernode to avoid resyncing".to_string()
+            );
         }
         self.all_custody_columns_ordered
             .set(ordered_custody_columns.into_boxed_slice())
@@ -545,6 +559,7 @@ pub struct CustodyContextSsz {
     /// DEPRECATED. This field is no longer in used and will be removed in a future release.
     pub persisted_is_supernode: bool,
     pub epoch_validator_custody_requirements: Vec<(Epoch, u64)>,
+    pub all_custody_columns_ordered: Vec<ColumnIndex>,
 }
 
 impl<E: EthSpec> From<&CustodyContext<E>> for CustodyContextSsz {
@@ -560,6 +575,11 @@ impl<E: EthSpec> From<&CustodyContext<E>> for CustodyContextSsz {
                 .iter()
                 .map(|(epoch, count)| (*epoch, *count))
                 .collect(),
+            all_custody_columns_ordered: context
+                .all_custody_columns_ordered
+                .get()
+                .expect("")
+                .to_vec(),
         }
     }
 }
@@ -584,6 +604,7 @@ mod tests {
             validator_custody_at_head: cgc_at_head,
             persisted_is_supernode: false,
             epoch_validator_custody_requirements: epoch_and_cgc_tuples,
+            all_custody_columns_ordered: vec![],
         };
 
         let (custody_context, _) = CustodyContext::<E>::new_from_persisted_custody_context(
@@ -595,7 +616,7 @@ mod tests {
 
         let all_custody_groups_ordered = (0..spec.number_of_custody_groups).collect::<Vec<_>>();
         custody_context
-            .init_ordered_data_columns_from_custody_groups(all_custody_groups_ordered, spec)
+            .init_ordered_data_columns_from_custody_groups(all_custody_groups_ordered, None, spec)
             .expect("should initialise ordered data columns");
         custody_context
     }
@@ -626,6 +647,7 @@ mod tests {
             validator_custody_at_head: persisted_cgc,
             persisted_is_supernode: false,
             epoch_validator_custody_requirements: vec![(Epoch::new(0), persisted_cgc)],
+            all_custody_columns_ordered: vec![],
         };
 
         let (custody_context, custody_count_changed) =
@@ -696,6 +718,7 @@ mod tests {
             validator_custody_at_head: persisted_cgc,
             persisted_is_supernode: false,
             epoch_validator_custody_requirements: vec![(Epoch::new(0), persisted_cgc)],
+            all_custody_columns_ordered: vec![],
         };
 
         let (custody_context, custody_count_changed) =
@@ -999,6 +1022,7 @@ mod tests {
         custody_context
             .init_ordered_data_columns_from_custody_groups(
                 all_custody_groups_ordered.clone(),
+                None,
                 &spec,
             )
             .expect("should initialise ordered data columns");
@@ -1046,7 +1070,7 @@ mod tests {
         let all_custody_groups_ordered = (0..spec.number_of_custody_groups).collect::<Vec<_>>();
 
         custody_context
-            .init_ordered_data_columns_from_custody_groups(all_custody_groups_ordered, &spec)
+            .init_ordered_data_columns_from_custody_groups(all_custody_groups_ordered, None, &spec)
             .expect("should initialise ordered data columns");
 
         assert_eq!(
@@ -1062,7 +1086,7 @@ mod tests {
         let all_custody_groups_ordered = (0..spec.number_of_custody_groups).collect::<Vec<_>>();
 
         custody_context
-            .init_ordered_data_columns_from_custody_groups(all_custody_groups_ordered, &spec)
+            .init_ordered_data_columns_from_custody_groups(all_custody_groups_ordered, None, &spec)
             .expect("should initialise ordered data columns");
 
         assert_eq!(
@@ -1079,7 +1103,7 @@ mod tests {
         let val_custody_units = 10;
 
         custody_context
-            .init_ordered_data_columns_from_custody_groups(all_custody_groups_ordered, &spec)
+            .init_ordered_data_columns_from_custody_groups(all_custody_groups_ordered, None, &spec)
             .expect("should initialise ordered data columns");
 
         let _ = custody_context.register_validators(
@@ -1105,7 +1129,7 @@ mod tests {
         let test_epoch = Epoch::new(5);
 
         custody_context
-            .init_ordered_data_columns_from_custody_groups(all_custody_groups_ordered, &spec)
+            .init_ordered_data_columns_from_custody_groups(all_custody_groups_ordered, None, &spec)
             .expect("should initialise ordered data columns");
 
         let expected_cgc = custody_context.custody_group_count_at_epoch(test_epoch, &spec);
@@ -1124,6 +1148,7 @@ mod tests {
             validator_custody_at_head: 0, // no validators
             persisted_is_supernode: false,
             epoch_validator_custody_requirements: vec![],
+            all_custody_columns_ordered: vec![],
         };
 
         let (custody_context, _) = CustodyContext::<E>::new_from_persisted_custody_context(
@@ -1307,6 +1332,7 @@ mod tests {
                 (Epoch::new(10), increased_cgc),
                 (Epoch::new(20), final_cgc),
             ],
+            all_custody_columns_ordered: vec![],
         };
 
         let (custody_context, _) = CustodyContext::<E>::new_from_persisted_custody_context(

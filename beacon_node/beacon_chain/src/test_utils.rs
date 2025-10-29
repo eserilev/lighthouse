@@ -601,6 +601,7 @@ where
             .custody_context()
             .init_ordered_data_columns_from_custody_groups(
                 (0..spec.number_of_custody_groups).collect(),
+                None,
                 &spec,
             )
             .expect("should initialise custody context");

@@ -1185,7 +1185,7 @@ mod test {
         let mut all_data_columns = (0..spec.number_of_custody_groups).collect::<Vec<_>>();
         all_data_columns.shuffle(&mut rng);
         custody_context
-            .init_ordered_data_columns_from_custody_groups(all_data_columns.clone(), spec)
+            .init_ordered_data_columns_from_custody_groups(all_data_columns.clone(), None, spec)
             .expect("should initialise ordered custody columns");
         all_data_columns
     }

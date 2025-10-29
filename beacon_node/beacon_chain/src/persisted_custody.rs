@@ -1,8 +1,8 @@
-use crate::custody_context::CustodyContextSsz;
+use crate::{BeaconChain, BeaconChainTypes, custody_context::CustodyContextSsz};
 use ssz::{Decode, Encode};
 use std::sync::Arc;
 use store::{DBColumn, Error as StoreError, HotColdDB, ItemStore, StoreItem};
-use types::{EthSpec, Hash256};
+use types::{ColumnIndex, EthSpec, Hash256};
 
 /// 32-byte key for accessing the `CustodyContext`. All zero because `CustodyContext` has its own column.
 pub const CUSTODY_DB_KEY: Hash256 = Hash256::ZERO;
@@ -42,5 +42,18 @@ impl StoreItem for PersistedCustody {
         let custody_context = CustodyContextSsz::from_ssz_bytes(bytes)?;
 
         Ok(PersistedCustody(custody_context))
+    }
+}
+
+impl<T: BeaconChainTypes> BeaconChain<T> {
+    pub fn get_persisted_custody_columns_ordered(&self) -> Option<Vec<ColumnIndex>> {
+        let res: Result<Option<PersistedCustody>, _> =
+            self.store.get_item::<PersistedCustody>(&CUSTODY_DB_KEY);
+        // Load context from the store
+        if let Some(custody_context) = res.ok().flatten() {
+            Some(custody_context.0.all_custody_columns_ordered)
+        } else {
+            None
+        }
     }
 }

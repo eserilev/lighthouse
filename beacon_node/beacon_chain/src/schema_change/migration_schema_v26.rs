@@ -42,6 +42,7 @@ pub fn upgrade_to_v26<T: BeaconChainTypes>(
                     validator_custody_at_head: ssz_v24.validator_custody_at_head,
                     persisted_is_supernode: ssz_v24.persisted_is_supernode,
                     epoch_validator_custody_requirements: vec![],
+                    all_custody_columns_ordered: vec![],
                 };
                 vec![KeyValueStoreOp::PutKeyValue(
                     DBColumn::CustodyContext,

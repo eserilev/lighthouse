@@ -797,10 +797,16 @@ fn init_custody_context<T: BeaconChainTypes>(
     let custody_groups_ordered =
         get_custody_groups_ordered(node_id, spec.number_of_custody_groups, spec)
             .map_err(|e| format!("Failed to compute custody groups: {:?}", e))?;
+
+    let persisted_custody_columns_orderded = chain.get_persisted_custody_columns_ordered();
     chain
         .data_availability_checker
         .custody_context()
-        .init_ordered_data_columns_from_custody_groups(custody_groups_ordered, spec)
+        .init_ordered_data_columns_from_custody_groups(
+            custody_groups_ordered,
+            persisted_custody_columns_orderded,
+            spec,
+        )
 }
 
 impl<TSlotClock, E, THotStore, TColdStore>
