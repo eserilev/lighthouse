@@ -104,6 +104,12 @@ impl<E: EthSpec> SignedExecutionPayloadEnvelope<E> {
             .safe_add(ExecutionPayload::<E>::max_execution_payload_bellatrix_size())
             .unwrap_or(signed_envelope_with_default_payload_size)
     }
+
+    pub fn num_expected_blobs(&self) -> usize {
+        self.message()
+            .blob_kzg_commitments()
+            .len()
+    }
 }
 
 impl<'de, E: EthSpec> ContextDeserialize<'de, ForkName> for SignedExecutionPayloadEnvelope<E> {

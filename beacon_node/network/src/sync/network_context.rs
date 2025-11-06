@@ -231,7 +231,7 @@ pub struct SyncNetworkContext<T: BeaconChainTypes> {
     /// BlocksByRange requests paired with other ByRange requests for data components pre-Gloas
     components_by_range_requests:
         FnvHashMap<ComponentsByRangeRequestId, RangeBlockComponentsRequest<T::EthSpec>>,
-    
+
     /// BlocksByRange requests paired with other ByRange requests for data components post-Gloas
     envelopes_by_range_requests:
         FnvHashMap<ComponentsByRangeRequestId, RangeBlockEnvelopesRequest<T::EthSpec>>,
@@ -728,7 +728,6 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
                     self.chain.sampling_columns_for_epoch(epoch).to_vec(),
                 )
             }),
-            payload_requests,
             range_request_span,
         );
         self.components_by_range_requests.insert(id, info);
@@ -856,6 +855,7 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
                 error,
                 faulty_peers: _,
                 exceeded_retries,
+                action: _,
             }) = &blocks_result
             {
                 // Remove the entry if it's a peer failure **and** retry counter is exceeded

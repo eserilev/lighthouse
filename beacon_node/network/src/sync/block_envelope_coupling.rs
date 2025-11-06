@@ -19,7 +19,7 @@ use crate::sync::block_sidecar_coupling::{ByRangeRequest, CouplingError};
 pub struct BlockAndPayload<E: EthSpec> {
     block_root: Hash256,
     block: Arc<SignedBeaconBlock<E>>,
-    execution_payload_envelope: Arc<SignedExecutionPayloadEnvelope<E>>,
+    execution_payload_envelope: Option<Arc<SignedExecutionPayloadEnvelope<E>>>,
 }
 
 impl<E: EthSpec> BlockAndPayload<E> {
@@ -191,12 +191,13 @@ impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
             }
         }
 
+        let coupled_blocks_and_payloads = Self::couple_blocks_and_payloads(blocks, payloads)?;
+
         let resp = Self::responses_with_custody_columns(
             blocks.to_vec(),
             data_columns,
             column_to_peer_id,
             expected_custody_columns,
-            *attempt,
         );
 
         if let Err(CouplingError::DataColumnPeerFailure {
@@ -220,20 +221,89 @@ impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
     }
 
     fn couple_blocks_and_payloads(
-        &self,
         blocks: Vec<Arc<SignedBeaconBlock<E>>>,
         payloads: Vec<Arc<SignedExecutionPayloadEnvelope<E>>>,
     ) -> Result<Vec<BlockAndPayload<E>>, CouplingError> {
-        let coupled_blocks_and_payloads = vec![];
-        let block_root_to_payload = payloads
+        let mut coupled_blocks_and_payloads = vec![];
+        let mut block_root_to_payload = payloads
             .into_iter()
             .map(|payload| (payload.message().beacon_block_root(), payload))
             .collect::<HashMap<_, _>>();
+        
         for block in blocks {
             let block_root = get_block_root(&block);
+            let payload = block_root_to_payload.remove(&block_root);
+            let block_and_payload = BlockAndPayload {
+                block_root,
+                block,
+                execution_payload_envelope: payload
+            };
+            coupled_blocks_and_payloads.push(block_and_payload);
         }
 
+        // TODO(EIP-7732) assert block_root_to_payload is empty
+
         Ok(coupled_blocks_and_payloads)
+    }
+
+    fn couple_responses(
+        &mut self,
+        blocks: Vec<Arc<SignedBeaconBlock<E>>>,
+        payloads: Vec<Arc<SignedExecutionPayloadEnvelope<E>>>,
+        data_columns: DataColumnSidecarList<E>,
+        column_to_peer: HashMap<u64, PeerId>,
+    ) -> Result<(), CouplingError> {
+        let coupled_blocks_and_payloads = Self::couple_blocks_and_payloads(blocks, payloads)?;
+
+         // Group data columns by block_root and index
+        let mut data_columns_by_block =
+            HashMap::<Hash256, HashMap<ColumnIndex, Arc<DataColumnSidecar<E>>>>::new();
+
+        for column in data_columns {
+            let block_root = column.block_root();
+            let index = column.index;
+            if data_columns_by_block
+                .entry(block_root)
+                .or_default()
+                .insert(index, column)
+                .is_some()
+            {
+                // `DataColumnsByRangeRequestItems` ensures that we do not request any duplicated indices across all peers
+                // we request the data from.
+                // If there are duplicated indices, its likely a peer sending us the same index multiple times.
+                // However we can still proceed even if there are extra columns, just log an error.
+                tracing::debug!(?block_root, ?index, "Repeated column for block_root");
+                continue;
+            }
+        }
+
+        // Now iterate all available coupled_blocks_and_payloads ensuring that the block roots of each block + payload coupling and data column match.
+        // Aslo ensure that we have columns for our custody requirements
+        let mut available_payloads = Vec::with_capacity(coupled_blocks_and_payloads.len());
+
+        let exceeded_retries = self.data_column_requests.attempt >= MAX_COLUMN_RETRIES;
+
+        for coupled_block_and_payload in coupled_blocks_and_payloads {
+            let block_root = coupled_block_and_payload.block_root;
+            let Some(payload) = coupled_block_and_payload.execution_payload_envelope else {
+                // TODO(EIP-7732) this is an available complete slot with no data
+                todo!()
+            };
+
+            if payload.num_expected_blobs() > 0 {
+
+            } else {
+
+            }
+            rpc_blocks.push(if block.num_expected_blobs() > 0 {
+                
+            } else {
+                // Block has no data, expects zero columns
+                RpcBlock::new_without_blobs(Some(block_root), block)
+            });
+        }
+
+        Ok(())
     }
 
     fn responses_with_custody_columns(

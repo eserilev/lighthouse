@@ -450,7 +450,7 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
 }
 
 impl<I: PartialEq + std::fmt::Display, T> ByRangeRequest<I, T> {
-    fn finish(&mut self, id: I, data: T) -> Result<(), String> {
+    pub fn finish(&mut self, id: I, data: T) -> Result<(), String> {
         match self {
             Self::Active(expected_id) => {
                 if expected_id != &id {
@@ -463,7 +463,7 @@ impl<I: PartialEq + std::fmt::Display, T> ByRangeRequest<I, T> {
         }
     }
 
-    fn to_finished(&self) -> Option<&T> {
+    pub fn to_finished(&self) -> Option<&T> {
         match self {
             Self::Active(_) => None,
             Self::Complete(data) => Some(data),
