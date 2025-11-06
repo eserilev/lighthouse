@@ -543,7 +543,7 @@ mod tests {
 
         let blocks_req_id = blocks_id(components_id());
         let mut info =
-            RangeBlockComponentsRequest::<E>::new(blocks_req_id, None, None, None, Span::none());
+            RangeBlockComponentsRequest::<E>::new(blocks_req_id, None, None, Span::none());
 
         // Send blocks and complete terminate response
         info.add_blocks(blocks_req_id, blocks).unwrap();
@@ -570,7 +570,6 @@ mod tests {
         let mut info = RangeBlockComponentsRequest::<E>::new(
             blocks_req_id,
             Some(blobs_req_id),
-            None,
             None,
             Span::none(),
         );
@@ -622,7 +621,6 @@ mod tests {
             blocks_req_id,
             None,
             Some((columns_req_id.clone(), expects_custody_columns.clone())),
-            None,
             Span::none(),
         );
         // Send blocks and complete terminate response
@@ -692,7 +690,6 @@ mod tests {
             blocks_req_id,
             None,
             Some((columns_req_id.clone(), expects_custody_columns.clone())),
-            None,
             Span::none(),
         );
 
@@ -783,7 +780,6 @@ mod tests {
             blocks_req_id,
             None,
             Some((columns_req_id.clone(), expected_custody_columns.clone())),
-            None,
             Span::none(),
         );
 
@@ -822,6 +818,7 @@ mod tests {
             error,
             faulty_peers,
             exceeded_retries,
+            action: _,
         }) = result
         {
             assert!(error.contains("Peers did not return column"));
@@ -872,7 +869,6 @@ mod tests {
             blocks_req_id,
             None,
             Some((columns_req_id.clone(), expected_custody_columns.clone())),
-            None,
             Span::none(),
         );
 
@@ -968,7 +964,6 @@ mod tests {
             blocks_req_id,
             None,
             Some((columns_req_id.clone(), expected_custody_columns.clone())),
-            None,
             Span::none(),
         );
 
@@ -1017,6 +1012,7 @@ mod tests {
             error: _,
             faulty_peers,
             exceeded_retries,
+            action: _,
         }) = result
         {
             assert_eq!(faulty_peers.len(), 1); // column 2 missing
