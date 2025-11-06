@@ -775,7 +775,6 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
         id: ComponentsByRangeRequestId,
         range_block_component: RangeBlockComponent<T::EthSpec>,
     ) {
-
     }
 
     /// Received a blocks by range or blobs by range response for a request that couples blocks '
@@ -1596,7 +1595,9 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
         let resp = self
             .execution_payload_envelopes_by_range_requests
             .on_response(id, rpc_event);
-        self.on_rpc_response_result(id, "ExecutionPayloadEnvelopesByRange", resp, peer_id, |d| d.len())
+        self.on_rpc_response_result(id, "ExecutionPayloadEnvelopesByRange", resp, peer_id, |d| {
+            d.len()
+        })
     }
 
     fn on_rpc_response_result<I: std::fmt::Display, R, F: FnOnce(&R) -> usize>(

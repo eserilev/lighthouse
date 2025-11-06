@@ -2,6 +2,7 @@
 //!
 //! Stores the various syncing methods for the beacon chain.
 mod backfill_sync;
+mod block_envelope_coupling;
 mod block_lookups;
 mod block_sidecar_coupling;
 pub mod manager;

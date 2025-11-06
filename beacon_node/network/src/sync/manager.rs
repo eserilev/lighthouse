@@ -71,7 +71,8 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, trace};
 use types::{
-    BlobSidecar, DataColumnSidecar, EthSpec, ForkContext, Hash256, SignedBeaconBlock, SignedExecutionPayloadEnvelope, Slot
+    BlobSidecar, DataColumnSidecar, EthSpec, ForkContext, Hash256, SignedBeaconBlock,
+    SignedExecutionPayloadEnvelope, Slot,
 };
 
 /// The number of slots ahead of us that is allowed before requesting a long-range (batch)  Sync
@@ -486,9 +487,12 @@ impl<T: BeaconChainTypes> SyncManager<T> {
             SyncRequestId::DataColumnsByRange(req_id) => {
                 self.on_data_columns_by_range_response(req_id, peer_id, RpcEvent::RPCError(error))
             }
-            SyncRequestId::ExecutionPayloadEnvelopesByRange(req_id) => {
-                self.on_execution_payload_envelopes_by_range_response(req_id, peer_id, RpcEvent::RPCError(error))
-            }
+            SyncRequestId::ExecutionPayloadEnvelopesByRange(req_id) => self
+                .on_execution_payload_envelopes_by_range_response(
+                    req_id,
+                    peer_id,
+                    RpcEvent::RPCError(error),
+                ),
             SyncRequestId::ExecutionPayloadEnvelopesByRoot(req_id) => self
                 .on_execution_payload_envelopes_by_root_response(
                     req_id,
