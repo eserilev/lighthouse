@@ -13,9 +13,12 @@ use crate::network_beacon_processor::TestBeaconChainType;
 use crate::service::NetworkMessage;
 use crate::status::ToStatusMessage;
 use crate::sync::batch::ByRangeRequestType;
+use crate::sync::block_envelope_coupling::RangeBlockEnvelopesRequest;
 use crate::sync::block_lookups::SingleLookupId;
 use crate::sync::block_sidecar_coupling::CouplingError;
-use crate::sync::network_context::requests::BlobsByRootSingleBlockRequest;
+use crate::sync::network_context::requests::{
+    BlobsByRootSingleBlockRequest, ExecutionPayloadEnvelopesByRangeRequestItems,
+};
 use crate::sync::range_data_column_batch_request::RangeDataColumnBatchRequest;
 use beacon_chain::block_verification_types::RpcBlock;
 use beacon_chain::{BeaconChain, BeaconChainTypes, BlockProcessStatus, EngineState};
@@ -30,7 +33,8 @@ use lighthouse_network::service::api_types::{
     AppRequestId, BlobsByRangeRequestId, BlocksByRangeRequestId, ComponentsByRangeRequestId,
     CustodyBackFillBatchRequestId, CustodyBackfillBatchId, CustodyId, CustodyRequester,
     DataColumnsByRangeRequestId, DataColumnsByRangeRequester, DataColumnsByRootRequestId,
-    DataColumnsByRootRequester, Id, SingleLookupReqId, SyncRequestId,
+    DataColumnsByRootRequester, ExecutionPayloadEnvelopesByRangeRequestId, Id, SingleLookupReqId,
+    SyncRequestId,
 };
 use lighthouse_network::{Client, NetworkGlobals, PeerAction, PeerId, ReportSource};
 use lighthouse_tracing::{SPAN_OUTGOING_BLOCK_BY_ROOT_REQUEST, SPAN_OUTGOING_RANGE_REQUEST};
@@ -54,7 +58,7 @@ use tracing::{Span, debug, debug_span, error, warn};
 use types::blob_sidecar::FixedBlobSidecarList;
 use types::{
     BlobSidecar, BlockImportSource, ColumnIndex, DataColumnSidecar, DataColumnSidecarList, EthSpec,
-    ForkContext, Hash256, SignedBeaconBlock, Slot,
+    ForkContext, Hash256, SignedBeaconBlock, SignedExecutionPayloadEnvelope, Slot,
 };
 
 pub mod custody;
@@ -224,9 +228,13 @@ pub struct SyncNetworkContext<T: BeaconChainTypes> {
     /// Mapping of active custody column requests for a block root
     custody_by_root_requests: FnvHashMap<CustodyRequester, ActiveCustodyRequest<T>>,
 
-    /// BlocksByRange requests paired with other ByRange requests for data components
+    /// BlocksByRange requests paired with other ByRange requests for data components pre-Gloas
     components_by_range_requests:
         FnvHashMap<ComponentsByRangeRequestId, RangeBlockComponentsRequest<T::EthSpec>>,
+    
+    /// BlocksByRange requests paired with other ByRange requests for data components post-Gloas
+    envelopes_by_range_requests:
+        FnvHashMap<ComponentsByRangeRequestId, RangeBlockEnvelopesRequest<T::EthSpec>>,
 
     /// A batch of data columns by range request for custody sync
     custody_backfill_data_column_batch_requests:
@@ -315,6 +323,7 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
             ),
             custody_by_root_requests: <_>::default(),
             components_by_range_requests: FnvHashMap::default(),
+            envelopes_by_range_requests: FnvHashMap::default(),
             custody_backfill_data_column_batch_requests: FnvHashMap::default(),
             network_beacon_processor,
             chain,
@@ -344,8 +353,10 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
             execution_payload_envelopes_by_range_requests,
             // custody_by_root_requests is a meta request of data_columns_by_root_requests
             custody_by_root_requests: _,
-            // components_by_range_requests is a meta request of various _by_range requests
+            // components_by_range_requests is a meta request of various _by_range requests pre-Gloas
             components_by_range_requests: _,
+            // envelopes_by_range_requests is a meta request of various _by_range requests post-Gloas
+            envelopes_by_range_requests: _,
             custody_backfill_data_column_batch_requests: _,
             execution_engine_state: _,
             network_beacon_processor: _,
@@ -449,8 +460,10 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
             execution_payload_envelopes_by_range_requests,
             // custody_by_root_requests is a meta request of data_columns_by_root_requests
             custody_by_root_requests: _,
-            // components_by_range_requests is a meta request of various _by_range requests
+            // components_by_range_requests is a meta request of various _by_range requests pre-Gloas
             components_by_range_requests: _,
+            // envelopes_by_range_requests is a meta request of various _by_range requests post-Gloas
+            envelopes_by_range_requests: _,
             custody_backfill_data_column_batch_requests: _,
             execution_engine_state: _,
             network_beacon_processor: _,
@@ -825,9 +838,12 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
                             })
                     })
                 }
-                RangeBlockComponent::ExecutionPayloadEnvelopes(req_id, resp) => {
-                    resp.and_then(|(custody_columns, _)| todo!())
-                }
+                RangeBlockComponent::ExecutionPayloadEnvelopes(_, _) => return Some(Err(
+                    RpcResponseError::BlockComponentCouplingError(CouplingError::InternalError(
+                        "Execution payload envelope received for coupling in pre-gloas code path"
+                            .to_string(),
+                    )),
+                )),
             }
         } {
             entry.remove();

@@ -438,6 +438,8 @@ impl RPCRateLimiter {
             blbroot_rl,
             dcbroot_rl,
             dcbrange_rl,
+            execution_payload_envelopes_by_range_rl,
+            execution_payload_envelopes_by_root_rl,
             lc_bootstrap_rl,
             lc_optimistic_update_rl,
             lc_finality_update_rl,
@@ -455,6 +457,8 @@ impl RPCRateLimiter {
         blbroot_rl.prune(time_since_start);
         dcbrange_rl.prune(time_since_start);
         dcbroot_rl.prune(time_since_start);
+        execution_payload_envelopes_by_range_rl.prune(time_since_start);
+        execution_payload_envelopes_by_root_rl.prune(time_since_start);
         lc_bootstrap_rl.prune(time_since_start);
         lc_optimistic_update_rl.prune(time_since_start);
         lc_finality_update_rl.prune(time_since_start);

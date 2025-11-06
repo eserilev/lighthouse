@@ -161,7 +161,7 @@ impl<E: EthSpec> FullEnvelope for ExecutionPayloadEnvelopeGloas<E> {
 
         let mut blob_kzg_commitments = VariableList::empty();
         for _ in 0..E::MaxBlobCommitmentsPerBlock::to_usize() {
-            blob_kzg_commitments.push(kzg_commitment.clone()).unwrap();
+            blob_kzg_commitments.push(kzg_commitment).unwrap();
         }
 
         ExecutionPayloadEnvelopeGloas {

@@ -1,6 +1,7 @@
 use crate::test_utils::TestRandom;
 use crate::*;
 use derivative::Derivative;
+use safe_arith::SafeArith;
 use serde::de::{Deserializer, Error as _};
 use serde::{Deserialize, Serialize};
 use ssz::Encode;
@@ -96,8 +97,12 @@ impl<E: EthSpec> SignedExecutionPayloadEnvelope<E> {
             .len();
 
         // Calculate max size: signed envelope - default payload + max payload
-        signed_envelope_with_default_payload_size - default_payload_size
-            + ExecutionPayload::<E>::max_execution_payload_bellatrix_size()
+        // TODO(EIP-7732) fix this unwrap
+        signed_envelope_with_default_payload_size
+            .safe_sub(default_payload_size)
+            .unwrap_or(signed_envelope_with_default_payload_size)
+            .safe_add(ExecutionPayload::<E>::max_execution_payload_bellatrix_size())
+            .unwrap_or(signed_envelope_with_default_payload_size)
     }
 }
 

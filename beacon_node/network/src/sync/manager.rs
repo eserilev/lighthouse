@@ -57,10 +57,7 @@ use futures::StreamExt;
 use lighthouse_network::SyncInfo;
 use lighthouse_network::rpc::RPCError;
 use lighthouse_network::service::api_types::{
-    BlobsByRangeRequestId, BlocksByRangeRequestId, ComponentsByRangeRequestId,
-    CustodyBackFillBatchRequestId, CustodyBackfillBatchId, CustodyRequester,
-    DataColumnsByRangeRequestId, DataColumnsByRangeRequester, DataColumnsByRootRequestId,
-    DataColumnsByRootRequester, Id, SingleLookupReqId, SyncRequestId,
+    BlobsByRangeRequestId, BlocksByRangeRequestId, ComponentsByRangeRequestId, CustodyBackFillBatchRequestId, CustodyBackfillBatchId, CustodyRequester, DataColumnsByRangeRequestId, DataColumnsByRangeRequester, DataColumnsByRootRequestId, DataColumnsByRootRequester, ExecutionPayloadEnvelopesByRangeRequestId, ExecutionPayloadEnvelopesByRootRequestId, Id, SingleLookupReqId, SyncRequestId
 };
 use lighthouse_network::types::{NetworkGlobals, SyncState};
 use lighthouse_network::{PeerAction, PeerId};
@@ -1392,6 +1389,7 @@ impl<T: BeaconChainTypes> SyncManager<T> {
         peer_id: PeerId,
         range_block_component: RangeBlockComponent<T::EthSpec>,
     ) {
+        // TODO(EIP-7732) make this fork aware so we can route to gloas code path
         if let Some(resp) = self
             .network
             .range_block_component_response(range_request_id, range_block_component)

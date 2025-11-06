@@ -1,12 +1,17 @@
 use std::{collections::HashMap, sync::Arc};
 
 use beacon_chain::get_block_root;
-use lighthouse_network::{PeerId, service::api_types::{
-    BlocksByRangeRequestId, DataColumnsByRangeRequestId, ExecutionPayloadEnvelopesByRangeRequestId,
-}};
+use lighthouse_network::{
+    PeerId,
+    service::api_types::{
+        BlocksByRangeRequestId, DataColumnsByRangeRequestId,
+        ExecutionPayloadEnvelopesByRangeRequestId,
+    },
+};
 use tracing::Span;
 use types::{
-    ChainSpec, ColumnIndex, DataColumnSidecarList, EthSpec, Hash256, SignedBeaconBlock, SignedExecutionPayloadEnvelope, execution_payload_envelope
+    ChainSpec, ColumnIndex, DataColumnSidecarList, EthSpec, Hash256, SignedBeaconBlock,
+    SignedExecutionPayloadEnvelope, execution_payload_envelope,
 };
 
 use crate::sync::block_sidecar_coupling::{ByRangeRequest, CouplingError};
@@ -26,13 +31,11 @@ impl<E: EthSpec> BlockAndPayload<E> {
         Self {
             block_root,
             block,
-            execution_payload_envelope
+            execution_payload_envelope,
         }
     }
 
-    pub fn block_root(
-        &self
-    ) -> Hash256 {
+    pub fn block_root(&self) -> Hash256 {
         get_block_root(&self.block)
     }
 }
@@ -48,7 +51,7 @@ pub struct DataColumnRequests<E: EthSpec> {
     attempt: usize,
 }
 
-pub struct RangeBlockEnvelopeRequest<E: EthSpec> {
+pub struct RangeBlockEnvelopesRequest<E: EthSpec> {
     /// Blocks we have received awaiting their corresponds payload envelope and data column sidecar.
     blocks_request: ByRangeRequest<BlocksByRangeRequestId, Vec<Arc<SignedBeaconBlock<E>>>>,
     /// Execution payload envelopes we have received awaiting to be paired with their corresponding block and data column sidecar.
@@ -61,7 +64,7 @@ pub struct RangeBlockEnvelopeRequest<E: EthSpec> {
     request_span: Span,
 }
 
-impl<E: EthSpec> RangeBlockEnvelopeRequest<E> {
+impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
     /// Creates a new range request for blocks and their associated data (blobs or data columns).
     ///
     /// # Arguments
@@ -158,10 +161,7 @@ impl<E: EthSpec> RangeBlockEnvelopeRequest<E> {
     /// Returns `None` if not all expected requests have completed.
     /// Returns `Some(Ok(_))` with valid RPC blocks if all data is present and valid.
     /// Returns `Some(Err(_))` if there are issues coupling blocks with their data.
-    pub fn responses(
-        &mut self,
-        spec: &ChainSpec,
-    ) -> Option<Result<(), CouplingError>> {
+    pub fn responses(&mut self, spec: &ChainSpec) -> Option<Result<(), CouplingError>> {
         let Some(blocks) = self.blocks_request.to_finished() else {
             return None;
         };
@@ -185,7 +185,7 @@ impl<E: EthSpec> RangeBlockEnvelopeRequest<E> {
 
         // Note: this assumes that only 1 peer is responsible for a column
         // with a batch.
-        for (id, columns) in self.data_column_requests.column_peers {
+        for (id, columns) in self.data_column_requests.column_peers.iter() {
             for column in columns {
                 column_to_peer_id.insert(*column, id.peer);
             }
@@ -210,7 +210,9 @@ impl<E: EthSpec> RangeBlockEnvelopeRequest<E> {
                 // find the req id associated with the peer and
                 // delete it from the entries as we are going to make
                 // a separate attempt for those components.
-                self.data_column_requests.requests.retain(|&k, _| k.peer != *peer);
+                self.data_column_requests
+                    .requests
+                    .retain(|&k, _| k.peer != *peer);
             }
         }
 
@@ -229,19 +231,16 @@ impl<E: EthSpec> RangeBlockEnvelopeRequest<E> {
             .collect::<HashMap<_, _>>();
         for block in blocks {
             let block_root = get_block_root(&block);
-
         }
 
         Ok(coupled_blocks_and_payloads)
     }
-
 
     fn responses_with_custody_columns(
         payloads: Vec<Arc<SignedExecutionPayloadEnvelope<E>>>,
         data_columns: DataColumnSidecarList<E>,
         column_to_peer: HashMap<u64, PeerId>,
         expects_custody_columns: &[ColumnIndex],
-        attempt: usize,
     ) -> Result<Vec<RpcBlock<E>>, CouplingError> {
         // Group data columns by block_root and index
         let mut data_columns_by_block =
@@ -338,5 +337,4 @@ impl<E: EthSpec> RangeBlockEnvelopeRequest<E> {
 
         Ok(rpc_blocks)
     }
-
 }

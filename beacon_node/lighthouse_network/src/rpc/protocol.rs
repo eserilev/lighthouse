@@ -613,10 +613,10 @@ impl ProtocolId {
                 rpc_data_column_limits::<E>(fork_context.current_fork_epoch(), &fork_context.spec)
             }
             Protocol::ExecutionPayloadEnvelopesByRange => {
-                rpc_execution_payload_envelope_limits_by_fork::<E>(fork_context.current_fork_name())
+                rpc_execution_payload_envelope_limits_by_fork(fork_context.current_fork_name())
             }
             Protocol::ExecutionPayloadEnvelopesByRoot => {
-                rpc_execution_payload_envelope_limits_by_fork::<E>(fork_context.current_fork_name())
+                rpc_execution_payload_envelope_limits_by_fork(fork_context.current_fork_name())
             }
             Protocol::Ping => RpcLimits::new(
                 <Ping as Encode>::ssz_fixed_len(),
@@ -689,7 +689,7 @@ impl ProtocolId {
     }
 }
 
-fn rpc_execution_payload_envelope_limits_by_fork<E: EthSpec>(current_fork: ForkName) -> RpcLimits {
+fn rpc_execution_payload_envelope_limits_by_fork(current_fork: ForkName) -> RpcLimits {
     match current_fork {
         ForkName::Base
         | ForkName::Altair

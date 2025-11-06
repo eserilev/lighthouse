@@ -86,9 +86,9 @@ pub struct ExecutionPayloadEnvelopesByRangeRequestId {
 pub struct ExecutionPayloadEnvelopesByRootRequestId {
     /// Id to identify this attempt at an execution_payload_envelopes_by_root request
     pub id: Id,
-
-    pub requester: ExecutionPayloadEnvelopesByRootRequester,
 }
+
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub enum DataColumnsByRangeRequester {
     ComponentsByRange(ComponentsByRangeRequestId),
     CustodyBackfillSync(CustodyBackFillBatchRequestId),

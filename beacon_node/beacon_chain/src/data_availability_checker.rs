@@ -375,7 +375,7 @@ impl<T: BeaconChainTypes> DataAvailabilityChecker<T> {
         &self,
         block: RpcBlock<T::EthSpec>,
     ) -> Result<MaybeAvailableBlock<T::EthSpec>, AvailabilityCheckError> {
-        let (block_root, block, blobs, data_columns, execution_payload_envelope) =
+        let (block_root, block, blobs, data_columns, _execution_payload_envelope) =
             block.deconstruct();
         if self.blobs_required_for_block(&block) {
             return if let Some(blob_list) = blobs {
@@ -470,7 +470,7 @@ impl<T: BeaconChainTypes> DataAvailabilityChecker<T> {
         }
 
         for block in blocks {
-            let (block_root, block, blobs, data_columns, execution_payload_envelope) =
+            let (block_root, block, blobs, data_columns, _execution_payload_envelope) =
                 block.deconstruct();
 
             let maybe_available_block = if self.blobs_required_for_block(&block) {
