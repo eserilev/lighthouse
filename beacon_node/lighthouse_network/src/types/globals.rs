@@ -3,7 +3,9 @@ use super::TopicConfig;
 use crate::peer_manager::peerdb::PeerDB;
 use crate::rpc::{MetaData, MetaDataV3};
 use crate::types::{BackFillState, SyncState};
-use crate::{Client, Enr, EnrExt, GossipTopic, Multiaddr, NetworkConfig, PeerId};
+use crate::{Client, Enr, GossipTopic, Multiaddr, NetworkConfig, PeerId};
+use eth2::lighthouse::sync_state::CustodyBackFillState;
+use network_utils::enr_ext::EnrExt;
 use parking_lot::RwLock;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -28,6 +30,8 @@ pub struct NetworkGlobals<E: EthSpec> {
     pub sync_state: RwLock<SyncState>,
     /// The current state of the backfill sync.
     pub backfill_state: RwLock<BackFillState>,
+    /// The current state of custody sync.
+    pub custody_sync_state: RwLock<CustodyBackFillState>,
     /// The computed sampling subnets and columns is stored to avoid re-computing.
     pub sampling_subnets: RwLock<HashSet<DataColumnSubnetId>>,
     /// Network-related configuration. Immutable after initialization.
@@ -90,6 +94,9 @@ impl<E: EthSpec> NetworkGlobals<E> {
             gossipsub_subscriptions: RwLock::new(HashSet::new()),
             sync_state: RwLock::new(SyncState::Stalled),
             backfill_state: RwLock::new(BackFillState::Paused),
+            custody_sync_state: RwLock::new(CustodyBackFillState::Pending(
+                "Custody backfill sync initialized".to_string(),
+            )),
             sampling_subnets: RwLock::new(sampling_subnets),
             config,
             spec,
@@ -220,7 +227,6 @@ impl<E: EthSpec> NetworkGlobals<E> {
         TopicConfig {
             enable_light_client_server: self.config.enable_light_client_server,
             subscribe_all_subnets: self.config.subscribe_all_subnets,
-            subscribe_all_data_column_subnets: self.config.subscribe_all_data_column_subnets,
             sampling_subnets: self.sampling_subnets.read().clone(),
         }
     }
@@ -250,7 +256,7 @@ impl<E: EthSpec> NetworkGlobals<E> {
         config: Arc<NetworkConfig>,
         spec: Arc<ChainSpec>,
     ) -> NetworkGlobals<E> {
-        use crate::CombinedKeyExt;
+        use network_utils::enr_ext::CombinedKeyExt;
         let keypair = libp2p::identity::secp256k1::Keypair::generate();
         let enr_key: discv5::enr::CombinedKey = discv5::enr::CombinedKey::from_secp256k1(&keypair);
         let enr = discv5::enr::Enr::builder().build(&enr_key).unwrap();
