@@ -1,9 +1,10 @@
 use clap::ArgMatches;
 use lighthouse_network::{
     NETWORK_KEY_FILENAME, NetworkConfig,
-    discovery::{CombinedKey, CombinedKeyExt, ENR_FILENAME, build_enr},
+    discovery::{CombinedKey, ENR_FILENAME, build_enr},
     libp2p::identity::secp256k1,
 };
+use network_utils::enr_ext::CombinedKeyExt;
 use std::io::Write;
 use std::path::PathBuf;
 use std::{fs, net::Ipv4Addr};
@@ -42,7 +43,7 @@ pub fn run<E: EthSpec>(matches: &ArgMatches, spec: &ChainSpec) -> Result<(), Str
         &enr_key,
         &config,
         &enr_fork_id,
-        None,
+        spec.custody_requirement,
         genesis_fork_digest,
         spec,
     )

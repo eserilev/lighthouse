@@ -2,14 +2,14 @@ use beacon_chain::{
     block_verification_types::RpcBlock, data_column_verification::CustodyDataColumn, get_block_root,
 };
 use lighthouse_network::{
-    PeerAction, PeerId,
+    PeerId,
     service::api_types::{
         BlobsByRangeRequestId, BlocksByRangeRequestId, DataColumnsByRangeRequestId,
         ExecutionPayloadEnvelopesByRangeRequestId,
     },
 };
 use std::{collections::HashMap, sync::Arc};
-use tracing::Span;
+use tracing::{Span, debug};
 use types::{
     BlobSidecar, ChainSpec, ColumnIndex, DataColumnSidecar, DataColumnSidecarList, EthSpec,
     ExecutionPayloadEnvelope, Hash256, RuntimeVariableList, SignedBeaconBlock,
@@ -95,7 +95,6 @@ pub(crate) enum CouplingError {
     DataColumnPeerFailure {
         error: String,
         faulty_peers: Vec<(ColumnIndex, PeerId)>,
-        action: PeerAction,
         exceeded_retries: bool,
     },
     BlobPeerFailure(String),
@@ -318,7 +317,6 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
                 if let Err(CouplingError::DataColumnPeerFailure {
                     error: _,
                     faulty_peers,
-                    action: _,
                     exceeded_retries: _,
                 }) = &resp
                 {
@@ -390,10 +388,10 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
         // if accumulated sidecars is not empty, log an error but return the responses
         // as we can still make progress.
         if blob_iter.next().is_some() {
-            tracing::debug!(
-                remaining_blobs=?blob_iter.collect::<Vec<_>>(),
-                "Received sidecars that don't pair well",
-            );
+            let remaining_blobs = blob_iter
+                .map(|b| (b.index, b.block_root()))
+                .collect::<Vec<_>>();
+            debug!(?remaining_blobs, "Received sidecars that don't pair well",);
         }
 
         Ok(responses)
@@ -442,7 +440,6 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
                     return Err(CouplingError::DataColumnPeerFailure {
                         error: format!("No columns for block {block_root:?} with data"),
                         faulty_peers: responsible_peers,
-                        action: PeerAction::LowToleranceError,
                         exceeded_retries,
 
                     });
@@ -467,7 +464,6 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
                     return Err(CouplingError::DataColumnPeerFailure {
                         error: format!("Peers did not return column for block_root {block_root:?} {naughty_peers:?}"),
                         faulty_peers: naughty_peers,
-                        action: PeerAction::LowToleranceError,
                         exceeded_retries
                     });
                 }
@@ -542,10 +538,10 @@ mod tests {
         NumBlobs, generate_rand_block_and_blobs, generate_rand_block_and_data_columns, test_spec,
     };
     use lighthouse_network::{
-        PeerAction, PeerId,
+        PeerId,
         service::api_types::{
             BlobsByRangeRequestId, BlocksByRangeRequestId, ComponentsByRangeRequestId,
-            DataColumnsByRangeRequestId, Id, RangeRequestId,
+            DataColumnsByRangeRequestId, DataColumnsByRangeRequester, Id, RangeRequestId,
         },
     };
     use rand::SeedableRng;
@@ -579,7 +575,7 @@ mod tests {
 
     fn columns_id(
         id: Id,
-        parent_request_id: ComponentsByRangeRequestId,
+        parent_request_id: DataColumnsByRangeRequester,
     ) -> DataColumnsByRangeRequestId {
         DataColumnsByRangeRequestId {
             id,
@@ -595,11 +591,10 @@ mod tests {
 
     #[test]
     fn no_blobs_into_responses() {
-        let spec = test_spec::<E>();
         let mut rng = XorShiftRng::from_seed([42; 16]);
         let blocks = (0..4)
             .map(|_| {
-                generate_rand_block_and_blobs::<E>(ForkName::Base, NumBlobs::None, &mut rng, &spec)
+                generate_rand_block_and_blobs::<E>(ForkName::Base, NumBlobs::None, &mut rng)
                     .0
                     .into()
             })
@@ -618,19 +613,13 @@ mod tests {
 
     #[test]
     fn empty_blobs_into_responses() {
-        let spec = test_spec::<E>();
         let mut rng = XorShiftRng::from_seed([42; 16]);
         let blocks = (0..4)
             .map(|_| {
                 // Always generate some blobs.
-                generate_rand_block_and_blobs::<E>(
-                    ForkName::Deneb,
-                    NumBlobs::Number(3),
-                    &mut rng,
-                    &spec,
-                )
-                .0
-                .into()
+                generate_rand_block_and_blobs::<E>(ForkName::Deneb, NumBlobs::Number(3), &mut rng)
+                    .0
+                    .into()
             })
             .collect::<Vec<Arc<SignedBeaconBlock<E>>>>();
 
@@ -677,7 +666,15 @@ mod tests {
         let columns_req_id = expects_custody_columns
             .iter()
             .enumerate()
-            .map(|(i, column)| (columns_id(i as Id, components_id), vec![*column]))
+            .map(|(i, column)| {
+                (
+                    columns_id(
+                        i as Id,
+                        DataColumnsByRangeRequester::ComponentsByRange(components_id),
+                    ),
+                    vec![*column],
+                )
+            })
             .collect::<Vec<_>>();
         // TODO(EIP-7732) write a test that covers the columns + payloads case
         let mut info = RangeBlockComponentsRequest::<E>::new(
@@ -738,7 +735,15 @@ mod tests {
         let columns_req_id = batched_column_requests
             .iter()
             .enumerate()
-            .map(|(i, columns)| (columns_id(i as Id, components_id), columns.clone()))
+            .map(|(i, columns)| {
+                (
+                    columns_id(
+                        i as Id,
+                        DataColumnsByRangeRequester::ComponentsByRange(components_id),
+                    ),
+                    columns.clone(),
+                )
+            })
             .collect::<Vec<_>>();
 
         // TODO(EIP-7732) write a test that covers the columns + payloads case
@@ -821,7 +826,15 @@ mod tests {
         let columns_req_id = expected_custody_columns
             .iter()
             .enumerate()
-            .map(|(i, column)| (columns_id(i as Id, components_id), vec![*column]))
+            .map(|(i, column)| {
+                (
+                    columns_id(
+                        i as Id,
+                        DataColumnsByRangeRequester::ComponentsByRange(components_id),
+                    ),
+                    vec![*column],
+                )
+            })
             .collect::<Vec<_>>();
 
         // TODO(EIP-7732) write a test that covers the columns + payloads case
@@ -867,7 +880,6 @@ mod tests {
         if let Err(super::CouplingError::DataColumnPeerFailure {
             error,
             faulty_peers,
-            action,
             exceeded_retries,
         }) = result
         {
@@ -875,7 +887,6 @@ mod tests {
             assert_eq!(faulty_peers.len(), 2); // columns 3 and 4 missing
             assert_eq!(faulty_peers[0].0, 3); // column index 3
             assert_eq!(faulty_peers[1].0, 4); // column index 4
-            assert!(matches!(action, PeerAction::LowToleranceError));
             assert!(!exceeded_retries); // First attempt, should be false
         } else {
             panic!("Expected PeerFailure error");
@@ -904,7 +915,15 @@ mod tests {
         let columns_req_id = expected_custody_columns
             .iter()
             .enumerate()
-            .map(|(i, column)| (columns_id(i as Id, components_id), vec![*column]))
+            .map(|(i, column)| {
+                (
+                    columns_id(
+                        i as Id,
+                        DataColumnsByRangeRequester::ComponentsByRange(components_id),
+                    ),
+                    vec![*column],
+                )
+            })
             .collect::<Vec<_>>();
 
         // TODO(EIP-7732) write a test that covers the columns + payloads case
@@ -943,7 +962,10 @@ mod tests {
         assert!(result.is_err());
 
         // AND: We retry with a new peer for the failed column
-        let new_columns_req_id = columns_id(10 as Id, components_id);
+        let new_columns_req_id = columns_id(
+            10 as Id,
+            DataColumnsByRangeRequester::ComponentsByRange(components_id),
+        );
         let failed_column_requests = vec![(new_columns_req_id, vec![2])];
         info.reinsert_failed_column_requests(failed_column_requests)
             .unwrap();
@@ -989,7 +1011,15 @@ mod tests {
         let columns_req_id = expected_custody_columns
             .iter()
             .enumerate()
-            .map(|(i, column)| (columns_id(i as Id, components_id), vec![*column]))
+            .map(|(i, column)| {
+                (
+                    columns_id(
+                        i as Id,
+                        DataColumnsByRangeRequester::ComponentsByRange(components_id),
+                    ),
+                    vec![*column],
+                )
+            })
             .collect::<Vec<_>>();
 
         // TODO(EIP-7732) write a test that covers the columns + payloads case
@@ -1045,13 +1075,11 @@ mod tests {
         if let Err(super::CouplingError::DataColumnPeerFailure {
             error: _,
             faulty_peers,
-            action,
             exceeded_retries,
         }) = result
         {
             assert_eq!(faulty_peers.len(), 1); // column 2 missing
             assert_eq!(faulty_peers[0].0, 2); // column index 2
-            assert!(matches!(action, PeerAction::LowToleranceError));
             assert!(exceeded_retries); // Should be true after max retries
         } else {
             panic!("Expected PeerFailure error with exceeded_retries=true");

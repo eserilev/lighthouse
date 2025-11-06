@@ -54,11 +54,16 @@ excluded_paths = [
     "tests/general/phase0/ssz_generic/basic_progressive_list",
     "tests/general/phase0/ssz_generic/containers/.*/ProgressiveBitsStruct.*",
     "tests/general/phase0/ssz_generic/containers/.*/ProgressiveTestStruct.*",
+    "tests/general/phase0/ssz_generic/progressive_containers/.*",
+    "tests/general/phase0/ssz_generic/compatible_unions/.*",
     # Ignore full epoch tests for now (just test the sub-transitions).
     "tests/.*/.*/epoch_processing/.*/pre_epoch.ssz_snappy",
     "tests/.*/.*/epoch_processing/.*/post_epoch.ssz_snappy",
     # Ignore gloas tests for now
     "tests/.*/gloas/.*",
+    # Ignore KZG tests that target internal kzg library functions
+    "tests/.*/compute_verify_cell_kzg_proof_batch_challenge/.*",
+    "tests/.*/compute_challenge/.*",
 ]
 
 

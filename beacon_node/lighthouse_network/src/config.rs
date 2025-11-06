@@ -1,4 +1,3 @@
-use crate::listen_addr::{ListenAddr, ListenAddress};
 use crate::peer_manager::config::DEFAULT_TARGET_PEERS;
 use crate::rpc::config::{InboundRateLimiterConfig, OutboundRateLimiterConfig};
 use crate::types::GossipKind;
@@ -8,6 +7,7 @@ use directory::{
 };
 use libp2p::Multiaddr;
 use local_ip_address::local_ipv6;
+use network_utils::listen_addr::{ListenAddr, ListenAddress};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -93,9 +93,6 @@ pub struct Config {
 
     /// Attempt to construct external port mappings with UPnP.
     pub upnp_enabled: bool,
-
-    /// Subscribe to all data column subnets for the duration of the runtime.
-    pub subscribe_all_data_column_subnets: bool,
 
     /// Subscribe to all subnets for the duration of the runtime.
     pub subscribe_all_subnets: bool,
@@ -355,7 +352,6 @@ impl Default for Config {
             upnp_enabled: true,
             network_load: 3,
             private: false,
-            subscribe_all_data_column_subnets: false,
             subscribe_all_subnets: false,
             import_all_attestations: false,
             shutdown_after_sync: false,

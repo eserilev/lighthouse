@@ -1066,8 +1066,9 @@ mod tests {
         let mut block: BeaconBlockBellatrix<_, FullPayload<Spec>> =
             BeaconBlockBellatrix::empty(spec);
 
-        let tx = VariableList::from(vec![0; 1024]);
-        let txs = VariableList::from(std::iter::repeat_n(tx, 5000).collect::<Vec<_>>());
+        let tx = VariableList::try_from(vec![0; 1024]).unwrap();
+        let txs =
+            VariableList::try_from(std::iter::repeat_n(tx, 5000).collect::<Vec<_>>()).unwrap();
 
         block.body.execution_payload.execution_payload.transactions = txs;
 
@@ -1085,8 +1086,9 @@ mod tests {
         let mut block: BeaconBlockBellatrix<_, FullPayload<Spec>> =
             BeaconBlockBellatrix::empty(spec);
 
-        let tx = VariableList::from(vec![0; 1024]);
-        let txs = VariableList::from(std::iter::repeat_n(tx, 100000).collect::<Vec<_>>());
+        let tx = VariableList::try_from(vec![0; 1024]).unwrap();
+        let txs =
+            VariableList::try_from(std::iter::repeat_n(tx, 100000).collect::<Vec<_>>()).unwrap();
 
         block.body.execution_payload.execution_payload.transactions = txs;
 
@@ -1144,7 +1146,7 @@ mod tests {
             data_column_ids: RuntimeVariableList::new(
                 vec![DataColumnsByRootIdentifier {
                     block_root: Hash256::zero(),
-                    columns: VariableList::from(vec![0, 1, 2]),
+                    columns: VariableList::try_from(vec![0, 1, 2]).unwrap(),
                 }],
                 spec.max_request_blocks(fork_name),
             )
