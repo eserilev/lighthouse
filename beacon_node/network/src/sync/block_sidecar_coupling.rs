@@ -5,16 +5,41 @@ use lighthouse_network::{
     PeerAction, PeerId,
     service::api_types::{
         BlobsByRangeRequestId, BlocksByRangeRequestId, DataColumnsByRangeRequestId,
+        ExecutionPayloadEnvelopesByRangeRequestId,
     },
 };
 use std::{collections::HashMap, sync::Arc};
 use tracing::Span;
 use types::{
     BlobSidecar, ChainSpec, ColumnIndex, DataColumnSidecar, DataColumnSidecarList, EthSpec,
-    Hash256, RuntimeVariableList, SignedBeaconBlock,
+    ExecutionPayloadEnvelope, Hash256, RuntimeVariableList, SignedBeaconBlock,
+    SignedExecutionPayloadEnvelope,
 };
 
 use crate::sync::network_context::MAX_COLUMN_RETRIES;
+
+pub struct DataColumnRequests<E: EthSpec> {
+    requests: HashMap<
+        DataColumnsByRangeRequestId,
+        ByRangeRequest<DataColumnsByRangeRequestId, DataColumnSidecarList<E>>,
+    >,
+    /// The column indices corresponding to the request
+    column_peers: HashMap<DataColumnsByRangeRequestId, Vec<ColumnIndex>>,
+    expected_custody_columns: Vec<ColumnIndex>,
+    attempt: usize,
+}
+
+pub struct RangeBlockComponentsRequestGloas<E: EthSpec> {
+    /// Blocks we have received awaiting their corresponds payload envelope and data column sidecar.
+    blocks_request: ByRangeRequest<BlocksByRangeRequestId, Vec<Arc<SignedBeaconBlock<E>>>>,
+    /// Execution payload envelopes we have received awaiting to be paired with their corresponding block and data column sidecar.
+    execution_payload_envelopes_requests: ByRangeRequest<
+        ExecutionPayloadEnvelopesByRangeRequestId,
+        Vec<Arc<SignedExecutionPayloadEnvelope<E>>>,
+    >,
+    /// Data column sidecars we have received awaiting to be paired with their corresponding payload
+    data_column_requests: DataColumnRequests<E>,
+}
 
 /// Accumulates and couples beacon blocks with their associated data (blobs or data columns)
 /// from range sync network responses.
@@ -32,6 +57,13 @@ pub struct RangeBlockComponentsRequest<E: EthSpec> {
     blocks_request: ByRangeRequest<BlocksByRangeRequestId, Vec<Arc<SignedBeaconBlock<E>>>>,
     /// Sidecars we have received awaiting for their corresponding block.
     block_data_request: RangeBlockDataRequest<E>,
+    /// Execution payload envelopes we have received awaiting to be paired with their corresponding block and data column sidecar.
+    execution_payload_envelopes_requests: Option<
+        ByRangeRequest<
+            ExecutionPayloadEnvelopesByRangeRequestId,
+            Vec<Arc<SignedExecutionPayloadEnvelope<E>>>,
+        >,
+    >,
     /// Span to track the range request and all children range requests.
     pub(crate) request_span: Span,
 }
@@ -84,6 +116,7 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
             Vec<(DataColumnsByRangeRequestId, Vec<ColumnIndex>)>,
             Vec<ColumnIndex>,
         )>,
+        payload_requests: Option<ExecutionPayloadEnvelopesByRangeRequestId>,
         request_span: Span,
     ) -> Self {
         let block_data_request = if let Some(blobs_req_id) = blobs_req_id {
@@ -103,9 +136,17 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
             RangeBlockDataRequest::NoData
         };
 
+        let execution_payload_envelopes_requests = if let Some(payload_requests) = payload_requests
+        {
+            Some(ByRangeRequest::Active(payload_requests))
+        } else {
+            None
+        };
+
         Self {
             blocks_request: ByRangeRequest::Active(blocks_req_id),
             block_data_request,
+            execution_payload_envelopes_requests,
             request_span,
         }
     }
@@ -187,6 +228,24 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
         }
     }
 
+    pub fn add_execution_payload_envelopes(
+        &mut self,
+        req_id: ExecutionPayloadEnvelopesByRangeRequestId,
+        payloads: Vec<Arc<ExecutionPayloadEnvelope<E>>>,
+    ) -> Result<(), String> {
+        match &mut self.block_data_request {
+            RangeBlockDataRequest::NoData => {
+                Err("received execution payload envelopes but expected no data".to_owned())
+            }
+            RangeBlockDataRequest::Blobs(_) => {
+                Err("received execution payload envelopes but expected blobs".to_owned())
+            }
+            RangeBlockDataRequest::DataColumns { .. } => {
+                Err("received execution payload envelopes but expected data columns".to_owned())
+            }
+        }
+    }
+
     /// Attempts to construct RPC blocks from all received components.
     ///
     /// Returns `None` if not all expected requests have completed.
@@ -228,6 +287,12 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
                         return None;
                     };
                     data_columns.extend(data.clone())
+                }
+
+                if let Some(payload_requests) = &self.execution_payload_envelopes_requests {
+                    let Some(payload_envelopes) = payload_requests.to_finished() else {
+                        return None;
+                    };
                 }
 
                 // An "attempt" is complete here after we have received a response for all the
@@ -436,6 +501,15 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
 
         Ok(rpc_blocks)
     }
+
+    fn responses_with_execution_payload_envelopes(
+        blocks: Vec<Arc<SignedBeaconBlock<E>>>,
+        columns: DataColumnSidecarList<E>,
+        payloads: Vec<Arc<SignedExecutionPayloadEnvelope<E>>>,
+        spec: &ChainSpec,
+    ) -> Result<Vec<RpcBlock<E>>, CouplingError> {
+        todo!()
+    }
 }
 
 impl<I: PartialEq + std::fmt::Display, T> ByRangeRequest<I, T> {
@@ -533,7 +607,7 @@ mod tests {
 
         let blocks_req_id = blocks_id(components_id());
         let mut info =
-            RangeBlockComponentsRequest::<E>::new(blocks_req_id, None, None, Span::none());
+            RangeBlockComponentsRequest::<E>::new(blocks_req_id, None, None, None, Span::none());
 
         // Send blocks and complete terminate response
         info.add_blocks(blocks_req_id, blocks).unwrap();
@@ -566,6 +640,7 @@ mod tests {
         let mut info = RangeBlockComponentsRequest::<E>::new(
             blocks_req_id,
             Some(blobs_req_id),
+            None,
             None,
             Span::none(),
         );
@@ -604,10 +679,12 @@ mod tests {
             .enumerate()
             .map(|(i, column)| (columns_id(i as Id, components_id), vec![*column]))
             .collect::<Vec<_>>();
+        // TODO(EIP-7732) write a test that covers the columns + payloads case
         let mut info = RangeBlockComponentsRequest::<E>::new(
             blocks_req_id,
             None,
             Some((columns_req_id.clone(), expects_custody_columns.clone())),
+            None,
             Span::none(),
         );
         // Send blocks and complete terminate response
@@ -664,10 +741,12 @@ mod tests {
             .map(|(i, columns)| (columns_id(i as Id, components_id), columns.clone()))
             .collect::<Vec<_>>();
 
+        // TODO(EIP-7732) write a test that covers the columns + payloads case
         let mut info = RangeBlockComponentsRequest::<E>::new(
             blocks_req_id,
             None,
             Some((columns_req_id.clone(), expects_custody_columns.clone())),
+            None,
             Span::none(),
         );
 
@@ -744,10 +823,13 @@ mod tests {
             .enumerate()
             .map(|(i, column)| (columns_id(i as Id, components_id), vec![*column]))
             .collect::<Vec<_>>();
+
+        // TODO(EIP-7732) write a test that covers the columns + payloads case
         let mut info = RangeBlockComponentsRequest::<E>::new(
             blocks_req_id,
             None,
             Some((columns_req_id.clone(), expected_custody_columns.clone())),
+            None,
             Span::none(),
         );
 
@@ -824,10 +906,13 @@ mod tests {
             .enumerate()
             .map(|(i, column)| (columns_id(i as Id, components_id), vec![*column]))
             .collect::<Vec<_>>();
+
+        // TODO(EIP-7732) write a test that covers the columns + payloads case
         let mut info = RangeBlockComponentsRequest::<E>::new(
             blocks_req_id,
             None,
             Some((columns_req_id.clone(), expected_custody_columns.clone())),
+            None,
             Span::none(),
         );
 
@@ -906,10 +991,13 @@ mod tests {
             .enumerate()
             .map(|(i, column)| (columns_id(i as Id, components_id), vec![*column]))
             .collect::<Vec<_>>();
+
+        // TODO(EIP-7732) write a test that covers the columns + payloads case
         let mut info = RangeBlockComponentsRequest::<E>::new(
             blocks_req_id,
             None,
             Some((columns_req_id.clone(), expected_custody_columns.clone())),
+            None,
             Span::none(),
         );
 

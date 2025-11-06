@@ -71,7 +71,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, trace};
 use types::{
-    BlobSidecar, DataColumnSidecar, EthSpec, ForkContext, Hash256, SignedBeaconBlock, Slot,
+    BlobSidecar, DataColumnSidecar, EthSpec, ForkContext, Hash256, SignedBeaconBlock, SignedExecutionPayloadEnvelope, Slot
 };
 
 /// The number of slots ahead of us that is allowed before requesting a long-range (batch)  Sync
@@ -486,12 +486,9 @@ impl<T: BeaconChainTypes> SyncManager<T> {
             SyncRequestId::DataColumnsByRange(req_id) => {
                 self.on_data_columns_by_range_response(req_id, peer_id, RpcEvent::RPCError(error))
             }
-            SyncRequestId::ExecutionPayloadEnvelopesByRange(req_id) => self
-                .on_execution_payload_envelopes_by_range_response(
-                    req_id,
-                    peer_id,
-                    RpcEvent::RPCError(error),
-                ),
+            SyncRequestId::ExecutionPayloadEnvelopesByRange(req_id) => {
+                self.on_execution_payload_envelopes_by_range_response(req_id, peer_id, RpcEvent::RPCError(error))
+            }
             SyncRequestId::ExecutionPayloadEnvelopesByRoot(req_id) => self
                 .on_execution_payload_envelopes_by_root_response(
                     req_id,
@@ -1150,24 +1147,6 @@ impl<T: BeaconChainTypes> SyncManager<T> {
         }
     }
 
-    fn on_execution_payload_envelopes_by_range_response(
-        &mut self,
-        _id: ExecutionPayloadEnvelopesByRangeRequestId,
-        _peer_id: PeerId,
-        _envelope: RpcEvent<Arc<types::SignedExecutionPayloadEnvelope<T::EthSpec>>>,
-    ) {
-        todo!("TODO(EIP-7732): Handle envelopes for range and backfill sync.")
-    }
-
-    fn on_execution_payload_envelopes_by_root_response(
-        &mut self,
-        _id: ExecutionPayloadEnvelopesByRootRequestId,
-        _peer_id: PeerId,
-        _envelope: RpcEvent<Arc<types::SignedExecutionPayloadEnvelope<T::EthSpec>>>,
-    ) {
-        todo!("TODO(EIP-7732): Handle execution payload envelope by root responses.")
-    }
-
     fn on_single_blob_response(
         &mut self,
         id: SingleLookupReqId,
@@ -1207,6 +1186,15 @@ impl<T: BeaconChainTypes> SyncManager<T> {
                 }
             }
         }
+    }
+
+    fn on_execution_payload_envelopes_by_root_response(
+        &mut self,
+        _id: ExecutionPayloadEnvelopesByRootRequestId,
+        _peer_id: PeerId,
+        _envelope: RpcEvent<Arc<types::SignedExecutionPayloadEnvelope<T::EthSpec>>>,
+    ) {
+        todo!("TODO(EIP-7732): Handle execution payload envelope by root responses.")
     }
 
     fn on_blocks_by_range_response(
@@ -1253,6 +1241,24 @@ impl<T: BeaconChainTypes> SyncManager<T> {
                 id.parent_request_id,
                 peer_id,
                 RangeBlockComponent::CustodyColumns(id, resp),
+            );
+        }
+    }
+
+    fn on_execution_payload_envelopes_by_range_response(
+        &mut self,
+        id: ExecutionPayloadEnvelopesByRangeRequestId,
+        peer_id: PeerId,
+        payload: RpcEvent<Arc<SignedExecutionPayloadEnvelope<T::EthSpec>>>,
+    ) {
+        if let Some(resp) = self
+            .network
+            .on_execution_payload_envelopes_by_range_response(id, peer_id, payload)
+        {
+            self.on_range_components_response(
+                id.parent_request_id,
+                peer_id,
+                RangeBlockComponent::ExecutionPayloadEnvelopes(id, resp),
             );
         }
     }

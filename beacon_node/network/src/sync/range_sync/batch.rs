@@ -21,6 +21,7 @@ const MAX_BATCH_PROCESSING_ATTEMPTS: u8 = 3;
 #[derive(Debug, Copy, Clone, Display)]
 #[strum(serialize_all = "snake_case")]
 pub enum ByRangeRequestType {
+    BlocksAndPayloadsAndColumns,
     BlocksAndColumns,
     BlocksAndBlobs,
     Blocks,

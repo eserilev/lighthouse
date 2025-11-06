@@ -20,7 +20,7 @@ use tracing::{debug, error, instrument};
 use types::blob_sidecar::{BlobIdentifier, BlobSidecar, FixedBlobSidecarList};
 use types::{
     BlobSidecarList, ChainSpec, DataColumnSidecar, DataColumnSidecarList, Epoch, EthSpec, Hash256,
-    SignedBeaconBlock, Slot,
+    SignedBeaconBlock, SignedExecutionPayloadEnvelope, Slot,
 };
 
 mod error;
@@ -360,7 +360,8 @@ impl<T: BeaconChainTypes> DataAvailabilityChecker<T> {
         &self,
         block: RpcBlock<T::EthSpec>,
     ) -> Result<MaybeAvailableBlock<T::EthSpec>, AvailabilityCheckError> {
-        let (block_root, block, blobs, data_columns) = block.deconstruct();
+        let (block_root, block, blobs, data_columns, execution_payload_envelope) =
+            block.deconstruct();
         if self.blobs_required_for_block(&block) {
             return if let Some(blob_list) = blobs {
                 verify_kzg_for_blob_list(blob_list.iter(), &self.kzg)
@@ -454,7 +455,8 @@ impl<T: BeaconChainTypes> DataAvailabilityChecker<T> {
         }
 
         for block in blocks {
-            let (block_root, block, blobs, data_columns) = block.deconstruct();
+            let (block_root, block, blobs, data_columns, execution_payload_envelope) =
+                block.deconstruct();
 
             let maybe_available_block = if self.blobs_required_for_block(&block) {
                 if let Some(blobs) = blobs {

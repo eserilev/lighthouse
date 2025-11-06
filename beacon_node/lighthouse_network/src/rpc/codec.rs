@@ -1325,6 +1325,18 @@ mod tests {
             RequestType::DataColumnsByRange(dcbrange) => {
                 assert_eq!(decoded, RequestType::DataColumnsByRange(dcbrange))
             }
+            RequestType::ExecutionPayloadEnvelopesByRoot(eperoot) => {
+                assert_eq!(
+                    decoded,
+                    RequestType::ExecutionPayloadEnvelopesByRoot(eperoot)
+                )
+            }
+            RequestType::ExecutionPayloadEnvelopesByRange(eperange) => {
+                assert_eq!(
+                    decoded,
+                    RequestType::ExecutionPayloadEnvelopesByRange(eperange)
+                )
+            }
             RequestType::Ping(ping) => {
                 assert_eq!(decoded, RequestType::Ping(ping))
             }
