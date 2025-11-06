@@ -291,7 +291,53 @@ impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
             };
 
             if payload.num_expected_blobs() > 0 {
+                let Some(mut data_columns_by_index) = data_columns_by_block.remove(&block_root)
+                else {
+                    let responsible_peers = column_to_peer.iter().map(|c| (*c.0, *c.1)).collect();
+                    return Err(CouplingError::DataColumnPeerFailure {
+                        error: format!("No columns for block {block_root:?} with data"),
+                        faulty_peers: responsible_peers,
+                        action: PeerAction::LowToleranceError,
+                        exceeded_retries,
 
+                    });
+                };
+
+                let mut custody_columns = vec![];
+                let mut naughty_peers = vec![];
+                
+                for index in expects_custody_columns {
+                    // Safe to convert to `CustodyDataColumn`: we have asserted that the index of
+                    // this column is in the set of `expects_custody_columns` and with the expected
+                    // block root, so for the expected epoch of this batch.
+                    if let Some(data_column) = data_columns_by_index.remove(index) {
+                        custody_columns.push(CustodyDataColumn::from_asserted_custody(data_column));
+                    } else {
+                        let Some(responsible_peer) = column_to_peer.get(index) else {
+                            return Err(CouplingError::InternalError(format!("Internal error, no request made for column {}", index)));
+                        };
+                        naughty_peers.push((*index, *responsible_peer));
+                    }
+                }
+                if !naughty_peers.is_empty() {
+                    return Err(CouplingError::DataColumnPeerFailure {
+                        error: format!("Peers did not return column for block_root {block_root:?} {naughty_peers:?}"),
+                        faulty_peers: naughty_peers,
+                        action: PeerAction::LowToleranceError,
+                        exceeded_retries
+                    });
+                }
+
+                // Assert that there are no columns left
+                if !data_columns_by_index.is_empty() {
+                    let remaining_indices = data_columns_by_index.keys().collect::<Vec<_>>();
+                    // log the error but don't return an error, we can still progress with extra columns.
+                    tracing::debug!(
+                        ?block_root,
+                        ?remaining_indices,
+                        "Not all columns consumed for block"
+                    );
+                }
             } else {
 
             }

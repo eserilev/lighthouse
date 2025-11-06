@@ -1,6 +1,7 @@
 use crate::data_availability_checker::AvailabilityCheckError;
 pub use crate::data_availability_checker::{AvailableBlock, MaybeAvailableBlock};
 use crate::data_column_verification::{CustodyDataColumn, CustodyDataColumnList};
+use crate::envelope_verification_types::AvailableEnvelope;
 use crate::{PayloadVerificationOutcome, get_block_root};
 use derivative::Derivative;
 use ssz_types::VariableList;
@@ -9,8 +10,7 @@ use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 use types::blob_sidecar::BlobIdentifier;
 use types::{
-    BeaconBlockRef, BeaconState, BlindedPayload, BlobSidecarList, Epoch, EthSpec, Hash256,
-    SignedBeaconBlock, SignedBeaconBlockHeader, Slot,
+    BeaconBlockRef, BeaconState, BlindedPayload, BlobSidecarList, Epoch, EthSpec, Hash256, SignedBeaconBlock, SignedBeaconBlockHeader, Slot
 };
 
 /// A block that has been received over RPC. It has 2 internal variants:
