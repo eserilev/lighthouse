@@ -2,14 +2,14 @@ use beacon_chain::{
     block_verification_types::RpcBlock, data_column_verification::CustodyDataColumn, get_block_root,
 };
 use lighthouse_network::{
-    PeerId,
+    PeerAction, PeerId,
     service::api_types::{
         BlobsByRangeRequestId, BlocksByRangeRequestId, DataColumnsByRangeRequestId,
         ExecutionPayloadEnvelopesByRangeRequestId,
     },
 };
 use std::{collections::HashMap, sync::Arc};
-use tracing::{Span, debug};
+use tracing::Span;
 use types::{
     BlobSidecar, ChainSpec, ColumnIndex, DataColumnSidecar, DataColumnSidecarList, EthSpec,
     ExecutionPayloadEnvelope, Hash256, RuntimeVariableList, SignedBeaconBlock,
@@ -17,29 +17,6 @@ use types::{
 };
 
 use crate::sync::network_context::MAX_COLUMN_RETRIES;
-
-pub struct DataColumnRequests<E: EthSpec> {
-    requests: HashMap<
-        DataColumnsByRangeRequestId,
-        ByRangeRequest<DataColumnsByRangeRequestId, DataColumnSidecarList<E>>,
-    >,
-    /// The column indices corresponding to the request
-    column_peers: HashMap<DataColumnsByRangeRequestId, Vec<ColumnIndex>>,
-    expected_custody_columns: Vec<ColumnIndex>,
-    attempt: usize,
-}
-
-pub struct RangeBlockComponentsRequestGloas<E: EthSpec> {
-    /// Blocks we have received awaiting their corresponds payload envelope and data column sidecar.
-    blocks_request: ByRangeRequest<BlocksByRangeRequestId, Vec<Arc<SignedBeaconBlock<E>>>>,
-    /// Execution payload envelopes we have received awaiting to be paired with their corresponding block and data column sidecar.
-    execution_payload_envelopes_requests: ByRangeRequest<
-        ExecutionPayloadEnvelopesByRangeRequestId,
-        Vec<Arc<SignedExecutionPayloadEnvelope<E>>>,
-    >,
-    /// Data column sidecars we have received awaiting to be paired with their corresponding payload
-    data_column_requests: DataColumnRequests<E>,
-}
 
 /// Accumulates and couples beacon blocks with their associated data (blobs or data columns)
 /// from range sync network responses.
@@ -57,13 +34,6 @@ pub struct RangeBlockComponentsRequest<E: EthSpec> {
     blocks_request: ByRangeRequest<BlocksByRangeRequestId, Vec<Arc<SignedBeaconBlock<E>>>>,
     /// Sidecars we have received awaiting for their corresponding block.
     block_data_request: RangeBlockDataRequest<E>,
-    /// Execution payload envelopes we have received awaiting to be paired with their corresponding block and data column sidecar.
-    execution_payload_envelopes_requests: Option<
-        ByRangeRequest<
-            ExecutionPayloadEnvelopesByRangeRequestId,
-            Vec<Arc<SignedExecutionPayloadEnvelope<E>>>,
-        >,
-    >,
     /// Span to track the range request and all children range requests.
     pub(crate) request_span: Span,
 }
@@ -95,6 +65,7 @@ pub(crate) enum CouplingError {
     DataColumnPeerFailure {
         error: String,
         faulty_peers: Vec<(ColumnIndex, PeerId)>,
+        action: PeerAction,
         exceeded_retries: bool,
     },
     BlobPeerFailure(String),
@@ -115,7 +86,6 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
             Vec<(DataColumnsByRangeRequestId, Vec<ColumnIndex>)>,
             Vec<ColumnIndex>,
         )>,
-        payload_requests: Option<ExecutionPayloadEnvelopesByRangeRequestId>,
         request_span: Span,
     ) -> Self {
         let block_data_request = if let Some(blobs_req_id) = blobs_req_id {
@@ -135,17 +105,9 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
             RangeBlockDataRequest::NoData
         };
 
-        let execution_payload_envelopes_requests = if let Some(payload_requests) = payload_requests
-        {
-            Some(ByRangeRequest::Active(payload_requests))
-        } else {
-            None
-        };
-
         Self {
             blocks_request: ByRangeRequest::Active(blocks_req_id),
             block_data_request,
-            execution_payload_envelopes_requests,
             request_span,
         }
     }
@@ -227,24 +189,6 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
         }
     }
 
-    pub fn add_execution_payload_envelopes(
-        &mut self,
-        req_id: ExecutionPayloadEnvelopesByRangeRequestId,
-        payloads: Vec<Arc<ExecutionPayloadEnvelope<E>>>,
-    ) -> Result<(), String> {
-        match &mut self.block_data_request {
-            RangeBlockDataRequest::NoData => {
-                Err("received execution payload envelopes but expected no data".to_owned())
-            }
-            RangeBlockDataRequest::Blobs(_) => {
-                Err("received execution payload envelopes but expected blobs".to_owned())
-            }
-            RangeBlockDataRequest::DataColumns { .. } => {
-                Err("received execution payload envelopes but expected data columns".to_owned())
-            }
-        }
-    }
-
     /// Attempts to construct RPC blocks from all received components.
     ///
     /// Returns `None` if not all expected requests have completed.
@@ -288,12 +232,6 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
                     data_columns.extend(data.clone())
                 }
 
-                if let Some(payload_requests) = &self.execution_payload_envelopes_requests {
-                    let Some(payload_envelopes) = payload_requests.to_finished() else {
-                        return None;
-                    };
-                }
-
                 // An "attempt" is complete here after we have received a response for all the
                 // requests we made. i.e. `req.to_finished()` returns Some for all requests.
                 *attempt += 1;
@@ -317,6 +255,7 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
                 if let Err(CouplingError::DataColumnPeerFailure {
                     error: _,
                     faulty_peers,
+                    action: _,
                     exceeded_retries: _,
                 }) = &resp
                 {
@@ -388,10 +327,10 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
         // if accumulated sidecars is not empty, log an error but return the responses
         // as we can still make progress.
         if blob_iter.next().is_some() {
-            let remaining_blobs = blob_iter
-                .map(|b| (b.index, b.block_root()))
-                .collect::<Vec<_>>();
-            debug!(?remaining_blobs, "Received sidecars that don't pair well",);
+            tracing::debug!(
+                remaining_blobs=?blob_iter.collect::<Vec<_>>(),
+                "Received sidecars that don't pair well",
+            );
         }
 
         Ok(responses)
@@ -440,6 +379,7 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
                     return Err(CouplingError::DataColumnPeerFailure {
                         error: format!("No columns for block {block_root:?} with data"),
                         faulty_peers: responsible_peers,
+                        action: PeerAction::LowToleranceError,
                         exceeded_retries,
 
                     });
@@ -464,6 +404,7 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
                     return Err(CouplingError::DataColumnPeerFailure {
                         error: format!("Peers did not return column for block_root {block_root:?} {naughty_peers:?}"),
                         faulty_peers: naughty_peers,
+                        action: PeerAction::LowToleranceError,
                         exceeded_retries
                     });
                 }
@@ -509,7 +450,7 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
 }
 
 impl<I: PartialEq + std::fmt::Display, T> ByRangeRequest<I, T> {
-    pub fn finish(&mut self, id: I, data: T) -> Result<(), String> {
+    fn finish(&mut self, id: I, data: T) -> Result<(), String> {
         match self {
             Self::Active(expected_id) => {
                 if expected_id != &id {
@@ -522,7 +463,7 @@ impl<I: PartialEq + std::fmt::Display, T> ByRangeRequest<I, T> {
         }
     }
 
-    pub fn to_finished(&self) -> Option<&T> {
+    fn to_finished(&self) -> Option<&T> {
         match self {
             Self::Active(_) => None,
             Self::Complete(data) => Some(data),
@@ -538,10 +479,10 @@ mod tests {
         NumBlobs, generate_rand_block_and_blobs, generate_rand_block_and_data_columns, test_spec,
     };
     use lighthouse_network::{
-        PeerId,
+        PeerAction, PeerId,
         service::api_types::{
             BlobsByRangeRequestId, BlocksByRangeRequestId, ComponentsByRangeRequestId,
-            DataColumnsByRangeRequestId, DataColumnsByRangeRequester, Id, RangeRequestId,
+            DataColumnsByRangeRequestId, Id, RangeRequestId,
         },
     };
     use rand::SeedableRng;
