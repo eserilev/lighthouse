@@ -65,7 +65,6 @@ pub(crate) enum CouplingError {
     DataColumnPeerFailure {
         error: String,
         faulty_peers: Vec<(ColumnIndex, PeerId)>,
-        action: PeerAction,
         exceeded_retries: bool,
     },
     BlobPeerFailure(String),
@@ -255,7 +254,6 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
                 if let Err(CouplingError::DataColumnPeerFailure {
                     error: _,
                     faulty_peers,
-                    action: _,
                     exceeded_retries: _,
                 }) = &resp
                 {
@@ -379,7 +377,6 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
                     return Err(CouplingError::DataColumnPeerFailure {
                         error: format!("No columns for block {block_root:?} with data"),
                         faulty_peers: responsible_peers,
-                        action: PeerAction::LowToleranceError,
                         exceeded_retries,
 
                     });
@@ -404,7 +401,6 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
                     return Err(CouplingError::DataColumnPeerFailure {
                         error: format!("Peers did not return column for block_root {block_root:?} {naughty_peers:?}"),
                         faulty_peers: naughty_peers,
-                        action: PeerAction::LowToleranceError,
                         exceeded_retries
                     });
                 }
@@ -482,7 +478,7 @@ mod tests {
         PeerAction, PeerId,
         service::api_types::{
             BlobsByRangeRequestId, BlocksByRangeRequestId, ComponentsByRangeRequestId,
-            DataColumnsByRangeRequestId, Id, RangeRequestId,
+            DataColumnsByRangeRequestId, DataColumnsByRangeRequester, Id, RangeRequestId,
         },
     };
     use rand::SeedableRng;
@@ -818,7 +814,6 @@ mod tests {
             error,
             faulty_peers,
             exceeded_retries,
-            action: _,
         }) = result
         {
             assert!(error.contains("Peers did not return column"));
@@ -1012,7 +1007,6 @@ mod tests {
             error: _,
             faulty_peers,
             exceeded_retries,
-            action: _,
         }) = result
         {
             assert_eq!(faulty_peers.len(), 1); // column 2 missing

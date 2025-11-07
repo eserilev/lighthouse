@@ -106,9 +106,7 @@ impl<E: EthSpec> SignedExecutionPayloadEnvelope<E> {
     }
 
     pub fn num_expected_blobs(&self) -> usize {
-        self.message()
-            .blob_kzg_commitments()
-            .len()
+        self.message().blob_kzg_commitments().len()
     }
 }
 
