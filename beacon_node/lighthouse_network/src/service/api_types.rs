@@ -130,6 +130,18 @@ pub enum RangeRequestId {
     BackfillSync { batch_id: Epoch },
 }
 
+impl RangeRequestId {
+    pub fn get_batch_epoch(&self) -> Epoch {
+        match self {
+            RangeRequestId::RangeSync {
+                chain_id: _,
+                batch_id,
+            } => *batch_id,
+            RangeRequestId::BackfillSync { batch_id } => *batch_id,
+        }
+    }
+}
+
 // TODO(das) refactor in a separate PR. We might be able to remove this and replace
 // [`DataColumnsByRootRequestId`] with a [`SingleLookupReqId`].
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]

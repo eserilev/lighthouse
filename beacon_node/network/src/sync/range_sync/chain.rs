@@ -1137,12 +1137,15 @@ impl<T: BeaconChainTypes> SyncingChain<T> {
                 .cloned()
                 .collect::<HashSet<_>>();
 
+            let fork_name = self.beacon_chain.spec.fork_name_at_epoch(batch_id);
+
             match network.retry_columns_by_range(
                 id,
                 &synced_peers,
                 &failed_peers,
                 req,
                 &failed_columns,
+                fork_name,
             ) {
                 Ok(_) => {
                     // inform the batch about the new request

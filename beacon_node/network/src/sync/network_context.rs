@@ -58,7 +58,7 @@ use tracing::{Span, debug, debug_span, error, warn};
 use types::blob_sidecar::FixedBlobSidecarList;
 use types::{
     BlobSidecar, BlockImportSource, ColumnIndex, DataColumnSidecar, DataColumnSidecarList, EthSpec,
-    ForkContext, Hash256, SignedBeaconBlock, SignedExecutionPayloadEnvelope, Slot,
+    ForkContext, ForkName, Hash256, SignedBeaconBlock, SignedExecutionPayloadEnvelope, Slot,
 };
 
 pub mod custody;
@@ -490,11 +490,53 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
         active_request_count_by_peer
     }
 
+    pub fn retry_columns_by_range_post_gloas(
+        &mut self,
+        id: Id,
+        peers: &HashSet<PeerId>,
+        peers_to_deprioritize: &HashSet<PeerId>,
+        request: BlocksByRangeRequest,
+        failed_columns: &HashSet<ColumnIndex>,
+    ) -> Result<(), String> {
+        let Some((requester, parent_request_span)) = self
+            .envelopes_by_range_requests
+            .iter()
+            .find_map(|(key, value)| {
+                if key.id == id {
+                    Some((key.requester, value.request_span.clone()))
+                } else {
+                    None
+                }
+            })
+        else {
+            return Err("request id not present".to_string());
+        };
+
+        let id = self.retry_columns_by_range_inner(
+            requester,
+            id,
+            peers,
+            peers_to_deprioritize,
+            failed_columns,
+        )?;
+
+        // instead of creating a new `RangeBlockEnvelopesRequest`, we reinsert
+        // the new requests created for the failed requests
+        let Some(range_request) = self.envelopes_by_range_requests.get_mut(&id) else {
+            return Err(
+                "retrying custody request for range request that does not exist".to_string(),
+            );
+        };
+
+        range_request.reinsert_failed_column_requests(data_column_requests)?;
+        Ok(())
+    }
+
     /// Retries only the specified failed columns by requesting them again.
     ///
     /// Note: This function doesn't retry the whole batch, but retries specific requests within
     /// the batch.
-    pub fn retry_columns_by_range(
+    pub fn retry_columns_by_range_pre_gloas(
         &mut self,
         id: Id,
         peers: &HashSet<PeerId>,
@@ -516,6 +558,67 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
             return Err("request id not present".to_string());
         };
 
+        let id = self.retry_columns_by_range_inner(
+            requester,
+            id,
+            peers,
+            peers_to_deprioritize,
+            failed_columns,
+        )?;
+
+        // instead of creating a new `RangeBlockComponentsRequest`, we reinsert
+        // the new requests created for the failed requests
+        let Some(range_request) = self.components_by_range_requests.get_mut(&id) else {
+            return Err(
+                "retrying custody request for range request that does not exist".to_string(),
+            );
+        };
+
+        range_request.reinsert_failed_column_requests(data_column_requests)?;
+        Ok(())
+    }
+
+    /// Retries only the specified failed columns by requesting them again.
+    ///
+    /// Note: This function doesn't retry the whole batch, but retries specific requests within
+    /// the batch.
+    pub fn retry_columns_by_range(
+        &mut self,
+        id: Id,
+        peers: &HashSet<PeerId>,
+        peers_to_deprioritize: &HashSet<PeerId>,
+        request: BlocksByRangeRequest,
+        failed_columns: &HashSet<ColumnIndex>,
+        fork_name: ForkName,
+    ) -> Result<(), String> {
+        if fork_name.gloas_enabled() {
+            self.retry_columns_by_range_post_gloas(
+                id,
+                peers,
+                peers_to_deprioritize,
+                request,
+                failed_columns,
+            )?;
+        } else {
+            self.retry_columns_by_range_pre_gloas(
+                id,
+                peers,
+                peers_to_deprioritize,
+                request,
+                failed_columns,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn retry_columns_by_range_inner(
+        &mut self,
+        requester: RangeRequestId,
+        id: Id,
+        peers: &HashSet<PeerId>,
+        peers_to_deprioritize: &HashSet<PeerId>,
+        failed_columns: &HashSet<ColumnIndex>,
+    ) -> Result<ComponentsByRangeRequestId, String> {
         let active_request_count_by_peer = self.active_request_count_by_peer();
 
         debug!(
@@ -560,16 +663,7 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("{:?}", e))?;
 
-        // instead of creating a new `RangeBlockComponentsRequest`, we reinsert
-        // the new requests created for the failed requests
-        let Some(range_request) = self.components_by_range_requests.get_mut(&id) else {
-            return Err(
-                "retrying custody request for range request that does not exist".to_string(),
-            );
-        };
-
-        range_request.reinsert_failed_column_requests(data_column_requests)?;
-        Ok(())
+        id
     }
 
     /// A blocks by range request sent by the range sync algorithm
@@ -719,18 +813,36 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
             .transpose()?;
 
         let epoch = Slot::new(*request.start_slot()).epoch(T::EthSpec::slots_per_epoch());
-        let info = RangeBlockComponentsRequest::new(
-            blocks_req_id,
-            blobs_req_id,
-            data_column_requests.map(|data_column_requests| {
-                (
-                    data_column_requests,
-                    self.chain.sampling_columns_for_epoch(epoch).to_vec(),
-                )
-            }),
-            range_request_span,
-        );
-        self.components_by_range_requests.insert(id, info);
+
+        let fork_name = self.chain.spec.fork_name_at_epoch(epoch);
+
+        if fork_name.gloas_enabled() {
+            let info = RangeBlockEnvelopesRequest::new(
+                blocks_req_id,
+                payloads_requests,
+                data_column_requests.map(|data_column_requests| {
+                    (
+                        data_column_requests,
+                        self.chain.sampling_columns_for_epoch(epoch).to_vec(),
+                    )
+                }),
+                range_request_span,
+            );
+            self.envelopes_by_range_requests.insert(id, info);
+        } else {
+            let info = RangeBlockComponentsRequest::new(
+                blocks_req_id,
+                blobs_req_id,
+                data_column_requests.map(|data_column_requests| {
+                    (
+                        data_column_requests,
+                        self.chain.sampling_columns_for_epoch(epoch).to_vec(),
+                    )
+                }),
+                range_request_span,
+            );
+            self.components_by_range_requests.insert(id, info);
+        }
 
         Ok(id.id)
     }
@@ -855,7 +967,6 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
                 error,
                 faulty_peers: _,
                 exceeded_retries,
-                action: _,
             }) = &blocks_result
             {
                 // Remove the entry if it's a peer failure **and** retry counter is exceeded

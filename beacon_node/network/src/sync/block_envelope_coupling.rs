@@ -61,7 +61,7 @@ pub struct RangeBlockEnvelopesRequest<E: EthSpec> {
     >,
     /// Data column sidecars we have received awaiting to be paired with their corresponding payload
     data_column_requests: DataColumnRequests<E>,
-    request_span: Span,
+    pub request_span: Span,
 }
 
 impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
@@ -203,7 +203,6 @@ impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
         if let Err(CouplingError::DataColumnPeerFailure {
             error: _,
             faulty_peers,
-            action: _,
             exceeded_retries: _,
         }) = &resp
         {
@@ -229,14 +228,14 @@ impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
             .into_iter()
             .map(|payload| (payload.message().beacon_block_root(), payload))
             .collect::<HashMap<_, _>>();
-        
+
         for block in blocks {
             let block_root = get_block_root(&block);
             let payload = block_root_to_payload.remove(&block_root);
             let block_and_payload = BlockAndPayload {
                 block_root,
                 block,
-                execution_payload_envelope: payload
+                execution_payload_envelope: payload,
             };
             coupled_blocks_and_payloads.push(block_and_payload);
         }
@@ -255,7 +254,7 @@ impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
     ) -> Result<(), CouplingError> {
         let coupled_blocks_and_payloads = Self::couple_blocks_and_payloads(blocks, payloads)?;
 
-         // Group data columns by block_root and index
+        // Group data columns by block_root and index
         let mut data_columns_by_block =
             HashMap::<Hash256, HashMap<ColumnIndex, Arc<DataColumnSidecar<E>>>>::new();
 
@@ -291,12 +290,9 @@ impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
             };
 
             if payload.num_expected_blobs() > 0 {
-
             } else {
-
             }
             rpc_blocks.push(if block.num_expected_blobs() > 0 {
-                
             } else {
                 // Block has no data, expects zero columns
                 RpcBlock::new_without_blobs(Some(block_root), block)
@@ -348,7 +344,6 @@ impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
                     return Err(CouplingError::DataColumnPeerFailure {
                         error: format!("No columns for block {block_root:?} with data"),
                         faulty_peers: responsible_peers,
-                        action: PeerAction::LowToleranceError,
                         exceeded_retries,
 
                     });
@@ -373,7 +368,6 @@ impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
                     return Err(CouplingError::DataColumnPeerFailure {
                         error: format!("Peers did not return column for block_root {block_root:?} {naughty_peers:?}"),
                         faulty_peers: naughty_peers,
-                        action: PeerAction::LowToleranceError,
                         exceeded_retries
                     });
                 }

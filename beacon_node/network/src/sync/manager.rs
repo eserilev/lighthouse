@@ -1393,69 +1393,75 @@ impl<T: BeaconChainTypes> SyncManager<T> {
         peer_id: PeerId,
         range_block_component: RangeBlockComponent<T::EthSpec>,
     ) {
-        // TODO(EIP-7732) make this fork aware so we can route to gloas code path
-        if let Some(resp) = self
-            .network
-            .range_block_component_response(range_request_id, range_block_component)
-        {
-            match resp {
-                Ok(blocks) => {
-                    match range_request_id.requester {
-                        RangeRequestId::RangeSync { chain_id, batch_id } => {
-                            self.range_sync.blocks_by_range_response(
-                                &mut self.network,
-                                peer_id,
-                                chain_id,
-                                batch_id,
-                                range_request_id.id,
-                                blocks,
-                            );
-                            self.update_sync_state();
-                        }
-                        RangeRequestId::BackfillSync { batch_id } => {
-                            match self.backfill_sync.on_block_response(
-                                &mut self.network,
-                                batch_id,
-                                &peer_id,
-                                range_request_id.id,
-                                blocks,
-                            ) {
-                                Ok(ProcessResult::SyncCompleted) => self.update_sync_state(),
-                                Ok(ProcessResult::Successful) => {}
-                                Err(_error) => {
-                                    // The backfill sync has failed, errors are reported
-                                    // within.
-                                    self.update_sync_state();
+        let epoch = id.requester.get_batch_epoch();
+        let fork_name = self.chain.spec.fork_name_at_epoch(epoch);
+
+        if fork_name.gloas_enabled() {
+        } else {
+            // TODO(EIP-7732) make this fork aware so we can route to gloas code path
+            if let Some(resp) = self
+                .network
+                .range_block_component_response(range_request_id, range_block_component)
+            {
+                match resp {
+                    Ok(blocks) => {
+                        match range_request_id.requester {
+                            RangeRequestId::RangeSync { chain_id, batch_id } => {
+                                self.range_sync.blocks_by_range_response(
+                                    &mut self.network,
+                                    peer_id,
+                                    chain_id,
+                                    batch_id,
+                                    range_request_id.id,
+                                    blocks,
+                                );
+                                self.update_sync_state();
+                            }
+                            RangeRequestId::BackfillSync { batch_id } => {
+                                match self.backfill_sync.on_block_response(
+                                    &mut self.network,
+                                    batch_id,
+                                    &peer_id,
+                                    range_request_id.id,
+                                    blocks,
+                                ) {
+                                    Ok(ProcessResult::SyncCompleted) => self.update_sync_state(),
+                                    Ok(ProcessResult::Successful) => {}
+                                    Err(_error) => {
+                                        // The backfill sync has failed, errors are reported
+                                        // within.
+                                        self.update_sync_state();
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                Err(e) => match range_request_id.requester {
-                    RangeRequestId::RangeSync { chain_id, batch_id } => {
-                        self.range_sync.inject_error(
-                            &mut self.network,
-                            peer_id,
-                            batch_id,
-                            chain_id,
-                            range_request_id.id,
-                            e,
-                        );
-                        self.update_sync_state();
-                    }
-                    RangeRequestId::BackfillSync { batch_id } => {
-                        match self.backfill_sync.inject_error(
-                            &mut self.network,
-                            batch_id,
-                            &peer_id,
-                            range_request_id.id,
-                            e,
-                        ) {
-                            Ok(_) => {}
-                            Err(_) => self.update_sync_state(),
+                    Err(e) => match range_request_id.requester {
+                        RangeRequestId::RangeSync { chain_id, batch_id } => {
+                            self.range_sync.inject_error(
+                                &mut self.network,
+                                peer_id,
+                                batch_id,
+                                chain_id,
+                                range_request_id.id,
+                                e,
+                            );
+                            self.update_sync_state();
                         }
-                    }
-                },
+                        RangeRequestId::BackfillSync { batch_id } => {
+                            match self.backfill_sync.inject_error(
+                                &mut self.network,
+                                batch_id,
+                                &peer_id,
+                                range_request_id.id,
+                                e,
+                            ) {
+                                Ok(_) => {}
+                                Err(_) => self.update_sync_state(),
+                            }
+                        }
+                    },
+                }
             }
         }
     }
