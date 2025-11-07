@@ -10,6 +10,7 @@ use crate::sync::network_context::{RangeRequestId, RpcRequestSendError, RpcRespo
 use crate::sync::{BatchProcessResult, network_context::SyncNetworkContext};
 use beacon_chain::BeaconChainTypes;
 use beacon_chain::block_verification_types::RpcBlock;
+use beacon_chain::envelope_verification_types::AvailableBlockAndEnvelope;
 use lighthouse_network::service::api_types::Id;
 use lighthouse_network::{PeerAction, PeerId};
 use lighthouse_tracing::SPAN_SYNCING_CHAIN;
@@ -255,6 +256,59 @@ impl<T: BeaconChainTypes> SyncingChain<T> {
         // first slot of the current target epoch
         self.processing_target
             .start_slot(T::EthSpec::slots_per_epoch())
+    }
+
+    pub fn on_block_response_post_gloas(
+        &mut self,
+        network: &mut SyncNetworkContext<T>,
+        batch_id: BatchId,
+        peer_id: &PeerId,
+        request_id: Id,
+        blocks: Vec<AvailableBlockAndEnvelope<T::EthSpec>>,
+    ) -> ProcessingResult {
+        let _guard = self.span.clone().entered();
+        // check if we have this batch
+        let batch = match self.batches.get_mut(&batch_id) {
+            None => {
+                debug!(epoch = %batch_id, "Received a block for unknown batch");
+                // A batch might get removed when the chain advances, so this is non fatal.
+                return Ok(KeepChain);
+            }
+            Some(batch) => {
+                // A batch could be retried without the peer failing the request (disconnecting/
+                // sending an error /timeout) if the peer is removed from the chain for other
+                // reasons. Check that this block belongs to the expected peer, and that the
+                // request_id matches
+                // TODO(das): removed peer_id matching as the node may request a different peer for data
+                // columns.
+                if !batch.is_expecting_request_id(&request_id) {
+                    return Ok(KeepChain);
+                }
+                batch
+            }
+        };
+
+        // A stream termination has been sent. This batch has ended. Process a completed batch.
+        // Remove the request from the peer's active batches
+
+        // TODO(das): should use peer group here https://github.com/sigp/lighthouse/issues/6258
+        let received = blocks.len();
+        batch.download_completed(blocks, *peer_id)?;
+        let awaiting_batches = batch_id
+            .saturating_sub(self.optimistic_start.unwrap_or(self.processing_target))
+            / EPOCHS_PER_BATCH;
+        debug!(
+            epoch = %batch_id,
+            blocks = received,
+            batch_state = self.visualize_batch_state(),
+            %awaiting_batches,
+            %peer_id,
+            "Batch downloaded"
+        );
+
+        // pre-emptively request more blocks from peers whilst we process current blocks,
+        self.request_batches(network)?;
+        self.process_completed_batches(network)
     }
 
     /// A block has been received for a batch on this chain.

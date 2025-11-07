@@ -48,6 +48,7 @@ use crate::sync::BatchProcessResult;
 use crate::sync::batch::BatchId;
 use crate::sync::network_context::{RpcResponseError, SyncNetworkContext};
 use beacon_chain::block_verification_types::RpcBlock;
+use beacon_chain::envelope_verification_types::AvailableBlockAndEnvelope;
 use beacon_chain::{BeaconChain, BeaconChainTypes};
 use lighthouse_network::rpc::GoodbyeReason;
 use lighthouse_network::service::api_types::Id;
@@ -193,6 +194,36 @@ where
                 );
                 self.chains
                     .update(network, &local_info, &mut self.awaiting_head_peers);
+            }
+        }
+    }
+
+    pub fn blocks_by_range_response_post_gloas(
+        &mut self,
+        network: &mut SyncNetworkContext<T>,
+        peer_id: PeerId,
+        chain_id: ChainId,
+        batch_id: BatchId,
+        request_id: Id,
+        blocks_and_envelopes: Vec<AvailableBlockAndEnvelope<T::EthSpec>>,
+    ) {
+        // check if this chunk removes the chain
+        match self.chains.call_by_id(chain_id, |chain| {
+            chain.on_block_response(network, batch_id, &peer_id, request_id, blocks)
+        }) {
+            Ok((removed_chain, sync_type)) => {
+                if let Some((removed_chain, remove_reason)) = removed_chain {
+                    self.on_chain_removed(
+                        removed_chain,
+                        sync_type,
+                        remove_reason,
+                        network,
+                        "block response",
+                    );
+                }
+            }
+            Err(_) => {
+                trace!(%chain_id, "BlocksByRange response for removed chain")
             }
         }
     }
