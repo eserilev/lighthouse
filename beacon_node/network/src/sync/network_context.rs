@@ -666,7 +666,7 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
         id
     }
 
-    /// A blocks by range request sent by the range sync algorithm
+    /// A blocks by range request sent by the range sync algorithm pre-Gloa
     pub fn block_components_by_range_request(
         &mut self,
         batch_type: ByRangeRequestType,
@@ -767,26 +767,6 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
             None
         };
 
-        let payload_requests =
-            if matches!(batch_type, ByRangeRequestType::BlocksAndPayloadsAndColumns) {
-                Some(self.send_execution_payload_envelopes_by_range_request(
-                    block_peer,
-                    ExecutionPayloadEnvelopesByRangeRequest {
-                        start_slot: *request.start_slot(),
-                        count: *request.count(),
-                    },
-                    id,
-                    new_range_request_span!(
-                        self,
-                        "outgoing_execution_payload_envelopes_by_range",
-                        range_request_span.clone(),
-                        block_peer
-                    ),
-                )?)
-            } else {
-                None
-            };
-
         let data_column_requests = columns_by_range_peers_to_request
             .map(|columns_by_range_peers_to_request| {
                 columns_by_range_peers_to_request
@@ -845,6 +825,19 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
         }
 
         Ok(id.id)
+    }
+
+    /// A blocks by range request sent by the range sync algorithm post-Gloas
+    pub fn block_envelope_by_range_request(
+        &mut self,
+        batch_type: ByRangeRequestType,
+        request: BlocksByRangeRequest,
+        requester: RangeRequestId,
+        block_peers: &HashSet<PeerId>,
+        column_peers: &HashSet<PeerId>,
+        peers_to_deprioritize: &HashSet<PeerId>,
+    ) -> Result<Id, RpcRequestSendError> {
+        todo!()
     }
 
     fn select_columns_by_range_peers_to_request(

@@ -1,6 +1,7 @@
 use crate::data_availability_checker::AvailabilityCheckError;
 pub use crate::data_availability_checker::{AvailableBlock, MaybeAvailableBlock};
 use crate::data_column_verification::{CustodyDataColumn, CustodyDataColumnList};
+use crate::envelope_verification_types::AvailableEnvelope;
 use crate::{PayloadVerificationOutcome, get_block_root};
 use educe::Educe;
 use ssz_types::VariableList;

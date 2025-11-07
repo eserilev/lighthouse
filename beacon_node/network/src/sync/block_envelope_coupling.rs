@@ -1,6 +1,9 @@
 use std::{collections::HashMap, sync::Arc};
 
-use beacon_chain::get_block_root;
+use beacon_chain::{
+    data_column_verification::CustodyDataColumn,
+    envelope_verification_types::AvailableBlockAndEnvelope, get_block_root,
+};
 use lighthouse_network::{
     PeerId,
     service::api_types::{
@@ -10,11 +13,14 @@ use lighthouse_network::{
 };
 use tracing::Span;
 use types::{
-    ChainSpec, ColumnIndex, DataColumnSidecarList, EthSpec, Hash256, SignedBeaconBlock,
-    SignedExecutionPayloadEnvelope, execution_payload_envelope,
+    ChainSpec, ColumnIndex, DataColumnSidecar, DataColumnSidecarList, EthSpec, Hash256,
+    SignedBeaconBlock, SignedExecutionPayloadEnvelope,
 };
 
-use crate::sync::block_sidecar_coupling::{ByRangeRequest, CouplingError};
+use crate::sync::{
+    block_sidecar_coupling::{ByRangeRequest, CouplingError},
+    network_context::MAX_COLUMN_RETRIES,
+};
 
 pub struct BlockAndPayload<E: EthSpec> {
     block_root: Hash256,
@@ -26,7 +32,7 @@ impl<E: EthSpec> BlockAndPayload<E> {
     pub fn new(
         block_root: Hash256,
         block: Arc<SignedBeaconBlock<E>>,
-        execution_payload_envelope: Arc<SignedExecutionPayloadEnvelope<E>>,
+        execution_payload_envelope: Option<Arc<SignedExecutionPayloadEnvelope<E>>>,
     ) -> Self {
         Self {
             block_root,
@@ -161,7 +167,10 @@ impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
     /// Returns `None` if not all expected requests have completed.
     /// Returns `Some(Ok(_))` with valid RPC blocks if all data is present and valid.
     /// Returns `Some(Err(_))` if there are issues coupling blocks with their data.
-    pub fn responses(&mut self, spec: &ChainSpec) -> Option<Result<(), CouplingError>> {
+    pub fn responses(
+        &mut self,
+        spec: Arc<ChainSpec>,
+    ) -> Option<Result<Vec<AvailableBlockAndEnvelope<E>>, CouplingError>> {
         let Some(blocks) = self.blocks_request.to_finished() else {
             return None;
         };
@@ -191,13 +200,14 @@ impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
             }
         }
 
-        let coupled_blocks_and_payloads = Self::couple_blocks_and_payloads(blocks, payloads)?;
-
-        let resp = Self::responses_with_custody_columns(
-            blocks.to_vec(),
+        let resp = Self::couple_responses(
+            blocks,
+            payloads,
             data_columns,
             column_to_peer_id,
-            expected_custody_columns,
+            &self.data_column_requests.expected_custody_columns,
+            self.data_column_requests.attempt,
+            spec,
         );
 
         if let Err(CouplingError::DataColumnPeerFailure {
@@ -220,8 +230,8 @@ impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
     }
 
     fn couple_blocks_and_payloads(
-        blocks: Vec<Arc<SignedBeaconBlock<E>>>,
-        payloads: Vec<Arc<SignedExecutionPayloadEnvelope<E>>>,
+        blocks: &Vec<Arc<SignedBeaconBlock<E>>>,
+        payloads: &Vec<Arc<SignedExecutionPayloadEnvelope<E>>>,
     ) -> Result<Vec<BlockAndPayload<E>>, CouplingError> {
         let mut coupled_blocks_and_payloads = vec![];
         let mut block_root_to_payload = payloads
@@ -234,8 +244,8 @@ impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
             let payload = block_root_to_payload.remove(&block_root);
             let block_and_payload = BlockAndPayload {
                 block_root,
-                block,
-                execution_payload_envelope: payload,
+                block: block.clone(),
+                execution_payload_envelope: payload.cloned(),
             };
             coupled_blocks_and_payloads.push(block_and_payload);
         }
@@ -246,25 +256,27 @@ impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
     }
 
     fn couple_responses(
-        &mut self,
-        blocks: Vec<Arc<SignedBeaconBlock<E>>>,
-        payloads: Vec<Arc<SignedExecutionPayloadEnvelope<E>>>,
+        blocks: &Vec<Arc<SignedBeaconBlock<E>>>,
+        payloads: &Vec<Arc<SignedExecutionPayloadEnvelope<E>>>,
         data_columns: DataColumnSidecarList<E>,
         column_to_peer: HashMap<u64, PeerId>,
-    ) -> Result<(), CouplingError> {
+        expected_custody_columns: &[ColumnIndex],
+        attempt: usize,
+        spec: Arc<ChainSpec>,
+    ) -> Result<Vec<AvailableBlockAndEnvelope<E>>, CouplingError> {
         let coupled_blocks_and_payloads = Self::couple_blocks_and_payloads(blocks, payloads)?;
 
         // Group data columns by block_root and index
         let mut data_columns_by_block =
             HashMap::<Hash256, HashMap<ColumnIndex, Arc<DataColumnSidecar<E>>>>::new();
 
-        for column in data_columns {
+        for column in data_columns.iter() {
             let block_root = column.block_root();
             let index = column.index;
             if data_columns_by_block
                 .entry(block_root)
                 .or_default()
-                .insert(index, column)
+                .insert(index, column.clone())
                 .is_some()
             {
                 // `DataColumnsByRangeRequestItems` ensures that we do not request any duplicated indices across all peers
@@ -278,66 +290,25 @@ impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
 
         // Now iterate all available coupled_blocks_and_payloads ensuring that the block roots of each block + payload coupling and data column match.
         // Aslo ensure that we have columns for our custody requirements
-        let mut available_payloads = Vec::with_capacity(coupled_blocks_and_payloads.len());
+        let mut available_blocks_and_envelopes =
+            Vec::with_capacity(coupled_blocks_and_payloads.len());
 
-        let exceeded_retries = self.data_column_requests.attempt >= MAX_COLUMN_RETRIES;
+        let exceeded_retries = attempt >= MAX_COLUMN_RETRIES;
 
         for coupled_block_and_payload in coupled_blocks_and_payloads {
             let block_root = coupled_block_and_payload.block_root;
             let Some(payload) = coupled_block_and_payload.execution_payload_envelope else {
-                // TODO(EIP-7732) this is an available complete slot with no data
-                todo!()
+                available_blocks_and_envelopes.push(AvailableBlockAndEnvelope::new(
+                    block_root,
+                    coupled_block_and_payload.block,
+                    None,
+                    vec![],
+                    spec.clone(),
+                ));
+                continue;
             };
 
             if payload.num_expected_blobs() > 0 {
-            } else {
-            }
-            rpc_blocks.push(if block.num_expected_blobs() > 0 {
-            } else {
-                // Block has no data, expects zero columns
-                RpcBlock::new_without_blobs(Some(block_root), block)
-            });
-        }
-
-        Ok(())
-    }
-
-    fn responses_with_custody_columns(
-        payloads: Vec<Arc<SignedExecutionPayloadEnvelope<E>>>,
-        data_columns: DataColumnSidecarList<E>,
-        column_to_peer: HashMap<u64, PeerId>,
-        expects_custody_columns: &[ColumnIndex],
-    ) -> Result<Vec<RpcBlock<E>>, CouplingError> {
-        // Group data columns by block_root and index
-        let mut data_columns_by_block =
-            HashMap::<Hash256, HashMap<ColumnIndex, Arc<DataColumnSidecar<E>>>>::new();
-
-        for column in data_columns {
-            let block_root = column.block_root();
-            let index = column.index;
-            if data_columns_by_block
-                .entry(block_root)
-                .or_default()
-                .insert(index, column)
-                .is_some()
-            {
-                // `DataColumnsByRangeRequestItems` ensures that we do not request any duplicated indices across all peers
-                // we request the data from.
-                // If there are duplicated indices, its likely a peer sending us the same index multiple times.
-                // However we can still proceed even if there are extra columns, just log an error.
-                tracing::debug!(?block_root, ?index, "Repeated column for block_root");
-                continue;
-            }
-        }
-
-        // Now iterate all blocks ensuring that the block roots of each block and data column match,
-        // plus we have columns for our custody requirements
-        let mut available_payloads = Vec::with_capacity(blocks.len());
-
-        let exceeded_retries = attempt >= MAX_COLUMN_RETRIES;
-        for payload in payloads {
-            let block_root = get_block_root(&block);
-            rpc_blocks.push(if block.num_expected_blobs() > 0 {
                 let Some(mut data_columns_by_index) = data_columns_by_block.remove(&block_root)
                 else {
                     let responsible_peers = column_to_peer.iter().map(|c| (*c.0, *c.1)).collect();
@@ -345,13 +316,13 @@ impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
                         error: format!("No columns for block {block_root:?} with data"),
                         faulty_peers: responsible_peers,
                         exceeded_retries,
-
                     });
                 };
 
                 let mut custody_columns = vec![];
                 let mut naughty_peers = vec![];
-                for index in expects_custody_columns {
+
+                for index in expected_custody_columns {
                     // Safe to convert to `CustodyDataColumn`: we have asserted that the index of
                     // this column is in the set of `expects_custody_columns` and with the expected
                     // block root, so for the expected epoch of this batch.
@@ -359,16 +330,21 @@ impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
                         custody_columns.push(CustodyDataColumn::from_asserted_custody(data_column));
                     } else {
                         let Some(responsible_peer) = column_to_peer.get(index) else {
-                            return Err(CouplingError::InternalError(format!("Internal error, no request made for column {}", index)));
+                            return Err(CouplingError::InternalError(format!(
+                                "Internal error, no request made for column {}",
+                                index
+                            )));
                         };
                         naughty_peers.push((*index, *responsible_peer));
                     }
                 }
                 if !naughty_peers.is_empty() {
                     return Err(CouplingError::DataColumnPeerFailure {
-                        error: format!("Peers did not return column for block_root {block_root:?} {naughty_peers:?}"),
+                        error: format!(
+                            "Peers did not return column for block_root {block_root:?} {naughty_peers:?}"
+                        ),
                         faulty_peers: naughty_peers,
-                        exceeded_retries
+                        exceeded_retries,
                     });
                 }
 
@@ -383,22 +359,24 @@ impl<E: EthSpec> RangeBlockEnvelopesRequest<E> {
                     );
                 }
 
-                RpcBlock::new_with_custody_columns(Some(block_root), block, custody_columns)
-                    .map_err(|e| CouplingError::InternalError(format!("{:?}", e)))?
+                available_blocks_and_envelopes.push(AvailableBlockAndEnvelope::new(
+                    block_root,
+                    coupled_block_and_payload.block,
+                    Some(payload),
+                    custody_columns,
+                    spec.clone(),
+                ));
             } else {
-                // Block has no data, expects zero columns
-                RpcBlock::new_without_blobs(Some(block_root), block)
-            });
+                available_blocks_and_envelopes.push(AvailableBlockAndEnvelope::new(
+                    block_root,
+                    coupled_block_and_payload.block,
+                    Some(payload),
+                    vec![],
+                    spec.clone(),
+                ));
+            }
         }
 
-        // Assert that there are no columns left for other blocks
-        if !data_columns_by_block.is_empty() {
-            let remaining_roots = data_columns_by_block.keys().collect::<Vec<_>>();
-            // log the error but don't return an error, we can still progress with responses.
-            // this is most likely an internal error with overrequesting or a client bug.
-            tracing::debug!(?remaining_roots, "Not all columns consumed for block");
-        }
-
-        Ok(rpc_blocks)
+        Ok(available_blocks_and_envelopes)
     }
 }
