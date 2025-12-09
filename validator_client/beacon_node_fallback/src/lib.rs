@@ -211,14 +211,13 @@ impl Serialize for CandidateInfo {
 /// for a query.
 #[derive(Clone, Debug)]
 pub struct CandidateBeaconNode {
-    pub index: usize,
     pub beacon_node: BeaconNodeHttpClient,
     pub health: Arc<RwLock<Result<BeaconNodeHealth, CandidateError>>>,
 }
 
 impl PartialEq for CandidateBeaconNode {
     fn eq(&self, other: &Self) -> bool {
-        self.index == other.index && self.beacon_node == other.beacon_node
+        self.beacon_node == other.beacon_node
     }
 }
 
@@ -226,9 +225,8 @@ impl Eq for CandidateBeaconNode {}
 
 impl CandidateBeaconNode {
     /// Instantiate a new node.
-    pub fn new(beacon_node: BeaconNodeHttpClient, index: usize) -> Self {
+    pub fn new(beacon_node: BeaconNodeHttpClient) -> Self {
         Self {
-            index,
             beacon_node,
             health: Arc::new(RwLock::new(Err(CandidateError::Uninitialized))),
         }
@@ -283,7 +281,7 @@ impl CandidateBeaconNode {
                     };
 
                     let new_health = BeaconNodeHealth::from_status(
-                        self.index,
+                        self.beacon_node.index(),
                         sync_distance,
                         head,
                         optimistic_status,
@@ -492,7 +490,7 @@ impl<T: SlotClock> BeaconNodeFallback<T> {
             }
 
             candidate_info.push(CandidateInfo {
-                index: candidate.index,
+                index: candidate.beacon_node.index(),
                 endpoint: candidate.beacon_node.to_string(),
                 health,
             });
@@ -524,7 +522,11 @@ impl<T: SlotClock> BeaconNodeFallback<T> {
             .into_iter()
             .enumerate()
             .map(|(index, url)| {
-                CandidateBeaconNode::new(BeaconNodeHttpClient::new(url, timeouts.clone()), index)
+                CandidateBeaconNode::new(BeaconNodeHttpClient::new_with_index(
+                    url,
+                    timeouts.clone(),
+                    index,
+                ))
             })
             .collect();
 
@@ -638,9 +640,24 @@ impl<T: SlotClock> BeaconNodeFallback<T> {
             .collect()
     }
 
+    /// A wrapper for `first_success_with_index` when the beacon node `index` is not needed.
+    pub async fn first_success<F, O, Err, R>(&self, func: F) -> Result<O, Errors<Err>>
+    where
+        F: Fn(BeaconNodeHttpClient) -> R,
+        R: Future<Output = Result<O, Err>>,
+        Err: Debug,
+    {
+        self.first_success_with_index(func)
+            .await
+            .map(|(val, _)| val)
+    }
+
     /// Run `func` against each candidate in `self`, returning immediately if a result is found.
     /// Otherwise, return all the errors encountered along the way.
-    pub async fn first_success<F, O, Err, R>(&self, func: F) -> Result<O, Errors<Err>>
+    pub async fn first_success_with_index<F, O, Err, R>(
+        &self,
+        func: F,
+    ) -> Result<(O, usize), Errors<Err>>
     where
         F: Fn(BeaconNodeHttpClient) -> R,
         R: Future<Output = Result<O, Err>>,
@@ -695,7 +712,7 @@ impl<T: SlotClock> BeaconNodeFallback<T> {
         &self,
         preferred_index: Option<usize>,
         func: F,
-    ) -> Result<O, Errors<Err>>
+    ) -> Result<(O, usize), Errors<Err>>
     where
         F: Fn(BeaconNodeHttpClient) -> R + Clone,
         R: Future<Output = Result<O, Err>>,
@@ -704,7 +721,9 @@ impl<T: SlotClock> BeaconNodeFallback<T> {
         // Try the preferred beacon node first if it exists
         if let Some(preferred_idx) = preferred_index
             && let candidates = self.candidates.read().await
-            && let Some(preferred_candidate) = candidates.iter().find(|c| c.index == preferred_idx)
+            && let Some(preferred_candidate) = candidates
+                .iter()
+                .find(|c| c.beacon_node.index() == preferred_idx)
         {
             let preferred_node = preferred_candidate.beacon_node.clone();
             drop(candidates);
@@ -712,20 +731,20 @@ impl<T: SlotClock> BeaconNodeFallback<T> {
             match Self::run_on_candidate(preferred_node, &func).await {
                 Ok(val) => return Ok(val),
                 Err(_) => {
-                    return self.first_success(func).await;
+                    return self.first_success_with_index(func).await;
                 }
             }
         }
 
         // Fall back to normal first_success behavior
-        self.first_success(func).await
+        self.first_success_with_index(func).await
     }
 
     /// Run the future `func` on `candidate` while reporting metrics.
     async fn run_on_candidate<F, R, Err, O>(
         candidate: BeaconNodeHttpClient,
         func: F,
-    ) -> Result<O, (String, Error<Err>)>
+    ) -> Result<(O, usize), (String, Error<Err>)>
     where
         F: Fn(BeaconNodeHttpClient) -> R,
         R: Future<Output = Result<O, Err>>,
@@ -736,7 +755,7 @@ impl<T: SlotClock> BeaconNodeFallback<T> {
         // There exists a race condition where `func` may be called when the candidate is
         // actually not ready. We deem this an acceptable inefficiency.
         match func(candidate.clone()).await {
-            Ok(val) => Ok(val),
+            Ok(val) => Ok((val, candidate.index())),
             Err(e) => {
                 debug!(
                     node = %candidate,
@@ -881,11 +900,12 @@ mod tests {
         let execution_status = ExecutionEngineHealth::Healthy;
 
         fn new_candidate(index: usize) -> CandidateBeaconNode {
-            let beacon_node = BeaconNodeHttpClient::new(
+            let beacon_node = BeaconNodeHttpClient::new_with_index(
                 SensitiveUrl::parse(&format!("http://example_{index}.com")).unwrap(),
                 Timeouts::set_all(Duration::from_secs(index as u64)),
+                index,
             );
-            CandidateBeaconNode::new(beacon_node, index)
+            CandidateBeaconNode::new(beacon_node)
         }
 
         let candidate_1 = new_candidate(1);
@@ -988,11 +1008,10 @@ mod tests {
         index: usize,
         spec: &ChainSpec,
     ) -> (MockBeaconNode<E>, CandidateBeaconNode) {
-        let mut mock_beacon_node = MockBeaconNode::<E>::new().await;
+        let mut mock_beacon_node = MockBeaconNode::<E>::new(index).await;
         mock_beacon_node.mock_config_spec(spec);
 
-        let beacon_node =
-            CandidateBeaconNode::new(mock_beacon_node.beacon_api_client.clone(), index);
+        let beacon_node = CandidateBeaconNode::new(mock_beacon_node.beacon_api_client.clone());
 
         (mock_beacon_node, beacon_node)
     }
@@ -1145,6 +1164,139 @@ mod tests {
         // - the second time is when it calls all 3 mock beacon nodes and all fails in the first pass,
         // - which gives the third call because the function gives a second pass if no candidates succeeded in the first pass
         mock1.expect(3).assert();
+        mock2.expect(3).assert();
+    }
+
+    #[tokio::test]
+    async fn first_success_from_index_tries_preferred_node_first() {
+        let spec = Arc::new(MainnetEthSpec::default_spec());
+        let (mut mock_beacon_node_1, beacon_node_1) = new_mock_beacon_node(0, &spec).await;
+        let (mut mock_beacon_node_2, beacon_node_2) = new_mock_beacon_node(1, &spec).await;
+        let (mut mock_beacon_node_3, beacon_node_3) = new_mock_beacon_node(2, &spec).await;
+
+        let beacon_node_fallback = create_beacon_node_fallback(
+            vec![beacon_node_1, beacon_node_2, beacon_node_3],
+            vec![],
+            spec.clone(),
+        );
+
+        let mock1 = mock_beacon_node_1.mock_offline_node();
+        let _mock2 = mock_beacon_node_2.mock_online_node();
+        let mock3 = mock_beacon_node_3.mock_online_node();
+
+        // Request with preferred_index=1 (beacon_node_2)
+        let result = beacon_node_fallback
+            .first_success_from_index(
+                Some(1),
+                |client| async move { client.get_node_version().await },
+            )
+            .await;
+
+        // Should succeed since beacon_node_2 is online
+        assert!(result.is_ok());
+
+        // mock1 should not be called since preferred node succeeds
+        mock1.expect(0).assert();
+        mock3.expect(0).assert();
+    }
+
+    #[tokio::test]
+    async fn first_success_from_index_falls_back_when_preferred_fails() {
+        let spec = Arc::new(MainnetEthSpec::default_spec());
+        let (mut mock_beacon_node_1, beacon_node_1) = new_mock_beacon_node(0, &spec).await;
+        let (mut mock_beacon_node_2, beacon_node_2) = new_mock_beacon_node(1, &spec).await;
+        let (mut mock_beacon_node_3, beacon_node_3) = new_mock_beacon_node(2, &spec).await;
+
+        let beacon_node_fallback = create_beacon_node_fallback(
+            vec![beacon_node_1, beacon_node_2, beacon_node_3],
+            vec![],
+            spec.clone(),
+        );
+
+        let _mock1 = mock_beacon_node_1.mock_online_node();
+        let mock2 = mock_beacon_node_2.mock_offline_node();
+        let _mock3 = mock_beacon_node_3.mock_offline_node();
+
+        // Request with preferred_index=1 (beacon_node_2), but it's offline
+        let result = beacon_node_fallback
+            .first_success_from_index(
+                Some(1),
+                |client| async move { client.get_node_version().await },
+            )
+            .await;
+
+        // Should succeed by falling back to beacon_node_1
+        assert!(result.is_ok());
+
+        // mock2 should be called at least once (the preferred attempt)
+        mock2.expect(1).assert();
+        // since the result was ok we can safely assume that the fallback first_success
+        // behaviour succeeded instead of checking if either of mock1/mock3 received hits
+    }
+
+    #[tokio::test]
+    async fn first_success_from_index_with_none_falls_back_to_first_success() {
+        let spec = Arc::new(MainnetEthSpec::default_spec());
+        let (mut mock_beacon_node_1, beacon_node_1) = new_mock_beacon_node(0, &spec).await;
+        let (mut mock_beacon_node_2, beacon_node_2) = new_mock_beacon_node(1, &spec).await;
+        let (mut mock_beacon_node_3, beacon_node_3) = new_mock_beacon_node(2, &spec).await;
+
+        let beacon_node_fallback = create_beacon_node_fallback(
+            vec![beacon_node_1, beacon_node_2, beacon_node_3],
+            vec![],
+            spec.clone(),
+        );
+
+        let _mock1 = mock_beacon_node_1.mock_offline_node();
+        let _mock2 = mock_beacon_node_2.mock_offline_node();
+        let mock3 = mock_beacon_node_3.mock_online_node();
+
+        // Request with preferred_index=None
+        let result = beacon_node_fallback
+            .first_success_from_index(
+                None,
+                |client| async move { client.get_node_version().await },
+            )
+            .await;
+
+        // Should succeed with beacon_node_3 in the first pass
+        assert!(result.is_ok());
+
+        // mock3 should be called once in the first pass
+        mock3.expect(1).assert();
+    }
+
+    #[tokio::test]
+    async fn first_success_from_index_all_offline() {
+        let spec = Arc::new(MainnetEthSpec::default_spec());
+        let (mut mock_beacon_node_1, beacon_node_1) = new_mock_beacon_node(0, &spec).await;
+        let (mut mock_beacon_node_2, beacon_node_2) = new_mock_beacon_node(1, &spec).await;
+        let (mut mock_beacon_node_3, beacon_node_3) = new_mock_beacon_node(2, &spec).await;
+
+        let beacon_node_fallback = create_beacon_node_fallback(
+            vec![beacon_node_1, beacon_node_2, beacon_node_3],
+            vec![],
+            spec.clone(),
+        );
+
+        let _mock1 = mock_beacon_node_1.mock_offline_node();
+        let mock2 = mock_beacon_node_2.mock_offline_node();
+        let _mock3 = mock_beacon_node_3.mock_offline_node();
+
+        // Request with preferred_index=1, but all nodes are offline
+        let result = beacon_node_fallback
+            .first_success_from_index(
+                Some(1),
+                |client| async move { client.get_node_version().await },
+            )
+            .await;
+
+        // Should fail since all nodes are offline
+        assert!(result.is_err());
+
+        // Preferred node (mock2) should be called 3 times:
+        // - 1 time for the preferred attempt
+        // - 2 more times from the fallback to first_success (first and second pass)
         mock2.expect(3).assert();
     }
 }
