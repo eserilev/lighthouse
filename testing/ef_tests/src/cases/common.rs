@@ -1,8 +1,8 @@
-use serde::Deserialize;
+use context_deserialize::ContextDeserialize;
+use serde::{Deserialize, Deserializer};
 use ssz::Encode;
 use ssz_derive::{Decode, Encode};
 use std::fmt::Debug;
-use types::ForkName;
 
 /// Macro to wrap U128 and U256 so they deserialize correctly.
 macro_rules! uint_wrapper {
@@ -40,6 +40,15 @@ macro_rules! uint_wrapper {
                 self.x.tree_hash_root()
             }
         }
+
+        impl<'de, T> ContextDeserialize<'de, T> for $wrapper_name {
+            fn context_deserialize<D>(deserializer: D, _context: T) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                <$wrapper_name>::deserialize(deserializer)
+            }
+        }
     };
 }
 
@@ -47,11 +56,9 @@ uint_wrapper!(DecimalU128, alloy_primitives::U128);
 uint_wrapper!(DecimalU256, alloy_primitives::U256);
 
 /// Trait for types that can be used in SSZ static tests.
-pub trait SszStaticType:
-    serde::de::DeserializeOwned + Encode + Clone + PartialEq + Debug + Sync
-{
-}
+pub trait SszStaticType: Encode + Clone + PartialEq + Debug + Sync {}
 
+<<<<<<< HEAD
 impl<T> SszStaticType for T where
     T: serde::de::DeserializeOwned + Encode + Clone + PartialEq + Debug + Sync
 {
@@ -70,6 +77,9 @@ pub fn previous_fork(fork_name: ForkName) -> ForkName {
         ForkName::Fulu => ForkName::Eip7805,
     }
 }
+=======
+impl<T> SszStaticType for T where T: Encode + Clone + PartialEq + Debug + Sync {}
+>>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
 
 #[macro_export]
 macro_rules! impl_bls_load_case {

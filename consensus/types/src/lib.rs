@@ -1,4 +1,4 @@
-//! Ethereum 2.0 types
+//! Ethereum Consensus types
 // Clippy lint set up
 #![cfg_attr(
     not(test),
@@ -12,37 +12,17 @@
 #[macro_use]
 pub mod test_utils;
 
-pub mod aggregate_and_proof;
-pub mod application_domain;
 pub mod attestation;
-pub mod attestation_data;
-pub mod attestation_duty;
-pub mod attester_slashing;
-pub mod beacon_block;
-pub mod beacon_block_body;
-pub mod beacon_block_header;
-pub mod beacon_committee;
-pub mod beacon_response;
-pub mod beacon_state;
-pub mod bls_to_execution_change;
-pub mod builder_bid;
-pub mod chain_spec;
-pub mod checkpoint;
-pub mod consolidation_request;
-pub mod consts;
-pub mod contribution_and_proof;
+pub mod block;
+pub mod builder;
+pub mod consolidation;
+pub mod core;
+pub mod data;
 pub mod deposit;
-pub mod deposit_data;
-pub mod deposit_message;
-pub mod deposit_request;
-pub mod deposit_tree_snapshot;
-pub mod enr_fork_id;
-pub mod eth1_data;
-pub mod eth_spec;
-pub mod execution_block_hash;
-pub mod execution_payload;
-pub mod execution_payload_header;
+pub mod execution;
+pub mod exit;
 pub mod fork;
+<<<<<<< HEAD
 pub mod fork_data;
 pub mod fork_name;
 pub mod graffiti;
@@ -93,28 +73,41 @@ pub mod slot_epoch;
 pub mod subnet_id;
 pub mod sync_aggregate;
 pub mod sync_aggregator_selection_data;
+=======
+pub mod kzg_ext;
+pub mod light_client;
+pub mod slashing;
+pub mod state;
+>>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
 pub mod sync_committee;
-pub mod sync_committee_contribution;
-pub mod sync_committee_message;
-pub mod sync_selection_proof;
-pub mod sync_subnet_id;
-pub mod validator_registration_data;
+pub mod validator;
 pub mod withdrawal;
 
-pub mod epoch_cache;
-pub mod slot_data;
-#[cfg(feature = "sqlite")]
-pub mod sqlite;
+// Temporary root level exports to maintain backwards compatibility for Lighthouse.
+pub use attestation::*;
+pub use block::*;
+pub use builder::*;
+pub use consolidation::*;
+pub use core::{consts, *};
+pub use data::*;
+pub use deposit::*;
+pub use execution::*;
+pub use exit::*;
+pub use fork::*;
+pub use kzg_ext::*;
+pub use light_client::*;
+pub use slashing::*;
+pub use state::*;
+pub use sync_committee::*;
+pub use validator::*;
+pub use withdrawal::*;
 
-pub mod blob_sidecar;
-pub mod data_column_custody_group;
-pub mod data_column_sidecar;
-pub mod data_column_subnet_id;
-pub mod light_client_header;
-pub mod non_zero_usize;
-pub mod runtime_fixed_vector;
-pub mod runtime_var_list;
+// Temporary facade modules to maintain backwards compatibility for Lighthouse.
+pub mod eth_spec {
+    pub use crate::core::EthSpec;
+}
 
+<<<<<<< HEAD
 pub use crate::activation_queue::ActivationQueue;
 pub use crate::aggregate_and_proof::{
     AggregateAndProof, AggregateAndProofBase, AggregateAndProofElectra, AggregateAndProofRef,
@@ -272,32 +265,126 @@ pub use crate::withdrawal::Withdrawal;
 pub use crate::withdrawal_credentials::WithdrawalCredentials;
 pub use crate::withdrawal_request::WithdrawalRequest;
 pub use fixed_bytes::FixedBytesExtended;
+=======
+pub mod chain_spec {
+    pub use crate::core::ChainSpec;
+}
+>>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
 
-pub type CommitteeIndex = u64;
-pub type Hash256 = fixed_bytes::Hash256;
-pub type Uint256 = fixed_bytes::Uint256;
-pub type Address = fixed_bytes::Address;
-pub type ForkVersion = [u8; 4];
-pub type BLSFieldElement = Uint256;
-pub type Blob<E> = FixedVector<u8, <E as EthSpec>::BytesPerBlob>;
-// Note on List limit:
-// - Deneb to Electra: `MaxBlobCommitmentsPerBlock`
-// - Fulu: `MaxCellsPerBlock`
-// We choose to use a single type (with the larger value from Fulu as `N`) instead of having to
-// introduce a new type for Fulu. This is to avoid messy conversions and having to add extra types
-// with no gains - as `N` does not impact serialisation at all, and only affects merkleization,
-// which we don't current do on `KzgProofs` anyway.
-pub type KzgProofs<E> = VariableList<KzgProof, <E as EthSpec>::MaxCellsPerBlock>;
-pub type VersionedHash = Hash256;
-pub type Hash64 = alloy_primitives::B64;
+pub mod beacon_block {
+    pub use crate::block::{BlindedBeaconBlock, BlockImportSource};
+}
 
-pub use bls::{
-    AggregatePublicKey, AggregateSignature, Keypair, PublicKey, PublicKeyBytes, SecretKey,
-    Signature, SignatureBytes,
-};
-pub use context_deserialize::ContextDeserialize;
-pub use context_deserialize_derive::context_deserialize;
-pub use kzg::{KzgCommitment, KzgProof, VERSIONED_HASH_VERSION_KZG};
-pub use milhouse::{self, List, Vector};
-pub use ssz_types::{typenum, typenum::Unsigned, BitList, BitVector, FixedVector, VariableList};
-pub use superstruct::superstruct;
+pub mod beacon_block_body {
+    pub use crate::kzg_ext::{KzgCommitments, format_kzg_commitments};
+}
+
+pub mod beacon_state {
+    pub use crate::state::{
+        BeaconState, BeaconStateBase, CommitteeCache, compute_committee_index_in_epoch,
+        compute_committee_range_in_epoch, epoch_committee_count,
+    };
+}
+
+pub mod graffiti {
+    pub use crate::core::GraffitiString;
+}
+
+pub mod indexed_attestation {
+    pub use crate::attestation::{IndexedAttestationBase, IndexedAttestationElectra};
+}
+
+pub mod historical_summary {
+    pub use crate::state::HistoricalSummary;
+}
+
+pub mod participation_flags {
+    pub use crate::attestation::ParticipationFlags;
+}
+
+pub mod epoch_cache {
+    pub use crate::state::{EpochCache, EpochCacheError, EpochCacheKey};
+}
+
+pub mod non_zero_usize {
+    pub use crate::core::new_non_zero_usize;
+}
+
+pub mod data_column_sidecar {
+    pub use crate::data::{
+        Cell, ColumnIndex, DataColumn, DataColumnSidecar, DataColumnSidecarError,
+        DataColumnSidecarList,
+    };
+}
+
+pub mod builder_bid {
+    pub use crate::builder::*;
+}
+
+pub mod blob_sidecar {
+    pub use crate::data::{
+        BlobIdentifier, BlobSidecar, BlobSidecarError, BlobsList, FixedBlobSidecarList,
+    };
+}
+
+pub mod payload {
+    pub use crate::execution::BlockProductionVersion;
+}
+
+pub mod execution_requests {
+    pub use crate::execution::{
+        ConsolidationRequests, DepositRequests, ExecutionRequests, RequestType, WithdrawalRequests,
+    };
+}
+
+pub mod execution_payload_envelope {
+    pub use crate::execution::{ExecutionPayloadEnvelope, SignedExecutionPayloadEnvelope};
+}
+
+pub mod data_column_custody_group {
+    pub use crate::data::{
+        CustodyIndex, compute_columns_for_custody_group, compute_ordered_custody_column_indices,
+        compute_subnets_for_node, compute_subnets_from_custody_group, get_custody_groups,
+    };
+}
+
+pub mod sync_aggregate {
+    pub use crate::sync_committee::SyncAggregateError as Error;
+}
+
+pub mod light_client_update {
+    pub use crate::light_client::consts::{
+        CURRENT_SYNC_COMMITTEE_INDEX, CURRENT_SYNC_COMMITTEE_INDEX_ELECTRA, FINALIZED_ROOT_INDEX,
+        FINALIZED_ROOT_INDEX_ELECTRA, MAX_REQUEST_LIGHT_CLIENT_UPDATES, NEXT_SYNC_COMMITTEE_INDEX,
+        NEXT_SYNC_COMMITTEE_INDEX_ELECTRA,
+    };
+}
+
+pub mod sync_committee_contribution {
+    pub use crate::sync_committee::{
+        SyncCommitteeContributionError as Error, SyncContributionData,
+    };
+}
+
+pub mod slot_data {
+    pub use crate::core::SlotData;
+}
+
+pub mod signed_aggregate_and_proof {
+    pub use crate::attestation::SignedAggregateAndProofRefMut;
+}
+
+pub mod payload_attestation {
+    pub use crate::attestation::{
+        PayloadAttestation, PayloadAttestationData, PayloadAttestationMessage,
+    };
+}
+
+pub mod application_domain {
+    pub use crate::core::ApplicationDomain;
+}
+
+// Temporary re-exports to maintain backwards compatibility for Lighthouse.
+pub use crate::kzg_ext::consts::VERSIONED_HASH_VERSION_KZG;
+pub use crate::light_client::LightClientError as LightClientUpdateError;
+pub use crate::state::BeaconStateError as Error;
