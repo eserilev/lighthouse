@@ -394,11 +394,11 @@ mod test {
         let electra: ElectraPreset = preset_from_file(&preset_name, "electra.yaml");
         assert_eq!(electra, ElectraPreset::from_chain_spec::<E>(&spec));
 
-        let eip7805: Eip7805Preset = preset_from_file(&preset_name, "eip7805.yaml");
-        assert_eq!(eip7805, Eip7805Preset::from_chain_spec::<E>(&spec));
-
         let fulu: FuluPreset = preset_from_file(&preset_name, "fulu.yaml");
         assert_eq!(fulu, FuluPreset::from_chain_spec::<E>(&spec));
+
+        let eip7805: Eip7805Preset = preset_from_file(&preset_name, "eip7805.yaml");
+        assert_eq!(eip7805, Eip7805Preset::from_chain_spec(&spec));
 
         let gloas: GloasPreset = preset_from_file(&preset_name, "gloas.yaml");
         assert_eq!(gloas, GloasPreset::from_chain_spec::<E>(&spec));

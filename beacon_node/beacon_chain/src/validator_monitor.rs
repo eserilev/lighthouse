@@ -30,7 +30,7 @@ use types::{
     Attestation, AttestationData, AttesterSlashingRef, BeaconBlockRef, BeaconState,
     BeaconStateError, ChainSpec, Epoch, EthSpec, Hash256, IndexedAttestation,
     IndexedAttestationRef, ProposerSlashing, SignedAggregateAndProof, SignedContributionAndProof,
-    Slot, SyncCommitteeMessage, VoluntaryExit,
+    SignedInclusionList, Slot, SyncCommitteeMessage, VoluntaryExit,
 };
 
 /// Used for Prometheus labels.
@@ -1858,7 +1858,7 @@ impl<E: EthSpec> ValidatorMonitor<E> {
         _inclusion_list: &SignedInclusionList<E>,
         _slot_clock: &S,
     ) {
-        // TODO(focil) add logic to register IL
+        // TODO(eip7805) add logic to register IL
         // self.register_unaggregated_attestation(
         //     "api",
         //     seen_timestamp,

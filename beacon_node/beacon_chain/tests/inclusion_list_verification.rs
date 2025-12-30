@@ -5,9 +5,9 @@ use beacon_chain::{
     inclusion_list_verification::GossipInclusionListError,
     test_utils::{AttestationStrategy, BeaconChainHarness, BlockStrategy, EphemeralHarnessType},
 };
-use bls::{PublicKeyBytes, SecretKey, generics::GenericSignature};
+use bls::{PublicKeyBytes, SecretKey, Keypair, generics::GenericSignature};
 use types::{
-    ChainSpec, Domain, Epoch, EthSpec, Fork, Hash256, InclusionList, Keypair, MainnetEthSpec,
+    ChainSpec, Domain, Epoch, EthSpec, Fork, Hash256, InclusionList, MainnetEthSpec,
     SignedInclusionList, SignedRoot, Slot,
 };
 
@@ -94,15 +94,13 @@ pub async fn get_valid_signed_inclusion_list<T: BeaconChainTypes>(
 
     let fork = harness.chain.spec.fork_at_epoch(current_epoch);
 
-    let signed_inclusion_list = sign(
+    sign(
         &inclusion_list,
         &keypair.sk,
         &fork,
         harness.chain.genesis_validators_root,
         &harness.chain.spec,
-    );
-
-    signed_inclusion_list
+    )
 }
 
 /// Signs `self`, setting the `committee_position`'th bit of `aggregation_bits` to `true`.
@@ -260,7 +258,7 @@ async fn inclusion_list_verification() {
         .inspect_inclusion_list_err(
             "inclusion list with too many transactions",
             |_, il| {
-                il.message.transactions = vec![vec![0u8; 5].into(); 8193].into();
+                il.message.transactions = vec![vec![0u8; 5].try_into().unwrap(); 8193].try_into().unwrap();
             },
             |_, error| {
                 assert!(matches!(

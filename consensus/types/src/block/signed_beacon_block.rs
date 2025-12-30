@@ -1061,7 +1061,7 @@ mod test {
                 BeaconBlock::Fulu(BeaconBlockFulu::empty(spec)),
                 sig.clone(),
             ),
-            SignedBeaconBlocK::from_block(
+            SignedBeaconBlock::from_block(
                 BeaconBlock::Eip7805(BeaconBlockEip7805::empty(spec)),
                 sig.clone(),
             ),

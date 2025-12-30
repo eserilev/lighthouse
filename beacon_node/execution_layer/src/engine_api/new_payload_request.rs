@@ -181,10 +181,57 @@ impl<'block, E: EthSpec> NewPayloadRequest<'block, E> {
         }
         Ok(())
     }
+}
 
-    pub fn try_from_block_and_il_transactions<'a>(block: BeaconBlockRef<'a, E>, il_transactions: Transactions<E>) -> Result<NewPayloadRequest<'a, E>, BeaconStateError> {
-        // TODO(eip7805) try_from impl is a bit weird here
-        match block {  
+impl<'a, E: EthSpec> NewPayloadRequest<'a, E> {
+    pub fn try_from_block_and_il_transactions(
+        block: BeaconBlockRef<'a, E>,
+        il_transactions: Transactions<E>,
+    ) -> Result<Self, BeaconStateError> {
+        match block {
+            BeaconBlockRef::Base(_) | BeaconBlockRef::Altair(_) => {
+                Err(BeaconStateError::IncorrectStateVariant)
+            }
+            BeaconBlockRef::Bellatrix(block_ref) => {
+                Ok(Self::Bellatrix(NewPayloadRequestBellatrix {
+                    execution_payload: &block_ref.body.execution_payload.execution_payload,
+                }))
+            }
+            BeaconBlockRef::Capella(block_ref) => Ok(Self::Capella(NewPayloadRequestCapella {
+                execution_payload: &block_ref.body.execution_payload.execution_payload,
+            })),
+            BeaconBlockRef::Deneb(block_ref) => Ok(Self::Deneb(NewPayloadRequestDeneb {
+                execution_payload: &block_ref.body.execution_payload.execution_payload,
+                versioned_hashes: block_ref
+                    .body
+                    .blob_kzg_commitments
+                    .iter()
+                    .map(kzg_commitment_to_versioned_hash)
+                    .collect(),
+                parent_beacon_block_root: block_ref.parent_root,
+            })),
+            BeaconBlockRef::Electra(block_ref) => Ok(Self::Electra(NewPayloadRequestElectra {
+                execution_payload: &block_ref.body.execution_payload.execution_payload,
+                versioned_hashes: block_ref
+                    .body
+                    .blob_kzg_commitments
+                    .iter()
+                    .map(kzg_commitment_to_versioned_hash)
+                    .collect(),
+                parent_beacon_block_root: block_ref.parent_root,
+                execution_requests: &block_ref.body.execution_requests,
+            })),
+            BeaconBlockRef::Fulu(block_ref) => Ok(Self::Fulu(NewPayloadRequestFulu {
+                execution_payload: &block_ref.body.execution_payload.execution_payload,
+                versioned_hashes: block_ref
+                    .body
+                    .blob_kzg_commitments
+                    .iter()
+                    .map(kzg_commitment_to_versioned_hash)
+                    .collect(),
+                parent_beacon_block_root: block_ref.parent_root,
+                execution_requests: &block_ref.body.execution_requests,
+            })),
             BeaconBlockRef::Eip7805(block_ref) => Ok(Self::Eip7805(NewPayloadRequestEip7805 {
                 execution_payload: &block_ref.body.execution_payload.execution_payload,
                 versioned_hashes: block_ref
@@ -197,7 +244,7 @@ impl<'block, E: EthSpec> NewPayloadRequest<'block, E> {
                 execution_requests: &block_ref.body.execution_requests,
                 il_transactions,
             })),
-            _ => Err(BeaconStateError::IncorrectStateVariant),
+            BeaconBlockRef::Gloas(_) => Err(BeaconStateError::IncorrectStateVariant),
         }
     }
 }

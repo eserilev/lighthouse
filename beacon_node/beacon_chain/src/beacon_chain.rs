@@ -2104,7 +2104,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         )?)
     }
 
-    // TODO(focil) rename function
+    // TODO(eip7805) rename function
     /// Produce an `InclusionList` that is valid for the given `slot`.
     ///
     /// The produced `InclusionList` will not be valid until it has been signed by exactly one
@@ -2115,7 +2115,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
     /// May return an error if the `request_slot` is too far behind the head state.
     pub async fn produce_inclusion_list(
         self: &Arc<Self>,
-        request_slot: Slot,
+        _request_slot: Slot,
     ) -> Result<Option<Transactions<T::EthSpec>>, Error> {
         let execution_layer = self
             .execution_layer
@@ -2169,6 +2169,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         // Don't bother with the inclusion list if the request slot is not the next
         // slot.
         //
+        // TODO(eip7815) resolve this
         // NOTE: does this represent a critical error? should we return an error here or log crit?
         // is this check redundant?
         // if request_slot != next_slot {

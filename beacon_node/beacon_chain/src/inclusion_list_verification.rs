@@ -119,7 +119,7 @@ impl<T: BeaconChainTypes> GossipVerifiedInclusionList<T> {
             return Err(GossipInclusionListError::InvalidSignature);
         }
 
-        if chain.inclusion_list_seen(&signed_il) {
+        if chain.inclusion_list_seen(signed_il) {
             return Err(GossipInclusionListError::PriorInclusionListKnown);
         }
 

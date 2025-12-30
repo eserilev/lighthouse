@@ -110,11 +110,14 @@ impl<T: BeaconChainTypes> PayloadNotifier<T> {
             // Inclusion lists are those submitted for the prior slot.
             let il_slot = block.slot().saturating_sub(1_u64);
             // TODO(eip7805) what should be done here in terms of error handling
-            let inclusion_list_transactions = chain
-                .inclusion_list_cache
-                .read()
-                .get_inclusion_list_transactions(il_slot)
-                .unwrap_or(VariableList::new(vec![]).map_err(|_| BlockError::PerBlockProcessingError)?);
+            let inclusion_list_transactions =
+                chain
+                    .inclusion_list_cache
+                    .read()
+                    .get_inclusion_list_transactions(il_slot)
+                    .unwrap_or(VariableList::new(vec![]).map_err(|_| {
+                        BlockError::InternalError("Cant create empty IL".to_string())
+                    })?);
 
             info!(
                 tx_count = inclusion_list_transactions.len(),
@@ -123,7 +126,9 @@ impl<T: BeaconChainTypes> PayloadNotifier<T> {
             );
             inclusion_list_transactions
         } else {
-            vec![].into()
+            // TODO(eip7805) what should be done here in terms of error handling
+            VariableList::new(vec![])
+                .map_err(|_| BlockError::InternalError("Cant create empty IL".to_string()))?
         };
 
         Ok(Self {
@@ -170,7 +175,7 @@ async fn notify_new_payload<T: BeaconChainTypes>(
     let execution_block_hash = block.execution_payload()?.block_hash();
 
     // TODO(eip-7805) we can remove this later
-    if il_transactions.len() > 0 {
+    if !il_transactions.is_empty() {
         info!(
             il_tx_count = il_transactions.len(),
             "Submit new payload with il_transactions"

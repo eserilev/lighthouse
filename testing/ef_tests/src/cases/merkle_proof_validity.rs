@@ -6,7 +6,7 @@ use tree_hash::Hash256;
 use typenum::Unsigned;
 use types::{
     BeaconBlockBody, BeaconBlockBodyCapella, BeaconBlockBodyDeneb, BeaconBlockBodyElectra,
-    BeaconBlockBodyFulu, BeaconBlockBodyGloas, BeaconState, FullPayload, light_client_update,
+    BeaconBlockBodyFulu, BeaconBlockBodyEip7805, BeaconBlockBodyGloas, BeaconState, FullPayload, light_client_update,
 };
 
 #[derive(Debug, Clone, Deserialize)]
