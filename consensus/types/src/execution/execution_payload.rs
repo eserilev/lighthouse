@@ -25,11 +25,7 @@ pub type Transactions<E> = VariableList<
 >;
 
 #[superstruct(
-<<<<<<< HEAD:consensus/types/src/execution_payload.rs
-    variants(Bellatrix, Capella, Deneb, Electra, Eip7805, Fulu),
-=======
-    variants(Bellatrix, Capella, Deneb, Electra, Fulu, Gloas),
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/execution/execution_payload.rs
+    variants(Bellatrix, Capella, Deneb, Electra, Fulu, Eip7805, Gloas),
     variant_attributes(
         derive(
             Default,
@@ -106,21 +102,12 @@ pub struct ExecutionPayload<E: EthSpec> {
     pub block_hash: ExecutionBlockHash,
     #[serde(with = "ssz_types::serde_utils::list_of_hex_var_list")]
     pub transactions: Transactions<E>,
-<<<<<<< HEAD:consensus/types/src/execution_payload.rs
-    #[superstruct(only(Capella, Deneb, Electra, Eip7805, Fulu))]
+    #[superstruct(only(Capella, Deneb, Electra, Fulu, Eip7805, Gloas))]
     pub withdrawals: Withdrawals<E>,
-    #[superstruct(only(Deneb, Electra, Eip7805, Fulu), partial_getter(copy))]
+    #[superstruct(only(Deneb, Electra, Fulu, Eip7805, Gloas), partial_getter(copy))]
     #[serde(with = "serde_utils::quoted_u64")]
     pub blob_gas_used: u64,
-    #[superstruct(only(Deneb, Electra, Eip7805, Fulu), partial_getter(copy))]
-=======
-    #[superstruct(only(Capella, Deneb, Electra, Fulu, Gloas))]
-    pub withdrawals: Withdrawals<E>,
-    #[superstruct(only(Deneb, Electra, Fulu, Gloas), partial_getter(copy))]
-    #[serde(with = "serde_utils::quoted_u64")]
-    pub blob_gas_used: u64,
-    #[superstruct(only(Deneb, Electra, Fulu, Gloas), partial_getter(copy))]
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/execution/execution_payload.rs
+    #[superstruct(only(Deneb, Electra, Fulu, Eip7805, Gloas), partial_getter(copy))]
     #[serde(with = "serde_utils::quoted_u64")]
     pub excess_blob_gas: u64,
 }

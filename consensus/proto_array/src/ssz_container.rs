@@ -95,6 +95,7 @@ impl From<SszContainerV17> for SszContainerV28 {
             nodes: v17.nodes,
             indices: v17.indices,
             previous_proposer_boost: v17.previous_proposer_boost,
+            unsatisfied_inclusion_list_blocks: v17.unsatisfied_inclusion_list_blocks,
         }
     }
 }
@@ -111,6 +112,7 @@ impl From<(SszContainerV28, JustifiedBalances)> for SszContainerV17 {
             nodes: v28.nodes,
             indices: v28.indices,
             previous_proposer_boost: v28.previous_proposer_boost,
+            unsatisfied_inclusion_list_blocks: v28.unsatisfied_inclusion_list_blocks,
         }
     }
 }

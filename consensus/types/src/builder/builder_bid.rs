@@ -1,15 +1,3 @@
-<<<<<<< HEAD:consensus/types/src/builder_bid.rs
-use crate::beacon_block_body::KzgCommitments;
-use crate::test_utils::TestRandom;
-use crate::{
-    ChainSpec, ContextDeserialize, EthSpec, ExecutionPayloadHeaderBellatrix,
-    ExecutionPayloadHeaderCapella, ExecutionPayloadHeaderDeneb, ExecutionPayloadHeaderEip7805,
-    ExecutionPayloadHeaderElectra, ExecutionPayloadHeaderFulu, ExecutionPayloadHeaderRef,
-    ExecutionPayloadHeaderRefMut, ExecutionRequests, ForkName, ForkVersionDecode, SignedRoot,
-    Uint256,
-};
-=======
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/builder/builder_bid.rs
 use bls::PublicKeyBytes;
 use bls::Signature;
 use context_deserialize::ContextDeserialize;
@@ -24,8 +12,9 @@ use crate::{
     core::{ChainSpec, EthSpec, SignedRoot, Uint256},
     execution::{
         ExecutionPayloadHeaderBellatrix, ExecutionPayloadHeaderCapella,
-        ExecutionPayloadHeaderDeneb, ExecutionPayloadHeaderElectra, ExecutionPayloadHeaderFulu,
-        ExecutionPayloadHeaderRef, ExecutionPayloadHeaderRefMut, ExecutionRequests,
+        ExecutionPayloadHeaderDeneb, ExecutionPayloadHeaderEip7805, ExecutionPayloadHeaderElectra,
+        ExecutionPayloadHeaderFulu, ExecutionPayloadHeaderRef, ExecutionPayloadHeaderRefMut,
+        ExecutionRequests,
     },
     fork::{ForkName, ForkVersionDecode},
     kzg_ext::KzgCommitments,
@@ -33,7 +22,7 @@ use crate::{
 };
 
 #[superstruct(
-    variants(Bellatrix, Capella, Deneb, Electra, Eip7805, Fulu),
+    variants(Bellatrix, Capella, Deneb, Electra, Fulu, Eip7805),
     variant_attributes(
         derive(
             PartialEq,

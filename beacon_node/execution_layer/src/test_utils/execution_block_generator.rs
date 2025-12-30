@@ -22,9 +22,9 @@ use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 use types::{
     Blob, ChainSpec, EthSpec, ExecutionBlockHash, ExecutionPayload, ExecutionPayloadBellatrix,
-    ExecutionPayloadCapella, ExecutionPayloadDeneb, ExecutionPayloadElectra, ExecutionPayloadFulu,
-    ExecutionPayloadGloas, ExecutionPayloadHeader, ForkName, Hash256, KzgProofs, Transaction,
-    Transactions, Uint256,
+    ExecutionPayloadCapella, ExecutionPayloadDeneb, ExecutionPayloadEip7805,
+    ExecutionPayloadElectra, ExecutionPayloadFulu, ExecutionPayloadGloas, ExecutionPayloadHeader,
+    ForkName, Hash256, KzgProofs, Transaction, Transactions, Uint256,
 };
 
 use super::DEFAULT_TERMINAL_BLOCK;
@@ -153,7 +153,7 @@ pub struct ExecutionBlockGenerator<E: EthSpec> {
     pub cancun_time: Option<u64>,    // deneb
     pub prague_time: Option<u64>,    // electra
     pub osaka_time: Option<u64>,     // fulu
-    pub eip7805_time: Option<u64>,  // eip7805
+    pub eip7805_time: Option<u64>,   // eip7805
     pub amsterdam_time: Option<u64>, // gloas
     /*
      * deneb stuff
@@ -692,25 +692,6 @@ impl<E: EthSpec> ExecutionBlockGenerator<E> {
                     blob_gas_used: 0,
                     excess_blob_gas: 0,
                 }),
-                ForkName::Eip7805 => ExecutionPayload::Eip7805(ExecutionPayloadEip7805 {
-                    parent_hash: head_block_hash,
-                    fee_recipient: pa.suggested_fee_recipient,
-                    receipts_root: Hash256::repeat_byte(42),
-                    state_root: Hash256::repeat_byte(43),
-                    logs_bloom: vec![0; 256].into(),
-                    prev_randao: pa.prev_randao,
-                    block_number: parent.block_number() + 1,
-                    gas_limit: DEFAULT_GAS_LIMIT,
-                    gas_used: GAS_USED,
-                    timestamp: pa.timestamp,
-                    extra_data: mock_el_extra_data::<E>(),
-                    base_fee_per_gas: Uint256::from(1u64),
-                    block_hash: ExecutionBlockHash::zero(),
-                    transactions: vec![].into(),
-                    withdrawals: pa.withdrawals.clone().into(),
-                    blob_gas_used: 0,
-                    excess_blob_gas: 0,
-                }),
                 ForkName::Fulu => ExecutionPayload::Fulu(ExecutionPayloadFulu {
                     parent_hash: head_block_hash,
                     fee_recipient: pa.suggested_fee_recipient,
@@ -723,6 +704,25 @@ impl<E: EthSpec> ExecutionBlockGenerator<E> {
                     gas_used: GAS_USED,
                     timestamp: pa.timestamp,
                     extra_data: "block gen was here".as_bytes().to_vec().try_into().unwrap(),
+                    base_fee_per_gas: Uint256::from(1u64),
+                    block_hash: ExecutionBlockHash::zero(),
+                    transactions: vec![].try_into().unwrap(),
+                    withdrawals: pa.withdrawals.clone().try_into().unwrap(),
+                    blob_gas_used: 0,
+                    excess_blob_gas: 0,
+                }),
+                ForkName::Eip7805 => ExecutionPayload::Eip7805(ExecutionPayloadEip7805 {
+                    parent_hash: head_block_hash,
+                    fee_recipient: pa.suggested_fee_recipient,
+                    receipts_root: Hash256::repeat_byte(42),
+                    state_root: Hash256::repeat_byte(43),
+                    logs_bloom: vec![0; 256].try_into().unwrap(),
+                    prev_randao: pa.prev_randao,
+                    block_number: parent.block_number() + 1,
+                    gas_limit: DEFAULT_GAS_LIMIT,
+                    gas_used: GAS_USED,
+                    timestamp: pa.timestamp,
+                    extra_data: mock_el_extra_data::<E>(),
                     base_fee_per_gas: Uint256::from(1u64),
                     block_hash: ExecutionBlockHash::zero(),
                     transactions: vec![].try_into().unwrap(),

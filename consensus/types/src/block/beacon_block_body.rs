@@ -21,10 +21,11 @@ use crate::{
     deposit::Deposit,
     execution::{
         AbstractExecPayload, BlindedPayload, BlindedPayloadBellatrix, BlindedPayloadCapella,
-        BlindedPayloadDeneb, BlindedPayloadElectra, BlindedPayloadFulu, Eth1Data, ExecutionPayload,
-        ExecutionPayloadBellatrix, ExecutionPayloadCapella, ExecutionPayloadDeneb,
-        ExecutionPayloadElectra, ExecutionPayloadFulu, ExecutionPayloadGloas, ExecutionRequests,
-        FullPayload, FullPayloadBellatrix, FullPayloadCapella, FullPayloadDeneb,
+        BlindedPayloadDeneb, BlindedPayloadEip7805, BlindedPayloadElectra, BlindedPayloadFulu,
+        Eth1Data, ExecutionPayload, ExecutionPayloadBellatrix, ExecutionPayloadCapella,
+        ExecutionPayloadDeneb, ExecutionPayloadEip7805, ExecutionPayloadElectra,
+        ExecutionPayloadFulu, ExecutionPayloadGloas, ExecutionRequests, FullPayload,
+        FullPayloadBellatrix, FullPayloadCapella, FullPayloadDeneb, FullPayloadEip7805,
         FullPayloadElectra, FullPayloadFulu, SignedBlsToExecutionChange,
     },
     exit::SignedVoluntaryExit,
@@ -53,11 +54,7 @@ pub const BLOB_KZG_COMMITMENTS_INDEX: usize = 11;
 ///
 /// This *superstruct* abstracts over the hard-fork.
 #[superstruct(
-<<<<<<< HEAD:consensus/types/src/beacon_block_body.rs
-    variants(Base, Altair, Bellatrix, Capella, Deneb, Electra, Eip7805, Fulu),
-=======
-    variants(Base, Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Gloas),
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/block/beacon_block_body.rs
+    variants(Base, Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Eip7805, Gloas),
     variant_attributes(
         derive(
             Debug,
@@ -89,13 +86,9 @@ pub const BLOB_KZG_COMMITMENTS_INDEX: usize = 11;
         Capella(metastruct(mappings(beacon_block_body_capella_fields(groups(fields))))),
         Deneb(metastruct(mappings(beacon_block_body_deneb_fields(groups(fields))))),
         Electra(metastruct(mappings(beacon_block_body_electra_fields(groups(fields))))),
-<<<<<<< HEAD:consensus/types/src/beacon_block_body.rs
-        Eip7805(metastruct(mappings(beacon_block_body_eip7805_fields(groups(fields))))),
-        Fulu(metastruct(mappings(beacon_block_body_fulu_fields(groups(fields)))))
-=======
         Fulu(metastruct(mappings(beacon_block_body_fulu_fields(groups(fields))))),
+        Eip7805(metastruct(mappings(beacon_block_body_eip7805_fields(groups(fields))))),
         Gloas(metastruct(mappings(beacon_block_body_gloas_fields(groups(fields))))),
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/block/beacon_block_body.rs
     ),
     cast_error(
         ty = "BeaconStateError",
@@ -127,11 +120,7 @@ pub struct BeaconBlockBody<E: EthSpec, Payload: AbstractExecPayload<E> = FullPay
     )]
     pub attester_slashings: VariableList<AttesterSlashingBase<E>, E::MaxAttesterSlashings>,
     #[superstruct(
-<<<<<<< HEAD:consensus/types/src/beacon_block_body.rs
-        only(Electra, Eip7805, Fulu),
-=======
-        only(Electra, Fulu, Gloas),
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/block/beacon_block_body.rs
+        only(Electra, Fulu, Eip7805, Gloas),
         partial_getter(rename = "attester_slashings_electra")
     )]
     pub attester_slashings:
@@ -142,21 +131,13 @@ pub struct BeaconBlockBody<E: EthSpec, Payload: AbstractExecPayload<E> = FullPay
     )]
     pub attestations: VariableList<AttestationBase<E>, E::MaxAttestations>,
     #[superstruct(
-<<<<<<< HEAD:consensus/types/src/beacon_block_body.rs
-        only(Electra, Eip7805, Fulu),
-=======
-        only(Electra, Fulu, Gloas),
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/block/beacon_block_body.rs
+        only(Electra, Fulu, Eip7805, Gloas),
         partial_getter(rename = "attestations_electra")
     )]
     pub attestations: VariableList<AttestationElectra<E>, E::MaxAttestationsElectra>,
     pub deposits: VariableList<Deposit, E::MaxDeposits>,
     pub voluntary_exits: VariableList<SignedVoluntaryExit, E::MaxVoluntaryExits>,
-<<<<<<< HEAD:consensus/types/src/beacon_block_body.rs
-    #[superstruct(only(Altair, Bellatrix, Capella, Deneb, Electra, Eip7805, Fulu))]
-=======
-    #[superstruct(only(Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Gloas))]
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/block/beacon_block_body.rs
+    #[superstruct(only(Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Eip7805, Gloas))]
     pub sync_aggregate: SyncAggregate<E>,
     // We flatten the execution payload so that serde can use the name of the inner type,
     // either `execution_payload` for full payloads, or `execution_payload_header` for blinded
@@ -182,11 +163,7 @@ pub struct BeaconBlockBody<E: EthSpec, Payload: AbstractExecPayload<E> = FullPay
     #[superstruct(only(Fulu), partial_getter(rename = "execution_payload_fulu"))]
     #[serde(flatten)]
     pub execution_payload: Payload::Fulu,
-<<<<<<< HEAD:consensus/types/src/beacon_block_body.rs
-    #[superstruct(only(Capella, Deneb, Electra, Eip7805, Fulu))]
-=======
-    #[superstruct(only(Capella, Deneb, Electra, Fulu, Gloas))]
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/block/beacon_block_body.rs
+    #[superstruct(only(Capella, Deneb, Electra, Fulu, Eip7805, Gloas))]
     pub bls_to_execution_changes:
         VariableList<SignedBlsToExecutionChange, E::MaxBlsToExecutionChanges>,
     #[superstruct(only(Deneb, Electra, Eip7805, Fulu))]
@@ -296,19 +273,12 @@ impl<'a, E: EthSpec, Payload: AbstractExecPayload<E>> BeaconBlockBodyRef<'a, E, 
         kzg_commitments_proof: &[Hash256],
     ) -> Result<FixedVector<Hash256, E::KzgCommitmentInclusionProofDepth>, BeaconStateError> {
         match self {
-<<<<<<< HEAD:consensus/types/src/beacon_block_body.rs
-            Self::Base(_) | Self::Altair(_) | Self::Bellatrix(_) | Self::Capella(_) => {
-                Err(Error::IncorrectStateVariant)
-            }
-            Self::Deneb(_) | Self::Electra(_) | Self::Eip7805(_) | Self::Fulu(_) => {
-=======
             Self::Base(_)
             | Self::Altair(_)
             | Self::Bellatrix(_)
             | Self::Capella(_)
             | Self::Gloas(_) => Err(BeaconStateError::IncorrectStateVariant),
-            Self::Deneb(_) | Self::Electra(_) | Self::Fulu(_) => {
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/block/beacon_block_body.rs
+            Self::Deneb(_) | Self::Electra(_) | Self::Fulu(_) | Self::Eip7805(_) => {
                 // We compute the branches by generating 2 merkle trees:
                 // 1. Merkle tree for the `blob_kzg_commitments` List object
                 // 2. Merkle tree for the `BeaconBlockBody` container
@@ -404,31 +374,6 @@ impl<'a, E: EthSpec, Payload: AbstractExecPayload<E>> BeaconBlockBodyRef<'a, E, 
     }
 
     pub fn attestations_len(&self) -> usize {
-<<<<<<< HEAD:consensus/types/src/beacon_block_body.rs
-        match self {
-            Self::Base(body) => body.attestations.len(),
-            Self::Altair(body) => body.attestations.len(),
-            Self::Bellatrix(body) => body.attestations.len(),
-            Self::Capella(body) => body.attestations.len(),
-            Self::Deneb(body) => body.attestations.len(),
-            Self::Electra(body) => body.attestations.len(),
-            Self::Eip7805(body) => body.attestations.len(),
-            Self::Fulu(body) => body.attestations.len(),
-        }
-    }
-
-    pub fn attester_slashings_len(&self) -> usize {
-        match self {
-            Self::Base(body) => body.attester_slashings.len(),
-            Self::Altair(body) => body.attester_slashings.len(),
-            Self::Bellatrix(body) => body.attester_slashings.len(),
-            Self::Capella(body) => body.attester_slashings.len(),
-            Self::Deneb(body) => body.attester_slashings.len(),
-            Self::Electra(body) => body.attester_slashings.len(),
-            Self::Eip7805(body) => body.attester_slashings.len(),
-            Self::Fulu(body) => body.attester_slashings.len(),
-        }
-=======
         map_beacon_block_body_ref!(&'a _, self, |inner, cons| {
             cons(inner);
             inner.attestations.len()
@@ -440,7 +385,6 @@ impl<'a, E: EthSpec, Payload: AbstractExecPayload<E>> BeaconBlockBodyRef<'a, E, 
             cons(inner);
             inner.attester_slashings.len()
         })
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/block/beacon_block_body.rs
     }
 
     pub fn attestations(&self) -> Box<dyn Iterator<Item = AttestationRef<'a, E>> + 'a> {

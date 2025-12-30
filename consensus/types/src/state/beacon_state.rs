@@ -34,10 +34,11 @@ use crate::{
     deposit::PendingDeposit,
     execution::{
         Eth1Data, ExecutionPayloadHeaderBellatrix, ExecutionPayloadHeaderCapella,
-        ExecutionPayloadHeaderDeneb, ExecutionPayloadHeaderElectra, ExecutionPayloadHeaderFulu,
-        ExecutionPayloadHeaderRef, ExecutionPayloadHeaderRefMut,
+        ExecutionPayloadHeaderDeneb, ExecutionPayloadHeaderEip7805, ExecutionPayloadHeaderElectra,
+        ExecutionPayloadHeaderFulu, ExecutionPayloadHeaderRef, ExecutionPayloadHeaderRefMut,
     },
     fork::{Fork, ForkName, ForkVersionDecode, InconsistentFork, map_fork_name},
+    inclusion_list::{InclusionListCommittee, InclusionListDuty},
     light_client::consts::{
         CURRENT_SYNC_COMMITTEE_INDEX, CURRENT_SYNC_COMMITTEE_INDEX_ELECTRA, FINALIZED_ROOT_INDEX,
         FINALIZED_ROOT_INDEX_ELECTRA, NEXT_SYNC_COMMITTEE_INDEX, NEXT_SYNC_COMMITTEE_INDEX_ELECTRA,
@@ -52,29 +53,6 @@ use crate::{
     validator::Validator,
     withdrawal::PendingPartialWithdrawal,
 };
-<<<<<<< HEAD:consensus/types/src/beacon_state.rs
-pub use crate::beacon_state::balance::Balance;
-pub use crate::beacon_state::exit_cache::ExitCache;
-pub use crate::beacon_state::inclusion_list_cache::InclusionListCache;
-pub use crate::beacon_state::progressive_balances_cache::*;
-pub use crate::beacon_state::slashings_cache::SlashingsCache;
-pub use eth_spec::*;
-pub use iter::BlockRootsIter;
-pub use milhouse::{interface::Interface, List, Vector};
-
-#[macro_use]
-mod committee_cache;
-mod balance;
-mod exit_cache;
-mod inclusion_list_cache;
-mod iter;
-mod progressive_balances_cache;
-mod pubkey_cache;
-mod slashings_cache;
-mod tests;
-=======
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/state/beacon_state.rs
-
 pub const CACHED_EPOCHS: usize = 3;
 const MAX_RANDOM_BYTE: u64 = (1 << 8) - 1;
 const MAX_RANDOM_VALUE: u64 = (1 << 16) - 1;
@@ -272,11 +250,7 @@ impl From<BeaconStateHash> for Hash256 {
 ///
 /// https://github.com/sigp/milhouse/issues/43
 #[superstruct(
-<<<<<<< HEAD:consensus/types/src/beacon_state.rs
-    variants(Base, Altair, Bellatrix, Capella, Deneb, Electra, Eip7805, Fulu),
-=======
-    variants(Base, Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Gloas),
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/state/beacon_state.rs
+    variants(Base, Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Eip7805, Gloas),
     variant_attributes(
         derive(
             Educe,
@@ -383,20 +357,6 @@ impl From<BeaconStateHash> for Hash256 {
             )),
             num_fields(all()),
         )),
-        Eip7805(metastruct(
-            mappings(
-                map_beacon_state_eip7805_fields(),
-                map_beacon_state_eip7805_tree_list_fields(mutable, fallible, groups(tree_lists)),
-                map_beacon_state_eip7805_tree_list_fields_immutable(groups(tree_lists)),
-            ),
-            bimappings(bimap_beacon_state_eip7805_tree_list_fields(
-                other_type = "BeaconStateEip7805",
-                self_mutable,
-                fallible,
-                groups(tree_lists)
-            )),
-            num_fields(all()),
-        )),
         Fulu(metastruct(
             mappings(
                 map_beacon_state_fulu_fields(),
@@ -405,6 +365,20 @@ impl From<BeaconStateHash> for Hash256 {
             ),
             bimappings(bimap_beacon_state_fulu_tree_list_fields(
                 other_type = "BeaconStateFulu",
+                self_mutable,
+                fallible,
+                groups(tree_lists)
+            )),
+            num_fields(all()),
+        )),
+        Eip7805(metastruct(
+            mappings(
+                map_beacon_state_eip7805_fields(),
+                map_beacon_state_eip7805_tree_list_fields(mutable, fallible, groups(tree_lists)),
+                map_beacon_state_eip7805_tree_list_fields_immutable(groups(tree_lists)),
+            ),
+            bimappings(bimap_beacon_state_eip7805_tree_list_fields(
+                other_type = "BeaconStateEip7805",
                 self_mutable,
                 fallible,
                 groups(tree_lists)
@@ -516,19 +490,11 @@ where
 
     // Participation (Altair and later)
     #[compare_fields(as_iter)]
-<<<<<<< HEAD:consensus/types/src/beacon_state.rs
-    #[superstruct(only(Altair, Bellatrix, Capella, Deneb, Electra, Eip7805, Fulu))]
+    #[superstruct(only(Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Eip7805, Gloas))]
     #[test_random(default)]
     #[compare_fields(as_iter)]
     pub previous_epoch_participation: List<ParticipationFlags, E::ValidatorRegistryLimit>,
-    #[superstruct(only(Altair, Bellatrix, Capella, Deneb, Electra, Eip7805, Fulu))]
-=======
-    #[superstruct(only(Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Gloas))]
-    #[test_random(default)]
-    #[compare_fields(as_iter)]
-    pub previous_epoch_participation: List<ParticipationFlags, E::ValidatorRegistryLimit>,
-    #[superstruct(only(Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Gloas))]
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/state/beacon_state.rs
+    #[superstruct(only(Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Eip7805, Gloas))]
     #[test_random(default)]
     pub current_epoch_participation: List<ParticipationFlags, E::ValidatorRegistryLimit>,
 
@@ -548,26 +514,15 @@ where
 
     // Inactivity
     #[serde(with = "ssz_types::serde_utils::quoted_u64_var_list")]
-<<<<<<< HEAD:consensus/types/src/beacon_state.rs
-    #[superstruct(only(Altair, Bellatrix, Capella, Deneb, Electra, Eip7805, Fulu))]
-=======
-    #[superstruct(only(Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Gloas))]
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/state/beacon_state.rs
+    #[superstruct(only(Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Eip7805, Gloas))]
     #[test_random(default)]
     pub inactivity_scores: List<u64, E::ValidatorRegistryLimit>,
 
     // Light-client sync committees
-<<<<<<< HEAD:consensus/types/src/beacon_state.rs
-    #[superstruct(only(Altair, Bellatrix, Capella, Deneb, Electra, Eip7805, Fulu))]
+    #[superstruct(only(Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Eip7805, Gloas))]
     #[metastruct(exclude_from(tree_lists))]
     pub current_sync_committee: Arc<SyncCommittee<E>>,
-    #[superstruct(only(Altair, Bellatrix, Capella, Deneb, Electra, Eip7805, Fulu))]
-=======
-    #[superstruct(only(Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Gloas))]
-    #[metastruct(exclude_from(tree_lists))]
-    pub current_sync_committee: Arc<SyncCommittee<E>>,
-    #[superstruct(only(Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Gloas))]
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/state/beacon_state.rs
+    #[superstruct(only(Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Eip7805, Gloas))]
     #[metastruct(exclude_from(tree_lists))]
     pub next_sync_committee: Arc<SyncCommittee<E>>,
 
@@ -608,106 +563,64 @@ where
     )]
     #[metastruct(exclude_from(tree_lists))]
     pub latest_execution_payload_header: ExecutionPayloadHeaderFulu<E>,
-<<<<<<< HEAD:consensus/types/src/beacon_state.rs
 
-    // Capella
-    #[superstruct(only(Capella, Deneb, Electra, Eip7805, Fulu), partial_getter(copy))]
-    #[serde(with = "serde_utils::quoted_u64")]
-    #[metastruct(exclude_from(tree_lists))]
-    pub next_withdrawal_index: u64,
-    #[superstruct(only(Capella, Deneb, Electra, Eip7805, Fulu), partial_getter(copy))]
-=======
     #[superstruct(only(Gloas))]
     #[metastruct(exclude_from(tree_lists))]
     pub latest_execution_payload_bid: ExecutionPayloadBid,
-    #[superstruct(only(Capella, Deneb, Electra, Fulu, Gloas), partial_getter(copy))]
+    #[superstruct(
+        only(Capella, Deneb, Electra, Fulu, Eip7805, Gloas),
+        partial_getter(copy)
+    )]
     #[serde(with = "serde_utils::quoted_u64")]
     #[metastruct(exclude_from(tree_lists))]
     pub next_withdrawal_index: u64,
-    #[superstruct(only(Capella, Deneb, Electra, Fulu, Gloas), partial_getter(copy))]
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/state/beacon_state.rs
+    #[superstruct(
+        only(Capella, Deneb, Electra, Fulu, Eip7805, Gloas),
+        partial_getter(copy)
+    )]
     #[serde(with = "serde_utils::quoted_u64")]
     #[metastruct(exclude_from(tree_lists))]
     pub next_withdrawal_validator_index: u64,
     // Deep history valid from Capella onwards.
-<<<<<<< HEAD:consensus/types/src/beacon_state.rs
-    #[superstruct(only(Capella, Deneb, Electra, Eip7805, Fulu))]
-=======
-    #[superstruct(only(Capella, Deneb, Electra, Fulu, Gloas))]
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/state/beacon_state.rs
+    #[superstruct(only(Capella, Deneb, Electra, Fulu, Eip7805, Gloas))]
     #[test_random(default)]
     pub historical_summaries: List<HistoricalSummary, E::HistoricalRootsLimit>,
 
     // Electra
-<<<<<<< HEAD:consensus/types/src/beacon_state.rs
-    #[superstruct(only(Electra, Eip7805, Fulu), partial_getter(copy))]
+    #[superstruct(only(Electra, Fulu, Eip7805, Gloas), partial_getter(copy))]
     #[metastruct(exclude_from(tree_lists))]
     #[serde(with = "serde_utils::quoted_u64")]
     pub deposit_requests_start_index: u64,
-    #[superstruct(only(Electra, Eip7805, Fulu), partial_getter(copy))]
+    #[superstruct(only(Electra, Fulu, Eip7805, Gloas), partial_getter(copy))]
     #[metastruct(exclude_from(tree_lists))]
     #[serde(with = "serde_utils::quoted_u64")]
     pub deposit_balance_to_consume: u64,
-    #[superstruct(only(Electra, Eip7805, Fulu), partial_getter(copy))]
+    #[superstruct(only(Electra, Fulu, Eip7805, Gloas), partial_getter(copy))]
     #[metastruct(exclude_from(tree_lists))]
     #[serde(with = "serde_utils::quoted_u64")]
     pub exit_balance_to_consume: u64,
-    #[superstruct(only(Electra, Eip7805, Fulu), partial_getter(copy))]
+    #[superstruct(only(Electra, Fulu, Eip7805, Gloas), partial_getter(copy))]
     #[metastruct(exclude_from(tree_lists))]
     pub earliest_exit_epoch: Epoch,
-    #[superstruct(only(Electra, Eip7805, Fulu), partial_getter(copy))]
+    #[superstruct(only(Electra, Fulu, Eip7805, Gloas), partial_getter(copy))]
     #[metastruct(exclude_from(tree_lists))]
     #[serde(with = "serde_utils::quoted_u64")]
     pub consolidation_balance_to_consume: u64,
-    #[superstruct(only(Electra, Eip7805, Fulu), partial_getter(copy))]
-=======
-    #[superstruct(only(Electra, Fulu, Gloas), partial_getter(copy))]
-    #[metastruct(exclude_from(tree_lists))]
-    #[serde(with = "serde_utils::quoted_u64")]
-    pub deposit_requests_start_index: u64,
-    #[superstruct(only(Electra, Fulu, Gloas), partial_getter(copy))]
-    #[metastruct(exclude_from(tree_lists))]
-    #[serde(with = "serde_utils::quoted_u64")]
-    pub deposit_balance_to_consume: u64,
-    #[superstruct(only(Electra, Fulu, Gloas), partial_getter(copy))]
-    #[metastruct(exclude_from(tree_lists))]
-    #[serde(with = "serde_utils::quoted_u64")]
-    pub exit_balance_to_consume: u64,
-    #[superstruct(only(Electra, Fulu, Gloas), partial_getter(copy))]
-    #[metastruct(exclude_from(tree_lists))]
-    pub earliest_exit_epoch: Epoch,
-    #[superstruct(only(Electra, Fulu, Gloas), partial_getter(copy))]
-    #[metastruct(exclude_from(tree_lists))]
-    #[serde(with = "serde_utils::quoted_u64")]
-    pub consolidation_balance_to_consume: u64,
-    #[superstruct(only(Electra, Fulu, Gloas), partial_getter(copy))]
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/state/beacon_state.rs
+    #[superstruct(only(Electra, Fulu, Eip7805, Gloas), partial_getter(copy))]
     #[metastruct(exclude_from(tree_lists))]
     pub earliest_consolidation_epoch: Epoch,
     #[compare_fields(as_iter)]
     #[test_random(default)]
-<<<<<<< HEAD:consensus/types/src/beacon_state.rs
-    #[superstruct(only(Electra, Eip7805, Fulu))]
+    #[superstruct(only(Electra, Fulu, Eip7805, Gloas))]
     pub pending_deposits: List<PendingDeposit, E::PendingDepositsLimit>,
     #[compare_fields(as_iter)]
     #[test_random(default)]
-    #[superstruct(only(Electra, Eip7805, Fulu))]
-=======
-    #[superstruct(only(Electra, Fulu, Gloas))]
-    pub pending_deposits: List<PendingDeposit, E::PendingDepositsLimit>,
-    #[compare_fields(as_iter)]
-    #[test_random(default)]
-    #[superstruct(only(Electra, Fulu, Gloas))]
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/state/beacon_state.rs
+    #[superstruct(only(Electra, Fulu, Eip7805, Gloas))]
     pub pending_partial_withdrawals:
         List<PendingPartialWithdrawal, E::PendingPartialWithdrawalsLimit>,
     #[compare_fields(as_iter)]
     #[test_random(default)]
-<<<<<<< HEAD:consensus/types/src/beacon_state.rs
-    #[superstruct(only(Electra, Eip7805, Fulu))]
-=======
-    #[superstruct(only(Electra, Fulu, Gloas))]
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/state/beacon_state.rs
+    #[superstruct(only(Electra, Fulu, Eip7805, Gloas))]
     pub pending_consolidations: List<PendingConsolidation, E::PendingConsolidationsLimit>,
 
     // Fulu
@@ -1055,14 +968,14 @@ impl<E: EthSpec> BeaconState<E> {
         &self,
         slot: Slot,
         spec: &ChainSpec,
-    ) -> Result<InclusionListCommittee<E>, Error> {
+    ) -> Result<InclusionListCommittee<E>, BeaconStateError> {
         let epoch = slot.epoch(E::slots_per_epoch());
         let current_epoch = self.current_epoch();
         let next_epoch = current_epoch.safe_add(1)?;
 
         // TODO(focil) review this logic
         if epoch != current_epoch && epoch != next_epoch {
-            return Err(Error::SlotOutOfBounds);
+            return Err(BeaconStateError::SlotOutOfBounds);
         }
 
         let seed = self.get_seed(epoch, Domain::InclusionListCommittee, spec)?;
@@ -1084,15 +997,17 @@ impl<E: EthSpec> BeaconState<E> {
                 seed.as_slice(),
                 spec.shuffle_round_count,
             )
-            .ok_or(Error::UnableToShuffle)?;
+            .ok_or(BeaconStateError::UnableToShuffle)?;
             let validator_index = *active_validator_indices
                 .get(shuffled_index)
-                .ok_or(Error::ShuffleIndexOutOfBounds(shuffled_index))?;
+                .ok_or(BeaconStateError::ShuffleIndexOutOfBounds(shuffled_index))?;
             il_committee_indices.push(validator_index as u64);
             i.safe_add_assign(1)?;
         }
 
-        Ok(InclusionListCommittee::<E>::from(il_committee_indices))
+        Ok(InclusionListCommittee::<E>::from(FixedVector::new(
+            il_committee_indices,
+        )?))
     }
 
     /// Returns the block root which decided the proposer shuffling for the epoch passed in parameter. This root
@@ -2186,13 +2101,9 @@ impl<E: EthSpec> BeaconState<E> {
             | BeaconState::Capella(_) => self.get_validator_churn_limit(spec)?,
             BeaconState::Deneb(_)
             | BeaconState::Electra(_)
-<<<<<<< HEAD:consensus/types/src/beacon_state.rs
-            | BeaconState::Eip7805(_)
-            | BeaconState::Fulu(_) => std::cmp::min(
-=======
             | BeaconState::Fulu(_)
+            | BeaconState::Eip7805(_)
             | BeaconState::Gloas(_) => std::cmp::min(
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/state/beacon_state.rs
                 spec.max_per_epoch_activation_churn_limit,
                 self.get_validator_churn_limit(spec)?,
             ),
@@ -2221,7 +2132,7 @@ impl<E: EthSpec> BeaconState<E> {
         validator_index: usize,
         epoch: Epoch,
         spec: &ChainSpec,
-    ) -> Result<Option<InclusionListDuty>, Error> {
+    ) -> Result<Option<InclusionListDuty>, BeaconStateError> {
         let validator_index = validator_index as u64;
         for slot in epoch.slot_iter(E::slots_per_epoch()) {
             let committee = self.get_inclusion_list_committee(slot, spec)?;
@@ -2508,7 +2419,8 @@ impl<E: EthSpec> BeaconState<E> {
             | BeaconState::Capella(_)
             | BeaconState::Deneb(_)
             | BeaconState::Electra(_)
-            | BeaconState::Fulu(_) => true,
+            | BeaconState::Fulu(_)
+            | BeaconState::Eip7805(_) => true,
             BeaconState::Gloas(state) => {
                 state.latest_execution_payload_bid.block_hash == state.latest_block_hash
             }
@@ -2866,13 +2778,11 @@ impl<E: EthSpec> BeaconState<E> {
             | BeaconState::Altair(_)
             | BeaconState::Bellatrix(_)
             | BeaconState::Capella(_)
-<<<<<<< HEAD:consensus/types/src/beacon_state.rs
-            | BeaconState::Deneb(_) => Err(Error::IncorrectStateVariant),
-            BeaconState::Electra(_) | BeaconState::Eip7805(_) | BeaconState::Fulu(_) => {
-=======
             | BeaconState::Deneb(_) => Err(BeaconStateError::IncorrectStateVariant),
-            BeaconState::Electra(_) | BeaconState::Fulu(_) | BeaconState::Gloas(_) => {
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/state/beacon_state.rs
+            BeaconState::Electra(_)
+            | BeaconState::Fulu(_)
+            | BeaconState::Eip7805(_)
+            | BeaconState::Gloas(_) => {
                 // Consume the balance and update state variables
                 *self.exit_balance_to_consume_mut()? =
                     exit_balance_to_consume.safe_sub(exit_balance)?;
@@ -2918,13 +2828,11 @@ impl<E: EthSpec> BeaconState<E> {
             | BeaconState::Altair(_)
             | BeaconState::Bellatrix(_)
             | BeaconState::Capella(_)
-<<<<<<< HEAD:consensus/types/src/beacon_state.rs
-            | BeaconState::Deneb(_) => Err(Error::IncorrectStateVariant),
-            BeaconState::Electra(_) | BeaconState::Eip7805(_) | BeaconState::Fulu(_) => {
-=======
             | BeaconState::Deneb(_) => Err(BeaconStateError::IncorrectStateVariant),
-            BeaconState::Electra(_) | BeaconState::Fulu(_) | BeaconState::Gloas(_) => {
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/state/beacon_state.rs
+            BeaconState::Electra(_)
+            | BeaconState::Fulu(_)
+            | BeaconState::Eip7805(_)
+            | BeaconState::Gloas(_) => {
                 // Consume the balance and update state variables.
                 *self.consolidation_balance_to_consume_mut()? =
                     consolidation_balance_to_consume.safe_sub(consolidation_balance)?;

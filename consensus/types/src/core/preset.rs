@@ -303,7 +303,7 @@ pub struct Eip7805Preset {
 }
 
 impl Eip7805Preset {
-    pub fn from_chain_spec<E: EthSpec>(spec: &ChainSpec) -> Self {
+    pub fn from_chain_spec(spec: &ChainSpec) -> Self {
         Self {
             domain_inclusion_list_committee: spec.domain_inclusion_list_committee,
             inclusion_list_committee_size: spec.inclusion_list_committee_size,

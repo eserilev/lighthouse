@@ -7,6 +7,7 @@ mod epoch_cache;
 mod exit_cache;
 mod historical_batch;
 mod historical_summary;
+mod inclusion_list_cache;
 mod iter;
 mod progressive_balances_cache;
 mod pubkey_cache;
@@ -16,8 +17,8 @@ pub use activation_queue::ActivationQueue;
 pub use balance::Balance;
 pub use beacon_state::{
     BeaconState, BeaconStateAltair, BeaconStateBase, BeaconStateBellatrix, BeaconStateCapella,
-    BeaconStateDeneb, BeaconStateElectra, BeaconStateError, BeaconStateFulu, BeaconStateGloas,
-    BeaconStateHash, BeaconStateRef, CACHED_EPOCHS,
+    BeaconStateDeneb, BeaconStateEip7805, BeaconStateElectra, BeaconStateError, BeaconStateFulu,
+    BeaconStateGloas, BeaconStateHash, BeaconStateRef, CACHED_EPOCHS,
 };
 pub use committee_cache::{
     CommitteeCache, compute_committee_index_in_epoch, compute_committee_range_in_epoch,
@@ -27,6 +28,7 @@ pub use epoch_cache::{EpochCache, EpochCacheError, EpochCacheKey};
 pub use exit_cache::ExitCache;
 pub use historical_batch::HistoricalBatch;
 pub use historical_summary::HistoricalSummary;
+pub use inclusion_list_cache::InclusionListCache;
 pub use iter::BlockRootsIter;
 pub use progressive_balances_cache::{
     EpochTotalBalances, ProgressiveBalancesCache, is_progressive_balances_enabled,

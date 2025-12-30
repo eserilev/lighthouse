@@ -20,8 +20,8 @@ use types::{
     ForkName, Hash256, LightClientBootstrap, LightClientFinalityUpdate,
     LightClientOptimisticUpdate, LightClientUpdate, SignedBeaconBlock, SignedBeaconBlockAltair,
     SignedBeaconBlockBase, SignedBeaconBlockBellatrix, SignedBeaconBlockCapella,
-    SignedBeaconBlockDeneb, SignedBeaconBlockElectra, SignedBeaconBlockFulu,
-    SignedBeaconBlockGloas,
+    SignedBeaconBlockDeneb, SignedBeaconBlockEip7805, SignedBeaconBlockElectra,
+    SignedBeaconBlockFulu, SignedBeaconBlockGloas,
 };
 use unsigned_varint::codec::Uvi;
 
@@ -954,7 +954,7 @@ mod tests {
             ForkName::Deneb => spec.deneb_fork_epoch,
             ForkName::Electra => spec.electra_fork_epoch,
             ForkName::Fulu => spec.fulu_fork_epoch,
-            ForkName::Eip7805 => spec.eip805_fork_epoch,
+            ForkName::Eip7805 => spec.eip7805_fork_epoch,
             ForkName::Gloas => spec.gloas_fork_epoch,
         };
         let current_slot = current_epoch.unwrap().start_slot(Spec::slots_per_epoch());
@@ -1549,7 +1549,7 @@ mod tests {
                 &chain_spec
             ),
             Ok(Some(RpcSuccessResponse::DataColumnsByRange(
-                empty_data_column_sidecar()
+                empty_data_column_sidecar(&chain_spec)
             ))),
         );
 
@@ -1557,7 +1557,7 @@ mod tests {
             encode_then_decode_response(
                 SupportedProtocol::DataColumnsByRangeV1,
                 RpcResponse::Success(RpcSuccessResponse::DataColumnsByRange(
-                    empty_data_column_sidecar()
+                    empty_data_column_sidecar(&chain_spec)
                 )),
                 ForkName::Fulu,
                 &chain_spec
@@ -1605,7 +1605,7 @@ mod tests {
                 &chain_spec
             ),
             Ok(Some(RpcSuccessResponse::DataColumnsByRoot(
-                empty_data_column_sidecar()
+                empty_data_column_sidecar(&chain_spec)
             ))),
         );
 
@@ -1613,7 +1613,7 @@ mod tests {
             encode_then_decode_response(
                 SupportedProtocol::DataColumnsByRootV1,
                 RpcResponse::Success(RpcSuccessResponse::DataColumnsByRoot(
-                    empty_data_column_sidecar()
+                    empty_data_column_sidecar(&chain_spec)
                 )),
                 ForkName::Fulu,
                 &chain_spec

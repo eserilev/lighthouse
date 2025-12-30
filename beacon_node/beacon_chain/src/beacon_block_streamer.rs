@@ -11,8 +11,8 @@ use tokio::sync::{
 use tokio_stream::{Stream, wrappers::UnboundedReceiverStream};
 use tracing::{debug, error};
 use types::{
-    ChainSpec, EthSpec, ExecPayload, ExecutionBlockHash, ForkName, Hash256, SignedBeaconBlock,
-    SignedBlindedBeaconBlock, Slot,
+    ChainSpec, EthSpec, ExecPayload, ExecutionBlockHash, ExecutionPayloadEip7805, ForkName,
+    Hash256, SignedBeaconBlock, SignedBlindedBeaconBlock, Slot,
 };
 use types::{
     ExecutionPayload, ExecutionPayloadBellatrix, ExecutionPayloadCapella, ExecutionPayloadElectra,

@@ -91,12 +91,9 @@ pub struct Timeouts {
     pub proposer_duties: Duration,
     pub sync_committee_contribution: Duration,
     pub sync_duties: Duration,
-<<<<<<< HEAD
     pub inclusion_list: Duration,
     pub inclusion_list_duties: Duration,
-=======
     pub sync_aggregators: Duration,
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
     pub get_beacon_blocks_ssz: Duration,
     pub get_debug_beacon_states: Duration,
     pub get_deposit_snapshot: Duration,
@@ -116,12 +113,9 @@ impl Timeouts {
             proposer_duties: timeout,
             sync_committee_contribution: timeout,
             sync_duties: timeout,
-<<<<<<< HEAD
             inclusion_list: timeout,
             inclusion_list_duties: timeout,
-=======
             sync_aggregators: timeout,
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
             get_beacon_blocks_ssz: timeout,
             get_debug_beacon_states: timeout,
             get_deposit_snapshot: timeout,
@@ -143,6 +137,9 @@ impl Timeouts {
             sync_committee_contribution: base_timeout
                 / HTTP_SYNC_COMMITTEE_CONTRIBUTION_TIMEOUT_QUOTIENT,
             sync_duties: base_timeout / HTTP_SYNC_DUTIES_TIMEOUT_QUOTIENT,
+            // TODO(eip7805) review this
+            inclusion_list: base_timeout / HTTP_ATTESTATION_TIMEOUT_QUOTIENT,
+            inclusion_list_duties: base_timeout / HTTP_PROPOSER_DUTIES_TIMEOUT_QUOTIENT,
             sync_aggregators: base_timeout / HTTP_SYNC_AGGREGATOR_TIMEOUT_QUOTIENT,
             get_beacon_blocks_ssz: base_timeout / HTTP_GET_BEACON_BLOCK_SSZ_TIMEOUT_QUOTIENT,
             get_debug_beacon_states: base_timeout / HTTP_GET_DEBUG_BEACON_STATE_QUOTIENT,
@@ -1765,7 +1762,6 @@ impl BeaconNodeHttpClient {
         Ok(())
     }
 
-<<<<<<< HEAD
     /// `POST beacon/pool/inclusion_lists`
     pub async fn post_beacon_pool_inclusion_lists<E: EthSpec>(
         &self,
@@ -1785,20 +1781,6 @@ impl BeaconNodeHttpClient {
         Ok(())
     }
 
-    /// `GET beacon/deposit_snapshot`
-    pub async fn get_deposit_snapshot(&self) -> Result<Option<types::DepositTreeSnapshot>, Error> {
-        let mut path = self.eth_path(V1)?;
-        path.path_segments_mut()
-            .map_err(|()| Error::InvalidUrl(self.server.clone()))?
-            .push("beacon")
-            .push("deposit_snapshot");
-        self.get_opt_with_timeout::<GenericResponse<_>, _>(path, self.timeouts.get_deposit_snapshot)
-            .await
-            .map(|opt| opt.map(|r| r.data))
-    }
-
-=======
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
     /// `POST beacon/rewards/sync_committee`
     pub async fn post_beacon_rewards_sync_committee(
         &self,

@@ -14,10 +14,11 @@ use crate::{
     core::{Address, EthSpec, Hash256},
     execution::{
         ExecutionBlockHash, ExecutionPayload, ExecutionPayloadBellatrix, ExecutionPayloadCapella,
-        ExecutionPayloadDeneb, ExecutionPayloadElectra, ExecutionPayloadFulu,
-        ExecutionPayloadHeader, ExecutionPayloadHeaderBellatrix, ExecutionPayloadHeaderCapella,
-        ExecutionPayloadHeaderDeneb, ExecutionPayloadHeaderElectra, ExecutionPayloadHeaderFulu,
-        ExecutionPayloadRef, Transactions,
+        ExecutionPayloadDeneb, ExecutionPayloadEip7805, ExecutionPayloadElectra,
+        ExecutionPayloadFulu, ExecutionPayloadHeader, ExecutionPayloadHeaderBellatrix,
+        ExecutionPayloadHeaderCapella, ExecutionPayloadHeaderDeneb, ExecutionPayloadHeaderEip7805,
+        ExecutionPayloadHeaderElectra, ExecutionPayloadHeaderFulu, ExecutionPayloadRef,
+        Transactions,
     },
     fork::ForkName,
     map_execution_payload_into_blinded_payload, map_execution_payload_into_full_payload,
@@ -164,7 +165,7 @@ pub trait AbstractExecPayload<E: EthSpec>:
 }
 
 #[superstruct(
-    variants(Bellatrix, Capella, Deneb, Electra, Eip7805, Fulu),
+    variants(Bellatrix, Capella, Deneb, Electra, Fulu, Eip7805),
     variant_attributes(
         derive(
             Debug,
@@ -223,10 +224,10 @@ pub struct FullPayload<E: EthSpec> {
     pub execution_payload: ExecutionPayloadDeneb<E>,
     #[superstruct(only(Electra), partial_getter(rename = "execution_payload_electra"))]
     pub execution_payload: ExecutionPayloadElectra<E>,
-    #[superstruct(only(Eip7805), partial_getter(rename = "execution_payload_eip7805"))]
-    pub execution_payload: ExecutionPayloadEip7805<E>,
     #[superstruct(only(Fulu), partial_getter(rename = "execution_payload_fulu"))]
     pub execution_payload: ExecutionPayloadFulu<E>,
+    #[superstruct(only(Eip7805), partial_getter(rename = "execution_payload_eip7805"))]
+    pub execution_payload: ExecutionPayloadEip7805<E>,
 }
 
 impl<E: EthSpec> From<FullPayload<E>> for ExecutionPayload<E> {
@@ -333,30 +334,12 @@ impl<E: EthSpec> ExecPayload<E> for FullPayload<E> {
 
     fn withdrawals_root(&self) -> Result<Hash256, BeaconStateError> {
         match self {
-<<<<<<< HEAD:consensus/types/src/payload.rs
-            FullPayload::Bellatrix(_) => Err(Error::IncorrectStateVariant),
-            FullPayload::Capella(ref inner) => {
-                Ok(inner.execution_payload.withdrawals.tree_hash_root())
-            }
-            FullPayload::Deneb(ref inner) => {
-                Ok(inner.execution_payload.withdrawals.tree_hash_root())
-            }
-            FullPayload::Electra(ref inner) => {
-                Ok(inner.execution_payload.withdrawals.tree_hash_root())
-            }
-            FullPayload::Eip7805(ref inner) => {
-                Ok(inner.execution_payload.withdrawals.tree_hash_root())
-            }
-            FullPayload::Fulu(ref inner) => {
-                Ok(inner.execution_payload.withdrawals.tree_hash_root())
-            }
-=======
             FullPayload::Bellatrix(_) => Err(BeaconStateError::IncorrectStateVariant),
             FullPayload::Capella(inner) => Ok(inner.execution_payload.withdrawals.tree_hash_root()),
             FullPayload::Deneb(inner) => Ok(inner.execution_payload.withdrawals.tree_hash_root()),
             FullPayload::Electra(inner) => Ok(inner.execution_payload.withdrawals.tree_hash_root()),
             FullPayload::Fulu(inner) => Ok(inner.execution_payload.withdrawals.tree_hash_root()),
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/execution/payload.rs
+            FullPayload::Eip7805(inner) => Ok(inner.execution_payload.withdrawals.tree_hash_root()),
         }
     }
 
@@ -365,16 +348,10 @@ impl<E: EthSpec> ExecPayload<E> for FullPayload<E> {
             FullPayload::Bellatrix(_) | FullPayload::Capella(_) => {
                 Err(BeaconStateError::IncorrectStateVariant)
             }
-<<<<<<< HEAD:consensus/types/src/payload.rs
-            FullPayload::Deneb(ref inner) => Ok(inner.execution_payload.blob_gas_used),
-            FullPayload::Electra(ref inner) => Ok(inner.execution_payload.blob_gas_used),
-            FullPayload::Eip7805(ref inner) => Ok(inner.execution_payload.blob_gas_used),
-            FullPayload::Fulu(ref inner) => Ok(inner.execution_payload.blob_gas_used),
-=======
             FullPayload::Deneb(inner) => Ok(inner.execution_payload.blob_gas_used),
             FullPayload::Electra(inner) => Ok(inner.execution_payload.blob_gas_used),
             FullPayload::Fulu(inner) => Ok(inner.execution_payload.blob_gas_used),
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/execution/payload.rs
+            FullPayload::Eip7805(inner) => Ok(inner.execution_payload.blob_gas_used),
         }
     }
 
@@ -711,26 +688,12 @@ impl<E: EthSpec> ExecPayload<E> for BlindedPayload<E> {
 
     fn withdrawals_root(&self) -> Result<Hash256, BeaconStateError> {
         match self {
-<<<<<<< HEAD:consensus/types/src/payload.rs
-            BlindedPayload::Bellatrix(_) => Err(Error::IncorrectStateVariant),
-            BlindedPayload::Capella(ref inner) => {
-                Ok(inner.execution_payload_header.withdrawals_root)
-            }
-            BlindedPayload::Deneb(ref inner) => Ok(inner.execution_payload_header.withdrawals_root),
-            BlindedPayload::Electra(ref inner) => {
-                Ok(inner.execution_payload_header.withdrawals_root)
-            }
-            BlindedPayload::Eip7805(ref inner) => {
-                Ok(inner.execution_payload_header.withdrawals_root)
-            }
-            BlindedPayload::Fulu(ref inner) => Ok(inner.execution_payload_header.withdrawals_root),
-=======
             BlindedPayload::Bellatrix(_) => Err(BeaconStateError::IncorrectStateVariant),
             BlindedPayload::Capella(inner) => Ok(inner.execution_payload_header.withdrawals_root),
             BlindedPayload::Deneb(inner) => Ok(inner.execution_payload_header.withdrawals_root),
             BlindedPayload::Electra(inner) => Ok(inner.execution_payload_header.withdrawals_root),
             BlindedPayload::Fulu(inner) => Ok(inner.execution_payload_header.withdrawals_root),
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/execution/payload.rs
+            BlindedPayload::Eip7805(inner) => Ok(inner.execution_payload_header.withdrawals_root),
         }
     }
 
@@ -739,16 +702,10 @@ impl<E: EthSpec> ExecPayload<E> for BlindedPayload<E> {
             BlindedPayload::Bellatrix(_) | BlindedPayload::Capella(_) => {
                 Err(BeaconStateError::IncorrectStateVariant)
             }
-<<<<<<< HEAD:consensus/types/src/payload.rs
-            BlindedPayload::Deneb(ref inner) => Ok(inner.execution_payload_header.blob_gas_used),
-            BlindedPayload::Electra(ref inner) => Ok(inner.execution_payload_header.blob_gas_used),
-            BlindedPayload::Eip7805(ref inner) => Ok(inner.execution_payload_header.blob_gas_used),
-            BlindedPayload::Fulu(ref inner) => Ok(inner.execution_payload_header.blob_gas_used),
-=======
             BlindedPayload::Deneb(inner) => Ok(inner.execution_payload_header.blob_gas_used),
             BlindedPayload::Electra(inner) => Ok(inner.execution_payload_header.blob_gas_used),
             BlindedPayload::Fulu(inner) => Ok(inner.execution_payload_header.blob_gas_used),
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/execution/payload.rs
+            BlindedPayload::Eip7805(inner) => Ok(inner.execution_payload_header.blob_gas_used),
         }
     }
 

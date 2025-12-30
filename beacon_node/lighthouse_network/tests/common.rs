@@ -21,40 +21,14 @@ use tempfile::Builder as TempBuilder;
 /// Returns a chain spec with all forks enabled.
 pub fn spec_with_all_forks_enabled() -> ChainSpec {
     let mut chain_spec = E::default_spec();
-<<<<<<< HEAD
-    let altair_fork_epoch = Epoch::new(1);
-    let bellatrix_fork_epoch = Epoch::new(2);
-    let capella_fork_epoch = Epoch::new(3);
-    let deneb_fork_epoch = Epoch::new(4);
-    let electra_fork_epoch = Epoch::new(5);
-    let eip7805_fork_epoch = Epoch::new(6);
-    let fulu_fork_epoch = Epoch::new(7);
-
-    chain_spec.altair_fork_epoch = Some(altair_fork_epoch);
-    chain_spec.bellatrix_fork_epoch = Some(bellatrix_fork_epoch);
-    chain_spec.capella_fork_epoch = Some(capella_fork_epoch);
-    chain_spec.deneb_fork_epoch = Some(deneb_fork_epoch);
-    chain_spec.electra_fork_epoch = Some(electra_fork_epoch);
-    chain_spec.eip7805_fork_epoch = Some(eip7805_fork_epoch);
-    chain_spec.fulu_fork_epoch = Some(fulu_fork_epoch);
-
-    let current_slot = match fork_name {
-        ForkName::Base => Slot::new(0),
-        ForkName::Altair => altair_fork_epoch.start_slot(E::slots_per_epoch()),
-        ForkName::Bellatrix => bellatrix_fork_epoch.start_slot(E::slots_per_epoch()),
-        ForkName::Capella => capella_fork_epoch.start_slot(E::slots_per_epoch()),
-        ForkName::Deneb => deneb_fork_epoch.start_slot(E::slots_per_epoch()),
-        ForkName::Electra => electra_fork_epoch.start_slot(E::slots_per_epoch()),
-        ForkName::Eip7805 => eip7805_fork_epoch.start_slot(E::slots_per_epoch()),
-        ForkName::Fulu => fulu_fork_epoch.start_slot(E::slots_per_epoch()),
-=======
     chain_spec.altair_fork_epoch = Some(Epoch::new(1));
     chain_spec.bellatrix_fork_epoch = Some(Epoch::new(2));
     chain_spec.capella_fork_epoch = Some(Epoch::new(3));
     chain_spec.deneb_fork_epoch = Some(Epoch::new(4));
     chain_spec.electra_fork_epoch = Some(Epoch::new(5));
     chain_spec.fulu_fork_epoch = Some(Epoch::new(6));
-    chain_spec.gloas_fork_epoch = Some(Epoch::new(7));
+    chain_spec.eip7805_fork_epoch = Some(Epoch::new(7));
+    chain_spec.gloas_fork_epoch = Some(Epoch::new(8));
 
     // check that we have all forks covered
     assert!(chain_spec.fork_epoch(ForkName::latest()).is_some());
@@ -71,8 +45,8 @@ pub fn fork_context(fork_name: ForkName, spec: &ChainSpec) -> ForkContext {
         ForkName::Deneb => spec.deneb_fork_epoch,
         ForkName::Electra => spec.electra_fork_epoch,
         ForkName::Fulu => spec.fulu_fork_epoch,
+        ForkName::Eip7805 => spec.eip7805_fork_epoch,
         ForkName::Gloas => spec.gloas_fork_epoch,
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
     };
     let current_slot = current_epoch
         .unwrap_or_else(|| panic!("expect fork {fork_name} to be scheduled"))

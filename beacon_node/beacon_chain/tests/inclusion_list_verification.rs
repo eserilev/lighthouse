@@ -1,11 +1,11 @@
 use std::sync::{Arc, LazyLock};
 
 use beacon_chain::{
+    BeaconChainTypes, ChainConfig,
     inclusion_list_verification::GossipInclusionListError,
     test_utils::{AttestationStrategy, BeaconChainHarness, BlockStrategy, EphemeralHarnessType},
-    BeaconChainTypes, ChainConfig,
 };
-use bls::{generics::GenericSignature, PublicKeyBytes, SecretKey};
+use bls::{PublicKeyBytes, SecretKey, generics::GenericSignature};
 use types::{
     ChainSpec, Domain, Epoch, EthSpec, Fork, Hash256, InclusionList, Keypair, MainnetEthSpec,
     SignedInclusionList, SignedRoot, Slot,

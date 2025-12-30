@@ -2,11 +2,8 @@ use crate::{DBColumn, Error, StoreItem};
 use ssz::{Decode, Encode};
 use types::{
     EthSpec, ExecutionPayload, ExecutionPayloadBellatrix, ExecutionPayloadCapella,
-<<<<<<< HEAD
     ExecutionPayloadDeneb, ExecutionPayloadEip7805, ExecutionPayloadElectra, ExecutionPayloadFulu,
-=======
-    ExecutionPayloadDeneb, ExecutionPayloadElectra, ExecutionPayloadFulu, ExecutionPayloadGloas,
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
+    ExecutionPayloadGloas,
 };
 
 macro_rules! impl_store_item {
@@ -30,8 +27,8 @@ impl_store_item!(ExecutionPayloadBellatrix);
 impl_store_item!(ExecutionPayloadCapella);
 impl_store_item!(ExecutionPayloadDeneb);
 impl_store_item!(ExecutionPayloadElectra);
-impl_store_item!(ExecutionPayloadEip7805);
 impl_store_item!(ExecutionPayloadFulu);
+impl_store_item!(ExecutionPayloadEip7805);
 impl_store_item!(ExecutionPayloadGloas);
 
 /// This fork-agnostic implementation should be only used for writing.
@@ -48,32 +45,12 @@ impl<E: EthSpec> StoreItem for ExecutionPayload<E> {
     }
 
     fn from_store_bytes(bytes: &[u8]) -> Result<Self, Error> {
-<<<<<<< HEAD
-        ExecutionPayloadFulu::from_ssz_bytes(bytes)
-            .map(Self::Fulu)
-            .or_else(|_| {
-                ExecutionPayloadEip7805::from_ssz_bytes(bytes)
-                    .map(Self::Eip7805)
-                    .or_else(|_| {
-                        ExecutionPayloadElectra::from_ssz_bytes(bytes)
-                            .map(Self::Electra)
-                            .or_else(|_| {
-                                ExecutionPayloadDeneb::from_ssz_bytes(bytes)
-                                    .map(Self::Deneb)
-                                    .or_else(|_| {
-                                        ExecutionPayloadCapella::from_ssz_bytes(bytes)
-                                            .map(Self::Capella)
-                                            .or_else(|_| {
-                                                ExecutionPayloadBellatrix::from_ssz_bytes(bytes)
-                                                    .map(Self::Bellatrix)
-                                            })
-                                    })
-                            })
-                    })
-            })
-=======
         if let Ok(payload) = ExecutionPayloadGloas::from_ssz_bytes(bytes) {
             return Ok(Self::Gloas(payload));
+        }
+
+        if let Ok(payload) = ExecutionPayloadEip7805::from_ssz_bytes(bytes) {
+            return Ok(Self::Eip7805(payload));
         }
 
         if let Ok(payload) = ExecutionPayloadFulu::from_ssz_bytes(bytes) {
@@ -94,7 +71,6 @@ impl<E: EthSpec> StoreItem for ExecutionPayload<E> {
 
         ExecutionPayloadBellatrix::from_ssz_bytes(bytes)
             .map(Self::Bellatrix)
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
             .map_err(Into::into)
     }
 }

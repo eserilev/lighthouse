@@ -12,13 +12,8 @@ use crate::sync::poll_sync_committee_duties;
 use beacon_node_fallback::{ApiTopic, BeaconNodeFallback};
 use bls::PublicKeyBytes;
 use eth2::types::{
-<<<<<<< HEAD
-    AttesterData, BeaconCommitteeSubscription, DutiesResponse, InclusionListDuty, ProposerData,
-    StateId, ValidatorId,
-=======
     AttesterData, BeaconCommitteeSelection, BeaconCommitteeSubscription, DutiesResponse,
     ProposerData, StateId, ValidatorId,
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
 };
 use futures::{
     StreamExt,
@@ -35,6 +30,7 @@ use std::time::Duration;
 use task_executor::TaskExecutor;
 use tokio::{sync::mpsc::Sender, time::sleep};
 use tracing::{debug, error, info, warn};
+use types::InclusionListDuty;
 use types::{ChainSpec, Epoch, EthSpec, Hash256, SelectionProof, Slot};
 use validator_metrics::{ATTESTATION_DUTY, get_int_gauge, set_int_gauge};
 use validator_store::{DoppelgangerStatus, Error as ValidatorStoreError, ValidatorStore};
@@ -384,12 +380,8 @@ impl<S, T> DutiesServiceBuilder<S, T> {
         Ok(DutiesService {
             attesters: Default::default(),
             proposers: Default::default(),
-<<<<<<< HEAD
             inclusion_list_duties: Default::default(),
-            sync_duties: SyncDutiesMap::new(self.distributed),
-=======
             sync_duties: SyncDutiesMap::new(self.sync_selection_proof_config),
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
             validator_store: self
                 .validator_store
                 .ok_or("Cannot build DutiesService without validator_store")?,

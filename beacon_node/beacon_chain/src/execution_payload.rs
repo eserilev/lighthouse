@@ -18,13 +18,14 @@ use execution_layer::{
 use fork_choice::{InvalidationOperation, PayloadVerificationStatus};
 use proto_array::{Block as ProtoBlock, ExecutionStatus};
 use slot_clock::SlotClock;
+use ssz_types::VariableList;
 use state_processing::per_block_processing::{
     compute_timestamp_at_slot, get_expected_withdrawals, is_execution_enabled,
     is_merge_transition_complete, partially_verify_execution_payload,
 };
 use std::sync::Arc;
 use tokio::task::JoinHandle;
-use tracing::{Instrument, debug, debug_span, warn};
+use tracing::{Instrument, debug, debug_span, info, warn};
 use tree_hash::TreeHash;
 use types::payload::BlockProductionVersion;
 use types::*;
@@ -108,11 +109,12 @@ impl<T: BeaconChainTypes> PayloadNotifier<T> {
         {
             // Inclusion lists are those submitted for the prior slot.
             let il_slot = block.slot().saturating_sub(1_u64);
+            // TODO(eip7805) what should be done here in terms of error handling
             let inclusion_list_transactions = chain
                 .inclusion_list_cache
                 .read()
                 .get_inclusion_list_transactions(il_slot)
-                .unwrap_or(vec![].into());
+                .unwrap_or(VariableList::new(vec![]).map_err(|_| BlockError::PerBlockProcessingError)?);
 
             info!(
                 tx_count = inclusion_list_transactions.len(),

@@ -1,6 +1,4 @@
-use crate::Transactions;
-
-use super::{EthSpec, SignedInclusionList, Slot, Transaction};
+use crate::{EthSpec, SignedInclusionList, Slot, Transaction, Transactions};
 use std::collections::{HashMap, HashSet};
 use tracing::info;
 
@@ -104,12 +102,8 @@ impl<E: EthSpec> InclusionListCache<E> {
             .iter()
             .cloned()
             .collect::<Vec<_>>();
-        Some(il.into())
-    }
-}
 
-impl<E: EthSpec> arbitrary::Arbitrary<'_> for InclusionListCache<E> {
-    fn arbitrary(_u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        Ok(Self::default())
+        // TODO(EIP7805) maybe return an error instead of none.
+        il.try_into().ok()
     }
 }

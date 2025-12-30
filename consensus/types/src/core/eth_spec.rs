@@ -172,19 +172,18 @@ pub trait EthSpec: 'static + Default + Sync + Send + Clone + Debug + PartialEq +
     type MaxPendingDepositsPerEpoch: Unsigned + Clone + Sync + Send + Debug + PartialEq;
 
     /*
-<<<<<<< HEAD:consensus/types/src/eth_spec.rs
-     * FOCIL
+     * New in Eip7805
      */
     type InclusionListCommitteeSize: Unsigned + Clone + Sync + Send + Debug + PartialEq;
     type MaxTransactionsPerInclusionList: Unsigned + Clone + Sync + Send + Debug + PartialEq;
-=======
+
+    /*
      * New in Gloas
      */
     type PTCSize: Unsigned + Clone + Sync + Send + Debug + PartialEq;
     type MaxPayloadAttestations: Unsigned + Clone + Sync + Send + Debug + PartialEq;
     type BuilderPendingPaymentsLimit: Unsigned + Clone + Sync + Send + Debug + PartialEq;
     type BuilderPendingWithdrawalsLimit: Unsigned + Clone + Sync + Send + Debug + PartialEq;
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/core/eth_spec.rs
 
     fn default_spec() -> ChainSpec;
 
@@ -416,7 +415,6 @@ pub trait EthSpec: 'static + Default + Sync + Send + Clone + Debug + PartialEq +
         Self::KzgCommitmentsInclusionProofDepth::to_usize()
     }
 
-<<<<<<< HEAD:consensus/types/src/eth_spec.rs
     /// Returns the `IL_COMMITTEE_SIZE` constant for this specification.
     fn inclusion_list_committee_size() -> usize {
         Self::InclusionListCommitteeSize::to_usize()
@@ -425,7 +423,8 @@ pub trait EthSpec: 'static + Default + Sync + Send + Clone + Debug + PartialEq +
     /// Returns the `MAX_TRANSACTIONS_PER_INCLUSION_LIST` constant for this specification.
     fn max_transactions_per_inclusion_list() -> usize {
         Self::MaxTransactionsPerInclusionList::to_usize()
-=======
+    }
+
     fn cells_per_ext_blob() -> usize {
         Self::CellsPerExtBlob::to_usize()
     }
@@ -446,7 +445,6 @@ pub trait EthSpec: 'static + Default + Sync + Send + Clone + Debug + PartialEq +
     /// Returns the `MaxPayloadAttestations` constant for this specification.
     fn max_payload_attestations() -> usize {
         Self::MaxPayloadAttestations::to_usize()
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/core/eth_spec.rs
     }
 }
 
@@ -520,12 +518,9 @@ impl EthSpec for MainnetEthSpec {
     type MaxWithdrawalRequestsPerPayload = U16;
     type MaxTransactionsPerInclusionList = U16;
     type MaxPendingDepositsPerEpoch = U16;
-<<<<<<< HEAD:consensus/types/src/eth_spec.rs
     type InclusionListCommitteeSize = U16;
-=======
     type PTCSize = U512;
     type MaxPayloadAttestations = U4;
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/core/eth_spec.rs
 
     fn default_spec() -> ChainSpec {
         ChainSpec::mainnet()
@@ -597,15 +592,12 @@ impl EthSpec for MinimalEthSpec {
         MaxConsolidationRequestsPerPayload,
         MaxAttesterSlashingsElectra,
         MaxAttestationsElectra,
-<<<<<<< HEAD:consensus/types/src/eth_spec.rs
         InclusionListCommitteeSize,
-        MaxTransactionsPerInclusionList
-=======
+        MaxTransactionsPerInclusionList,
         MaxDepositRequestsPerPayload,
         MaxWithdrawalRequestsPerPayload,
         PTCSize,
         MaxPayloadAttestations
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/core/eth_spec.rs
     });
 
     fn default_spec() -> ChainSpec {
@@ -675,16 +667,13 @@ impl EthSpec for GnosisEthSpec {
     type MaxCellsPerBlock = U33554432;
     type BytesPerCell = U2048;
     type KzgCommitmentsInclusionProofDepth = U4;
-<<<<<<< HEAD:consensus/types/src/eth_spec.rs
     type InclusionListCommitteeSize = U16;
     type MaxTransactionsPerInclusionList = U16;
-=======
     type CellsPerExtBlob = U128;
     type NumberOfColumns = U128;
     type ProposerLookaheadSlots = U32; // Derived from (MIN_SEED_LOOKAHEAD + 1) * SLOTS_PER_EPOCH
     type PTCSize = U512;
     type MaxPayloadAttestations = U2;
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/core/eth_spec.rs
 
     fn default_spec() -> ChainSpec {
         ChainSpec::gnosis()

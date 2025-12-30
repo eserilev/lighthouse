@@ -4,11 +4,7 @@ use crate::decode::{ssz_decode_state, yaml_decode_file};
 use serde::Deserialize;
 use state_processing::upgrade::{
     upgrade_to_altair, upgrade_to_bellatrix, upgrade_to_capella, upgrade_to_deneb,
-<<<<<<< HEAD
-    upgrade_to_eip7805, upgrade_to_electra, upgrade_to_fulu,
-=======
-    upgrade_to_electra, upgrade_to_fulu, upgrade_to_gloas,
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
+    upgrade_to_eip7805, upgrade_to_electra, upgrade_to_fulu, upgrade_to_gloas,
 };
 use types::BeaconState;
 

@@ -12,17 +12,10 @@ use types::{
     LightClientFinalityUpdate, LightClientOptimisticUpdate, ProposerSlashing,
     SignedAggregateAndProof, SignedAggregateAndProofBase, SignedAggregateAndProofElectra,
     SignedBeaconBlock, SignedBeaconBlockAltair, SignedBeaconBlockBase, SignedBeaconBlockBellatrix,
-<<<<<<< HEAD
     SignedBeaconBlockCapella, SignedBeaconBlockDeneb, SignedBeaconBlockEip7805,
-    SignedBeaconBlockElectra, SignedBeaconBlockFulu, SignedBlsToExecutionChange,
-    SignedContributionAndProof, SignedInclusionList, SignedVoluntaryExit, SingleAttestation,
-    SubnetId, SyncCommitteeMessage, SyncSubnetId,
-=======
-    SignedBeaconBlockCapella, SignedBeaconBlockDeneb, SignedBeaconBlockElectra,
-    SignedBeaconBlockFulu, SignedBeaconBlockGloas, SignedBlsToExecutionChange,
-    SignedContributionAndProof, SignedVoluntaryExit, SingleAttestation, SubnetId,
-    SyncCommitteeMessage, SyncSubnetId,
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
+    SignedBeaconBlockElectra, SignedBeaconBlockFulu, SignedBeaconBlockGloas,
+    SignedBlsToExecutionChange, SignedContributionAndProof, SignedInclusionList,
+    SignedVoluntaryExit, SingleAttestation, SubnetId, SyncCommitteeMessage, SyncSubnetId,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -218,49 +211,6 @@ impl<E: EthSpec> PubsubMessage<E> {
                         ))))
                     }
                     GossipKind::BeaconBlock => {
-<<<<<<< HEAD
-                        let beacon_block =
-                            match fork_context.from_context_bytes(gossip_topic.fork_digest) {
-                                Some(ForkName::Base) => SignedBeaconBlock::<E>::Base(
-                                    SignedBeaconBlockBase::from_ssz_bytes(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                Some(ForkName::Altair) => SignedBeaconBlock::<E>::Altair(
-                                    SignedBeaconBlockAltair::from_ssz_bytes(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                Some(ForkName::Bellatrix) => SignedBeaconBlock::<E>::Bellatrix(
-                                    SignedBeaconBlockBellatrix::from_ssz_bytes(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                Some(ForkName::Capella) => SignedBeaconBlock::<E>::Capella(
-                                    SignedBeaconBlockCapella::from_ssz_bytes(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                Some(ForkName::Deneb) => SignedBeaconBlock::<E>::Deneb(
-                                    SignedBeaconBlockDeneb::from_ssz_bytes(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                Some(ForkName::Electra) => SignedBeaconBlock::<E>::Electra(
-                                    SignedBeaconBlockElectra::from_ssz_bytes(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                Some(ForkName::Eip7805) => SignedBeaconBlock::<E>::Eip7805(
-                                    SignedBeaconBlockEip7805::from_ssz_bytes(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                Some(ForkName::Fulu) => SignedBeaconBlock::<E>::Fulu(
-                                    SignedBeaconBlockFulu::from_ssz_bytes(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                ),
-                                None => {
-                                    return Err(format!(
-                                        "Unknown gossipsub fork digest: {:?}",
-                                        gossip_topic.fork_digest
-                                    ))
-                                }
-                            };
-=======
                         let beacon_block = match fork_context
                             .get_fork_from_context_bytes(gossip_topic.fork_digest)
                         {
@@ -292,6 +242,10 @@ impl<E: EthSpec> PubsubMessage<E> {
                                 SignedBeaconBlockFulu::from_ssz_bytes(data)
                                     .map_err(|e| format!("{:?}", e))?,
                             ),
+                            Some(ForkName::Eip7805) => SignedBeaconBlock::<E>::Eip7805(
+                                SignedBeaconBlockEip7805::from_ssz_bytes(data)
+                                    .map_err(|e| format!("{:?}", e))?,
+                            ),
                             Some(ForkName::Gloas) => SignedBeaconBlock::<E>::Gloas(
                                 SignedBeaconBlockGloas::from_ssz_bytes(data)
                                     .map_err(|e| format!("{:?}", e))?,
@@ -303,7 +257,6 @@ impl<E: EthSpec> PubsubMessage<E> {
                                 ));
                             }
                         };
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
                         Ok(PubsubMessage::BeaconBlock(Arc::new(beacon_block)))
                     }
                     GossipKind::BlobSidecar(blob_index) => {
@@ -442,8 +395,8 @@ impl<E: EthSpec> PubsubMessage<E> {
                         )))
                     }
                     GossipKind::InclusionList => {
-                        match fork_context.from_context_bytes(gossip_topic.fork_digest) {
-                            Some(fork) if fork.electra_enabled() => {
+                        match fork_context.get_fork_from_context_bytes(gossip_topic.fork_digest) {
+                            Some(fork) if fork.eip7805_enabled() => {
                                 let il = SignedInclusionList::from_ssz_bytes(data)
                                     .map_err(|e| format!("{:?}", e))?;
                                 let focil_enabled = fork_context.spec.is_focil_enabled_for_epoch(

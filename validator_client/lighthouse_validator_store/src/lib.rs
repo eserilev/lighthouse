@@ -16,18 +16,6 @@ use std::marker::PhantomData;
 use std::path::Path;
 use std::sync::Arc;
 use task_executor::TaskExecutor;
-<<<<<<< HEAD
-use tracing::{error, info, warn};
-use types::SignedInclusionList;
-use types::{
-    graffiti::GraffitiString, AbstractExecPayload, Address, AggregateAndProof, Attestation,
-    BeaconBlock, BlindedPayload, ChainSpec, ContributionAndProof, Domain, Epoch, EthSpec, Fork,
-    Graffiti, Hash256, InclusionList, PublicKeyBytes, SelectionProof, Signature,
-    SignedAggregateAndProof, SignedBeaconBlock, SignedContributionAndProof, SignedRoot,
-    SignedValidatorRegistrationData, SignedVoluntaryExit, Slot, SyncAggregatorSelectionData,
-    SyncCommitteeContribution, SyncCommitteeMessage, SyncSelectionProof, SyncSubnetId,
-    ValidatorRegistrationData, VoluntaryExit,
-=======
 use tracing::{error, info, instrument, warn};
 use types::{
     AbstractExecPayload, Address, AggregateAndProof, Attestation, BeaconBlock, BlindedPayload,
@@ -37,8 +25,8 @@ use types::{
     SyncAggregatorSelectionData, SyncCommitteeContribution, SyncCommitteeMessage,
     SyncSelectionProof, SyncSubnetId, ValidatorRegistrationData, VoluntaryExit,
     graffiti::GraffitiString,
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
 };
+use types::{InclusionList, SignedInclusionList};
 use validator_store::{
     DoppelgangerStatus, Error as ValidatorStoreError, ProposalData, SignedBlock, UnsignedBlock,
     ValidatorStore,

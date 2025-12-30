@@ -19,9 +19,9 @@ use crate::{
     attestation::{AttestationBase, AttestationData, IndexedAttestationBase},
     block::{
         BeaconBlockBodyAltair, BeaconBlockBodyBase, BeaconBlockBodyBellatrix,
-        BeaconBlockBodyCapella, BeaconBlockBodyDeneb, BeaconBlockBodyElectra, BeaconBlockBodyFulu,
-        BeaconBlockBodyGloas, BeaconBlockBodyRef, BeaconBlockBodyRefMut, BeaconBlockHeader,
-        SignedBeaconBlock, SignedBeaconBlockHeader,
+        BeaconBlockBodyCapella, BeaconBlockBodyDeneb, BeaconBlockBodyEip7805,
+        BeaconBlockBodyElectra, BeaconBlockBodyFulu, BeaconBlockBodyGloas, BeaconBlockBodyRef,
+        BeaconBlockBodyRefMut, BeaconBlockHeader, SignedBeaconBlock, SignedBeaconBlockHeader,
     },
     core::{ChainSpec, Domain, Epoch, EthSpec, Graffiti, Hash256, SignedRoot, Slot},
     deposit::{Deposit, DepositData},
@@ -39,11 +39,7 @@ use crate::{
 
 /// A block of the `BeaconChain`.
 #[superstruct(
-<<<<<<< HEAD:consensus/types/src/beacon_block.rs
-    variants(Base, Altair, Bellatrix, Capella, Deneb, Electra, Eip7805, Fulu),
-=======
-    variants(Base, Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Gloas),
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/block/beacon_block.rs
+    variants(Base, Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Eip7805, Gloas),
     variant_attributes(
         derive(
             Debug,
@@ -165,15 +161,10 @@ impl<E: EthSpec, Payload: AbstractExecPayload<E>> BeaconBlock<E, Payload> {
     /// Usually it's better to prefer `from_ssz_bytes` which will decode the correct variant based
     /// on the fork slot.
     pub fn any_from_ssz_bytes(bytes: &[u8]) -> Result<Self, ssz::DecodeError> {
-<<<<<<< HEAD:consensus/types/src/beacon_block.rs
-        BeaconBlockFulu::from_ssz_bytes(bytes)
-            .map(BeaconBlock::Fulu)
-            .or_else(|_| BeaconBlockEip7805::from_ssz_bytes(bytes).map(BeaconBlock::Eip7805))
-=======
         BeaconBlockGloas::from_ssz_bytes(bytes)
             .map(BeaconBlock::Gloas)
+            .or_else(|_| BeaconBlockEip7805::from_ssz_bytes(bytes).map(BeaconBlock::Eip7805))
             .or_else(|_| BeaconBlockFulu::from_ssz_bytes(bytes).map(BeaconBlock::Fulu))
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/block/beacon_block.rs
             .or_else(|_| BeaconBlockElectra::from_ssz_bytes(bytes).map(BeaconBlock::Electra))
             .or_else(|_| BeaconBlockDeneb::from_ssz_bytes(bytes).map(BeaconBlock::Deneb))
             .or_else(|_| BeaconBlockCapella::from_ssz_bytes(bytes).map(BeaconBlock::Capella))
@@ -855,8 +846,8 @@ impl_from!(BeaconBlockBellatrix, <E, FullPayload<E>>, <E, BlindedPayload<E>>, |b
 impl_from!(BeaconBlockCapella, <E, FullPayload<E>>, <E, BlindedPayload<E>>, |body: BeaconBlockBodyCapella<_, _>| body.into());
 impl_from!(BeaconBlockDeneb, <E, FullPayload<E>>, <E, BlindedPayload<E>>, |body: BeaconBlockBodyDeneb<_, _>| body.into());
 impl_from!(BeaconBlockElectra, <E, FullPayload<E>>, <E, BlindedPayload<E>>, |body: BeaconBlockBodyElectra<_, _>| body.into());
-impl_from!(BeaconBlockEip7805, <E, FullPayload<E>>, <E, BlindedPayload<E>>, |body: BeaconBlockBodyEip7805<_, _>| body.into());
 impl_from!(BeaconBlockFulu, <E, FullPayload<E>>, <E, BlindedPayload<E>>, |body: BeaconBlockBodyFulu<_, _>| body.into());
+impl_from!(BeaconBlockEip7805, <E, FullPayload<E>>, <E, BlindedPayload<E>>, |body: BeaconBlockBodyEip7805<_, _>| body.into());
 impl_from!(BeaconBlockGloas, <E, FullPayload<E>>, <E, BlindedPayload<E>>, |body: BeaconBlockBodyGloas<_, _>| body.into());
 
 // We can clone blocks with payloads to blocks without payloads, without cloning the payload.
@@ -891,8 +882,8 @@ impl_clone_as_blinded!(BeaconBlockBellatrix, <E, FullPayload<E>>, <E, BlindedPay
 impl_clone_as_blinded!(BeaconBlockCapella, <E, FullPayload<E>>, <E, BlindedPayload<E>>);
 impl_clone_as_blinded!(BeaconBlockDeneb, <E, FullPayload<E>>, <E, BlindedPayload<E>>);
 impl_clone_as_blinded!(BeaconBlockElectra, <E, FullPayload<E>>, <E, BlindedPayload<E>>);
-impl_clone_as_blinded!(BeaconBlockEip7805, <E, FullPayload<E>>, <E, BlindedPayload<E>>);
 impl_clone_as_blinded!(BeaconBlockFulu, <E, FullPayload<E>>, <E, BlindedPayload<E>>);
+impl_clone_as_blinded!(BeaconBlockEip7805, <E, FullPayload<E>>, <E, BlindedPayload<E>>);
 impl_clone_as_blinded!(BeaconBlockGloas, <E, FullPayload<E>>, <E, BlindedPayload<E>>);
 
 // A reference to a full beacon block can be cloned into a blinded beacon block, without cloning the

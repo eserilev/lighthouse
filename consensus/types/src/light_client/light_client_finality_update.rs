@@ -151,21 +151,6 @@ impl<E: EthSpec> LightClientFinalityUpdate<E> {
                 sync_aggregate,
                 signature_slot,
             }),
-<<<<<<< HEAD:consensus/types/src/light_client_finality_update.rs
-            ForkName::Electra | ForkName::Eip7805 => {
-                Self::Electra(LightClientFinalityUpdateElectra {
-                    attested_header: LightClientHeaderElectra::block_to_light_client_header(
-                        attested_block,
-                    )?,
-                    finalized_header: LightClientHeaderElectra::block_to_light_client_header(
-                        finalized_block,
-                    )?,
-                    finality_branch: finality_branch.into(),
-                    sync_aggregate,
-                    signature_slot,
-                })
-            }
-=======
             ForkName::Electra => Self::Electra(LightClientFinalityUpdateElectra {
                 attested_header: LightClientHeaderElectra::block_to_light_client_header(
                     attested_block,
@@ -179,7 +164,6 @@ impl<E: EthSpec> LightClientFinalityUpdate<E> {
                 sync_aggregate,
                 signature_slot,
             }),
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/light_client/light_client_finality_update.rs
             ForkName::Fulu => Self::Fulu(LightClientFinalityUpdateFulu {
                 attested_header: LightClientHeaderFulu::block_to_light_client_header(
                     attested_block,
@@ -193,6 +177,7 @@ impl<E: EthSpec> LightClientFinalityUpdate<E> {
                 sync_aggregate,
                 signature_slot,
             }),
+            ForkName::Eip7805 => return Err(LightClientError::GloasNotImplemented),
             ForkName::Gloas => return Err(LightClientError::GloasNotImplemented),
             ForkName::Base => return Err(LightClientError::AltairForkNotActive),
         };

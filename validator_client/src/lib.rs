@@ -56,27 +56,6 @@ const RETRY_DELAY: Duration = Duration::from_secs(2);
 /// The time between polls when waiting for genesis.
 const WAITING_FOR_GENESIS_POLL_TIME: Duration = Duration::from_secs(12);
 
-<<<<<<< HEAD
-/// Specific timeout constants for HTTP requests involved in different validator duties.
-/// This can help ensure that proper endpoint fallback occurs.
-const HTTP_ATTESTATION_TIMEOUT_QUOTIENT: u32 = 4;
-const HTTP_ATTESTER_DUTIES_TIMEOUT_QUOTIENT: u32 = 4;
-const HTTP_ATTESTATION_SUBSCRIPTIONS_TIMEOUT_QUOTIENT: u32 = 24;
-const HTTP_LIVENESS_TIMEOUT_QUOTIENT: u32 = 4;
-const HTTP_PROPOSAL_TIMEOUT_QUOTIENT: u32 = 2;
-const HTTP_PROPOSER_DUTIES_TIMEOUT_QUOTIENT: u32 = 4;
-const HTTP_SYNC_COMMITTEE_CONTRIBUTION_TIMEOUT_QUOTIENT: u32 = 4;
-const HTTP_SYNC_DUTIES_TIMEOUT_QUOTIENT: u32 = 4;
-const HTTP_INCLUSION_LIST_TIMEOUT_QUOTIENT: u32 = 4;
-const HTTP_INCLUSION_LIST_DUTIES_TIMEOUT_QUOTIENT: u32 = 4;
-const HTTP_GET_BEACON_BLOCK_SSZ_TIMEOUT_QUOTIENT: u32 = 4;
-const HTTP_GET_DEBUG_BEACON_STATE_QUOTIENT: u32 = 4;
-const HTTP_GET_DEPOSIT_SNAPSHOT_QUOTIENT: u32 = 4;
-const HTTP_GET_VALIDATOR_BLOCK_TIMEOUT_QUOTIENT: u32 = 4;
-const HTTP_DEFAULT_TIMEOUT_QUOTIENT: u32 = 4;
-
-=======
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
 const DOPPELGANGER_SERVICE_NAME: &str = "doppelganger";
 
 /// Compute attestation selection proofs this many slots before they are required.
@@ -315,31 +294,7 @@ impl<E: EthSpec> ProductionValidatorClient<E> {
             // Use quicker timeouts if a fallback beacon node exists.
             let timeouts = if i < last_beacon_node_index && !config.use_long_timeouts {
                 info!("Fallback endpoints are available, using optimized timeouts.");
-<<<<<<< HEAD
-                Timeouts {
-                    attestation: slot_duration / HTTP_ATTESTATION_TIMEOUT_QUOTIENT,
-                    attester_duties: slot_duration / HTTP_ATTESTER_DUTIES_TIMEOUT_QUOTIENT,
-                    attestation_subscriptions: slot_duration
-                        / HTTP_ATTESTATION_SUBSCRIPTIONS_TIMEOUT_QUOTIENT,
-                    liveness: slot_duration / HTTP_LIVENESS_TIMEOUT_QUOTIENT,
-                    proposal: slot_duration / HTTP_PROPOSAL_TIMEOUT_QUOTIENT,
-                    proposer_duties: slot_duration / HTTP_PROPOSER_DUTIES_TIMEOUT_QUOTIENT,
-                    sync_committee_contribution: slot_duration
-                        / HTTP_SYNC_COMMITTEE_CONTRIBUTION_TIMEOUT_QUOTIENT,
-                    sync_duties: slot_duration / HTTP_SYNC_DUTIES_TIMEOUT_QUOTIENT,
-                    inclusion_list: slot_duration / HTTP_INCLUSION_LIST_TIMEOUT_QUOTIENT,
-                    inclusion_list_duties: slot_duration
-                        / HTTP_INCLUSION_LIST_DUTIES_TIMEOUT_QUOTIENT,
-                    get_beacon_blocks_ssz: slot_duration
-                        / HTTP_GET_BEACON_BLOCK_SSZ_TIMEOUT_QUOTIENT,
-                    get_debug_beacon_states: slot_duration / HTTP_GET_DEBUG_BEACON_STATE_QUOTIENT,
-                    get_deposit_snapshot: slot_duration / HTTP_GET_DEPOSIT_SNAPSHOT_QUOTIENT,
-                    get_validator_block: slot_duration / HTTP_GET_VALIDATOR_BLOCK_TIMEOUT_QUOTIENT,
-                    default: slot_duration / HTTP_DEFAULT_TIMEOUT_QUOTIENT,
-                }
-=======
                 Timeouts::use_optimized_timeouts(slot_duration)
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
             } else {
                 Timeouts::set_all(slot_duration.saturating_mul(config.long_timeouts_multiplier))
             };

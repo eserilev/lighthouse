@@ -5,14 +5,8 @@ use ssz_types::FixedVector;
 use tree_hash::Hash256;
 use typenum::Unsigned;
 use types::{
-<<<<<<< HEAD
-    light_client_update, BeaconBlockBody, BeaconBlockBodyCapella, BeaconBlockBodyDeneb,
-    BeaconBlockBodyEip7805, BeaconBlockBodyElectra, BeaconBlockBodyFulu, BeaconState, FixedVector,
-    FullPayload, Unsigned,
-=======
     BeaconBlockBody, BeaconBlockBodyCapella, BeaconBlockBodyDeneb, BeaconBlockBodyElectra,
     BeaconBlockBodyFulu, BeaconBlockBodyGloas, BeaconState, FullPayload, light_client_update,
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
 };
 
 #[derive(Debug, Clone, Deserialize)]

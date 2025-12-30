@@ -5,6 +5,7 @@ use crate::test_utils::{DEFAULT_CLIENT_VERSION, DEFAULT_MOCK_EL_PAYLOAD_VALUE_WE
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
+use types::Transaction;
 
 pub const GENERIC_ERROR_CODE: i64 = -1234;
 pub const BAD_PARAMS_ERROR_CODE: i64 = -32602;
@@ -118,6 +119,10 @@ pub async fn handle_rpc<E: EthSpec>(
                 ENGINE_NEW_PAYLOAD_V4 => get_param::<JsonExecutionPayloadGloas<E>>(params, 0)
                     .map(|jep| JsonExecutionPayload::Gloas(jep))
                     .or_else(|_| {
+                        get_param::<JsonExecutionPayloadEip7805<E>>(params, 0)
+                            .map(|jep| JsonExecutionPayload::Eip7805(jep))
+                    })
+                    .or_else(|_| {
                         get_param::<JsonExecutionPayloadFulu<E>>(params, 0)
                             .map(|jep| JsonExecutionPayload::Fulu(jep))
                     })
@@ -125,9 +130,6 @@ pub async fn handle_rpc<E: EthSpec>(
                         get_param::<JsonExecutionPayloadElectra<E>>(params, 0)
                             .map(|jep| JsonExecutionPayload::Electra(jep))
                     })
-                    .map_err(|s| (s, BAD_PARAMS_ERROR_CODE))?,
-                ENGINE_NEW_PAYLOAD_V5 => get_param::<JsonExecutionPayloadV5<E>>(params, 0)
-                    .map(|jep| JsonExecutionPayload::V5(jep))
                     .map_err(|s| (s, BAD_PARAMS_ERROR_CODE))?,
                 _ => unreachable!(),
             };
@@ -192,7 +194,7 @@ pub async fn handle_rpc<E: EthSpec>(
                         ));
                     }
                 }
-                ForkName::Electra | ForkName::Fulu | ForkName::Eip7085 | ForkName::Gloas => {
+                ForkName::Electra | ForkName::Fulu | ForkName::Eip7805 | ForkName::Gloas => {
                     if method == ENGINE_NEW_PAYLOAD_V1
                         || method == ENGINE_NEW_PAYLOAD_V2
                         || method == ENGINE_NEW_PAYLOAD_V3
@@ -428,41 +430,6 @@ pub async fn handle_rpc<E: EthSpec>(
                         _ => unreachable!(),
                     })
                 }
-                ENGINE_GET_PAYLOAD_V5 => {
-                    Ok(match JsonExecutionPayload::try_from(response).unwrap() {
-                        JsonExecutionPayload::Fulu(execution_payload) => {
-                            serde_json::to_value(JsonGetPayloadResponseFulu {
-                                execution_payload,
-                                block_value: Uint256::from(DEFAULT_MOCK_EL_PAYLOAD_VALUE_WEI),
-                                blobs_bundle: maybe_blobs
-                                    .ok_or((
-                                        "No blobs returned despite V5 Payload".to_string(),
-                                        GENERIC_ERROR_CODE,
-                                    ))?
-                                    .into(),
-                                should_override_builder: false,
-                                execution_requests: Default::default(),
-                            })
-                            .unwrap()
-                        }
-                        JsonExecutionPayload::Gloas(execution_payload) => {
-                            serde_json::to_value(JsonGetPayloadResponseGloas {
-                                execution_payload,
-                                block_value: Uint256::from(DEFAULT_MOCK_EL_PAYLOAD_VALUE_WEI),
-                                blobs_bundle: maybe_blobs
-                                    .ok_or((
-                                        "No blobs returned despite V5 Payload".to_string(),
-                                        GENERIC_ERROR_CODE,
-                                    ))?
-                                    .into(),
-                                should_override_builder: false,
-                                execution_requests: Default::default(),
-                            })
-                            .unwrap()
-                        }
-                        _ => unreachable!(),
-                    })
-                }
                 _ => unreachable!(),
             }
         }
@@ -562,7 +529,11 @@ pub async fn handle_rpc<E: EthSpec>(
                             ));
                         }
                     }
-                    ForkName::Deneb | ForkName::Electra | ForkName::Fulu | ForkName::Eip7805 | ForkName::Gloas => {
+                    ForkName::Deneb
+                    | ForkName::Electra
+                    | ForkName::Fulu
+                    | ForkName::Eip7805
+                    | ForkName::Gloas => {
                         if method == ENGINE_FORKCHOICE_UPDATED_V1 {
                             return Err((
                                 format!("{} called after Deneb fork!", method),
@@ -666,7 +637,7 @@ pub async fn handle_rpc<E: EthSpec>(
         }
         ENGINE_GET_INCLUSION_LIST_V1 => {
             // This is a real transaction hex encoded, but we don't care about the contents of the transaction.
-            let transaction: EthersTransaction = serde_json::from_str(
+            let transaction: Transaction<<E as EthSpec>::MaxBytesPerTransaction> = serde_json::from_str(
                 r#"{
                     "blockHash":"0x1d59ff54b1eb26b013ce3cb5fc9dab3705b415a67127a003c3e61eb445bb8df2",
                     "blockNumber":"0x5daf3b",
@@ -685,7 +656,7 @@ pub async fn handle_rpc<E: EthSpec>(
                 }"#,
             )
             .unwrap();
-            let tx_list: Transactions<E> = vec![transaction.rlp().to_vec().into()].into();
+            let tx_list: Transactions<E> = vec![transaction].try_into().unwrap();
 
             Ok(serde_json::to_value(tx_list).unwrap())
         }

@@ -1,10 +1,3 @@
-<<<<<<< HEAD:consensus/types/src/config_and_preset.rs
-use crate::{
-    consts::altair, consts::deneb, AltairPreset, BasePreset, BellatrixPreset, CapellaPreset,
-    ChainSpec, Config, DenebPreset, Eip7805Preset, ElectraPreset, EthSpec, ForkName, FuluPreset,
-};
-=======
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/core/config_and_preset.rs
 use maplit::hashmap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -13,18 +6,14 @@ use superstruct::superstruct;
 
 use crate::core::{
     AltairPreset, BasePreset, BellatrixPreset, CapellaPreset, ChainSpec, Config, DenebPreset,
-    ElectraPreset, EthSpec, FuluPreset, GloasPreset, consts,
+    ElectraPreset, EthSpec, FuluPreset, GloasPreset, consts, preset::Eip7805Preset,
 };
 
 /// Fusion of a runtime-config with the compile-time preset values.
 ///
 /// Mostly useful for the API.
 #[superstruct(
-<<<<<<< HEAD:consensus/types/src/config_and_preset.rs
-    variants(Deneb, Electra, Eip7805, Fulu),
-=======
-    variants(Deneb, Electra, Fulu, Gloas),
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/core/config_and_preset.rs
+    variants(Deneb, Electra, Fulu, Eip7805, Gloas),
     variant_attributes(derive(Serialize, Deserialize, Debug, PartialEq, Clone))
 )]
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -43,22 +32,15 @@ pub struct ConfigAndPreset {
     pub capella_preset: CapellaPreset,
     #[serde(flatten)]
     pub deneb_preset: DenebPreset,
-<<<<<<< HEAD:consensus/types/src/config_and_preset.rs
-    #[superstruct(only(Electra, Eip7805, Fulu))]
+    #[superstruct(only(Electra, Fulu, Eip7805, Gloas))]
     #[serde(flatten)]
     pub electra_preset: ElectraPreset,
-    #[superstruct(only(Eip7805, Fulu))]
-    #[serde(flatten)]
-    pub eip7805_preset: Eip7805Preset,
-    #[superstruct(only(Fulu))]
-=======
-    #[superstruct(only(Electra, Fulu, Gloas))]
-    #[serde(flatten)]
-    pub electra_preset: ElectraPreset,
-    #[superstruct(only(Fulu, Gloas))]
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/core/config_and_preset.rs
+    #[superstruct(only(Fulu, Eip7805, Gloas))]
     #[serde(flatten)]
     pub fulu_preset: FuluPreset,
+    #[superstruct(only(Eip7805, Gloas))]
+    #[serde(flatten)]
+    pub eip7805_preset: Eip7805Preset,
     #[superstruct(only(Gloas))]
     #[serde(flatten)]
     pub gloas_preset: GloasPreset,
@@ -80,6 +62,7 @@ impl ConfigAndPreset {
         if spec.is_gloas_scheduled() {
             let electra_preset = ElectraPreset::from_chain_spec::<E>(spec);
             let fulu_preset = FuluPreset::from_chain_spec::<E>(spec);
+            let eip7805_preset = Eip7805Preset::from_chain_spec(spec);
             let gloas_preset = GloasPreset::from_chain_spec::<E>(spec);
 
             ConfigAndPreset::Gloas(ConfigAndPresetGloas {
@@ -91,12 +74,28 @@ impl ConfigAndPreset {
                 deneb_preset,
                 electra_preset,
                 fulu_preset,
+                eip7805_preset,
                 gloas_preset,
+                extra_fields,
+            })
+        } else if spec.is_focil_scheduled() {
+            let electra_preset = ElectraPreset::from_chain_spec::<E>(spec);
+            let eip7805_preset = Eip7805Preset::from_chain_spec(spec);
+            let fulu_preset = FuluPreset::from_chain_spec::<E>(spec);
+            ConfigAndPreset::Eip7805(ConfigAndPresetEip7805 {
+                config,
+                base_preset,
+                altair_preset,
+                bellatrix_preset,
+                capella_preset,
+                deneb_preset,
+                electra_preset,
+                fulu_preset,
+                eip7805_preset,
                 extra_fields,
             })
         } else if spec.is_fulu_scheduled() {
             let electra_preset = ElectraPreset::from_chain_spec::<E>(spec);
-            let eip7805_preset = Eip7805Preset::from_chain_spec::<E>(spec);
             let fulu_preset = FuluPreset::from_chain_spec::<E>(spec);
 
             ConfigAndPreset::Fulu(ConfigAndPresetFulu {
@@ -107,39 +106,13 @@ impl ConfigAndPreset {
                 capella_preset,
                 deneb_preset,
                 electra_preset,
-                eip7805_preset,
                 fulu_preset,
                 extra_fields,
             })
-<<<<<<< HEAD:consensus/types/src/config_and_preset.rs
-        } else if spec.electra_fork_epoch.is_some()
-            || fork_name.is_none()
-            || fork_name == Some(ForkName::Eip7805)
-        {
-            let electra_preset = ElectraPreset::from_chain_spec::<E>(spec);
-            let eip7805_preset = Eip7805Preset::from_chain_spec::<E>(spec);
-
-            ConfigAndPreset::Eip7805(ConfigAndPresetEip7805 {
-                config,
-                base_preset,
-                altair_preset,
-                bellatrix_preset,
-                capella_preset,
-                deneb_preset,
-                electra_preset,
-                eip7805_preset,
-                extra_fields,
-            })
-        } else if spec.electra_fork_epoch.is_some()
-            || fork_name.is_none()
-            || fork_name == Some(ForkName::Electra)
-        {
-=======
         } else {
             // Remove blob schedule for backwards-compatibility.
             config.blob_schedule.set_skip_serializing();
 
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/core/config_and_preset.rs
             let electra_preset = ElectraPreset::from_chain_spec::<E>(spec);
 
             ConfigAndPreset::Electra(ConfigAndPresetElectra {

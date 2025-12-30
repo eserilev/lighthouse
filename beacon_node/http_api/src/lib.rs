@@ -91,17 +91,8 @@ use tokio_stream::{
 };
 use tracing::{debug, info, warn};
 use types::{
-<<<<<<< HEAD
-    Attestation, AttestationShufflingId, AttesterSlashing, BeaconStateError, ChainSpec, Checkpoint,
-    CommitteeCache, ConfigAndPreset, Epoch, EthSpec, ForkName, Hash256, ProposerPreparationData,
-    ProposerSlashing, RelativeEpoch, SignedAggregateAndProof, SignedBlindedBeaconBlock,
-    SignedBlsToExecutionChange, SignedContributionAndProof, SignedInclusionList,
-    SignedValidatorRegistrationData, SignedVoluntaryExit, Slot, SyncCommitteeMessage,
-    SyncContributionData,
-=======
     BeaconStateError, Checkpoint, ConfigAndPreset, Epoch, EthSpec, ForkName, Hash256,
     SignedBlindedBeaconBlock, Slot,
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
 };
 use version::{
     ResponseIncludesVersion, V1, V2, add_consensus_version_header, add_ssz_content_type_header,

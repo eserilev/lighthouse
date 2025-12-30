@@ -6,14 +6,10 @@ use std::future::Future;
 use std::sync::Arc;
 use types::{
     Address, Attestation, AttestationError, BlindedBeaconBlock, Epoch, EthSpec, Graffiti, Hash256,
-<<<<<<< HEAD
-    InclusionList, PublicKeyBytes, SelectionProof, Signature, SignedAggregateAndProof,
-    SignedBlindedBeaconBlock, SignedContributionAndProof, SignedInclusionList,
-=======
-    SelectionProof, SignedAggregateAndProof, SignedBlindedBeaconBlock, SignedContributionAndProof,
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
-    SignedValidatorRegistrationData, Slot, SyncCommitteeContribution, SyncCommitteeMessage,
-    SyncSelectionProof, SyncSubnetId, ValidatorRegistrationData,
+    InclusionList, SelectionProof, SignedAggregateAndProof, SignedBlindedBeaconBlock,
+    SignedContributionAndProof, SignedInclusionList, SignedValidatorRegistrationData, Slot,
+    SyncCommitteeContribution, SyncCommitteeMessage, SyncSelectionProof, SyncSubnetId,
+    ValidatorRegistrationData,
 };
 
 #[derive(Debug, PartialEq, Clone)]

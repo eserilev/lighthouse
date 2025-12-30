@@ -362,32 +362,9 @@ impl ChainSpec {
 
     /// Returns the name of the fork which is active at `epoch`.
     pub fn fork_name_at_epoch(&self, epoch: Epoch) -> ForkName {
-<<<<<<< HEAD:consensus/types/src/chain_spec.rs
-        match self.fulu_fork_epoch {
-            Some(fork_epoch) if epoch >= fork_epoch => ForkName::Fulu,
-            _ => match self.eip7805_fork_epoch {
-                Some(fork_epoch) if epoch >= fork_epoch => ForkName::Eip7805,
-
-                _ => match self.electra_fork_epoch {
-                    Some(fork_epoch) if epoch >= fork_epoch => ForkName::Electra,
-                    _ => match self.deneb_fork_epoch {
-                        Some(fork_epoch) if epoch >= fork_epoch => ForkName::Deneb,
-                        _ => match self.capella_fork_epoch {
-                            Some(fork_epoch) if epoch >= fork_epoch => ForkName::Capella,
-                            _ => match self.bellatrix_fork_epoch {
-                                Some(fork_epoch) if epoch >= fork_epoch => ForkName::Bellatrix,
-                                _ => match self.altair_fork_epoch {
-                                    Some(fork_epoch) if epoch >= fork_epoch => ForkName::Altair,
-                                    _ => ForkName::Base,
-                                },
-                            },
-                        },
-                    },
-                },
-            },
-=======
         let forks = [
             (self.gloas_fork_epoch, ForkName::Gloas),
+            (self.eip7805_fork_epoch, ForkName::Eip7805),
             (self.fulu_fork_epoch, ForkName::Fulu),
             (self.electra_fork_epoch, ForkName::Electra),
             (self.deneb_fork_epoch, ForkName::Deneb),
@@ -403,7 +380,6 @@ impl ChainSpec {
             {
                 return *fork_name;
             }
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/core/chain_spec.rs
         }
 
         ForkName::Base
@@ -524,7 +500,6 @@ impl ChainSpec {
             .is_some_and(|fulu_fork_epoch| fulu_fork_epoch != self.far_future_epoch)
     }
 
-<<<<<<< HEAD:consensus/types/src/chain_spec.rs
     /// Returns true if the given epoch is greater than or equal to the `EIP7805_FORK_EPOCH`.
     pub fn is_focil_enabled_for_epoch(&self, block_epoch: Epoch) -> bool {
         self.eip7805_fork_epoch
@@ -535,12 +510,12 @@ impl ChainSpec {
     pub fn is_focil_scheduled(&self) -> bool {
         self.eip7805_fork_epoch
             .is_some_and(|eip7805_fork_epoch| eip7805_fork_epoch != self.far_future_epoch)
-=======
+    }
+
     /// Returns true if `GLOAS_FORK_EPOCH` is set and is not set to `FAR_FUTURE_EPOCH`.
     pub fn is_gloas_scheduled(&self) -> bool {
         self.gloas_fork_epoch
             .is_some_and(|gloas_fork_epoch| gloas_fork_epoch != self.far_future_epoch)
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/core/chain_spec.rs
     }
 
     /// Returns a full `Fork` struct for a given epoch.
@@ -1187,13 +1162,8 @@ impl ChainSpec {
             /*
              * Fulu hard fork params
              */
-<<<<<<< HEAD:consensus/types/src/chain_spec.rs
-            fulu_fork_version: [0x07, 0x00, 0x00, 0x00],
-            fulu_fork_epoch: None,
-=======
             fulu_fork_version: [0x06, 0x00, 0x00, 0x00],
             fulu_fork_epoch: Some(Epoch::new(411392)),
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/core/chain_spec.rs
             custody_requirement: 4,
             number_of_custody_groups: 128,
             data_column_sidecar_subnet_count: 128,
@@ -1846,7 +1816,6 @@ pub struct Config {
     #[serde(deserialize_with = "deserialize_fork_epoch")]
     pub fulu_fork_epoch: Option<MaybeQuoted<Epoch>>,
 
-<<<<<<< HEAD:consensus/types/src/chain_spec.rs
     #[serde(default = "default_eip7805_fork_version")]
     #[serde(with = "serde_utils::bytes_4_hex")]
     eip7805_fork_version: [u8; 4],
@@ -1854,7 +1823,7 @@ pub struct Config {
     #[serde(serialize_with = "serialize_fork_epoch")]
     #[serde(deserialize_with = "deserialize_fork_epoch")]
     pub eip7805_fork_epoch: Option<MaybeQuoted<Epoch>>,
-=======
+
     #[serde(default = "default_gloas_fork_version")]
     #[serde(with = "serde_utils::bytes_4_hex")]
     gloas_fork_version: [u8; 4],
@@ -1862,7 +1831,6 @@ pub struct Config {
     #[serde(serialize_with = "serialize_fork_epoch")]
     #[serde(deserialize_with = "deserialize_fork_epoch")]
     pub gloas_fork_epoch: Option<MaybeQuoted<Epoch>>,
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/core/chain_spec.rs
 
     #[serde(with = "serde_utils::quoted_u64")]
     seconds_per_slot: u64,
@@ -2330,15 +2298,14 @@ impl Config {
                 .fulu_fork_epoch
                 .map(|epoch| MaybeQuoted { value: epoch }),
 
-<<<<<<< HEAD:consensus/types/src/chain_spec.rs
             eip7805_fork_version: spec.eip7805_fork_version,
             eip7805_fork_epoch: spec
                 .eip7805_fork_epoch
-=======
+                .map(|epoch| MaybeQuoted { value: epoch }),
+
             gloas_fork_version: spec.gloas_fork_version,
             gloas_fork_epoch: spec
                 .gloas_fork_epoch
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/core/chain_spec.rs
                 .map(|epoch| MaybeQuoted { value: epoch }),
 
             seconds_per_slot: spec.seconds_per_slot,

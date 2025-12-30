@@ -261,6 +261,9 @@ where
             unrealized_finalized_checkpoint: persisted.unrealized_finalized_checkpoint,
             proposer_boost_root: persisted.proposer_boost_root,
             equivocating_indices: persisted.equivocating_indices,
+            // TODO(eip7805) should persist these values?
+            inclusion_list_equivocators: <_>::default(),
+            unsatisfied_inclusion_list_blocks: <_>::default(),
             _phantom: PhantomData,
         })
     }

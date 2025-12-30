@@ -1,8 +1,8 @@
 //! Contains an implementation of `EngineAPI` using the JSON-RPC API via HTTP.
 
 use super::*;
-use crate::auth::Auth;
 use crate::json_structures::*;
+use crate::{auth::Auth, engine_api::new_payload_request::NewPayloadRequestEip7805};
 use lighthouse_version::{COMMIT_PREFIX, VERSION};
 use reqwest::header::CONTENT_TYPE;
 use sensitive_url::SensitiveUrl;
@@ -874,21 +874,10 @@ impl HttpJsonRpc {
         Ok(response.into())
     }
 
-    // TODO(eip7805) i thin we need a new_payload_eip7805
-
     pub async fn new_payload_v4_fulu<E: EthSpec>(
         &self,
-        new_payload_request_eip7805: NewPayloadRequestEip7805<'_, E>,
+        new_payload_request_fulu: NewPayloadRequestFulu<'_, E>,
     ) -> Result<PayloadStatusV1, Error> {
-        let il_transactions: Vec<String> = new_payload_request_eip7805
-            .il_transactions
-            .into_iter()
-            .map(|tx| {
-                let bytes: Vec<u8> = tx.into();
-                format!("0x{}", hex::encode(bytes))
-            })
-            .collect();
-
         let params = json!([
             JsonExecutionPayload::Fulu(
                 new_payload_request_fulu
@@ -901,12 +890,41 @@ impl HttpJsonRpc {
             new_payload_request_fulu
                 .execution_requests
                 .get_execution_requests_list(),
-            il_transactions
         ]);
 
         let response: JsonPayloadStatusV1 = self
             .rpc_request(
-                ENGINE_NEW_PAYLOAD_V5,
+                ENGINE_NEW_PAYLOAD_V4,
+                params,
+                ENGINE_NEW_PAYLOAD_TIMEOUT * self.execution_timeout_multiplier,
+            )
+            .await?;
+
+        Ok(response.into())
+    }
+
+    pub async fn new_payload_v4_eip7805<E: EthSpec>(
+        &self,
+        new_payload_request_eip7805: NewPayloadRequestEip7805<'_, E>,
+    ) -> Result<PayloadStatusV1, Error> {
+        let params = json!([
+            JsonExecutionPayload::Eip7805(
+                new_payload_request_eip7805
+                    .execution_payload
+                    .clone()
+                    .try_into()?
+            ),
+            new_payload_request_eip7805.versioned_hashes,
+            new_payload_request_eip7805.parent_beacon_block_root,
+            new_payload_request_eip7805
+                .execution_requests
+                .get_execution_requests_list(),
+            new_payload_request_eip7805.il_transactions,
+        ]);
+
+        let response: JsonPayloadStatusV1 = self
+            .rpc_request(
+                ENGINE_NEW_PAYLOAD_V4,
                 params,
                 ENGINE_NEW_PAYLOAD_TIMEOUT * self.execution_timeout_multiplier,
             )
@@ -1053,19 +1071,6 @@ impl HttpJsonRpc {
                     .try_into()
                     .map_err(Error::BadResponse)
             }
-            ForkName::Eip7805 => {
-                let response: JsonGetPayloadResponseV5<E> = self
-                    .rpc_request(
-                        ENGINE_GET_PAYLOAD_V4,
-                        params,
-                        ENGINE_GET_PAYLOAD_TIMEOUT * self.execution_timeout_multiplier,
-                    )
-                    .await?;
-
-                JsonGetPayloadResponse::V5(response)
-                    .try_into()
-                    .map_err(Error::BadResponse)
-            }
             _ => Err(Error::UnsupportedForkVariant(format!(
                 "called get_payload_v4 with {}",
                 fork_name
@@ -1081,8 +1086,7 @@ impl HttpJsonRpc {
         let params = json!([JsonPayloadIdRequest::from(payload_id)]);
 
         match fork_name {
-            // TODO(eip7805) is this correct?
-            ForkName::Fulu | ForkName::Eip7805 => {
+            ForkName::Fulu => {
                 let response: JsonGetPayloadResponseFulu<E> = self
                     .rpc_request(
                         ENGINE_GET_PAYLOAD_V5,
@@ -1091,6 +1095,19 @@ impl HttpJsonRpc {
                     )
                     .await?;
                 JsonGetPayloadResponse::Fulu(response)
+                    .try_into()
+                    .map_err(Error::BadResponse)
+            }
+            ForkName::Eip7805 => {
+                let response: JsonGetPayloadResponseEip7805<E> = self
+                    .rpc_request(
+                        ENGINE_GET_PAYLOAD_V4,
+                        params,
+                        ENGINE_GET_PAYLOAD_TIMEOUT * self.execution_timeout_multiplier,
+                    )
+                    .await?;
+
+                JsonGetPayloadResponse::Eip7805(response)
                     .try_into()
                     .map_err(Error::BadResponse)
             }
@@ -1393,10 +1410,18 @@ impl HttpJsonRpc {
                 }
             }
             NewPayloadRequest::Fulu(new_payload_request_fulu) => {
-                if engine_capabilities.new_payload_v5 {
-                    self.new_payload_v5_fulu(new_payload_request_fulu).await
+                if engine_capabilities.new_payload_v4 {
+                    self.new_payload_v4_fulu(new_payload_request_fulu).await
                 } else {
-                    Err(Error::RequiredMethodUnsupported("engine_newPayloadV5"))
+                    Err(Error::RequiredMethodUnsupported("engine_newPayloadV4"))
+                }
+            }
+            NewPayloadRequest::Eip7805(new_payload_request_eip7805) => {
+                if engine_capabilities.new_payload_v4 {
+                    self.new_payload_v4_eip7805(new_payload_request_eip7805)
+                        .await
+                } else {
+                    Err(Error::RequiredMethodUnsupported("engine_newPayloadV4"))
                 }
             }
             NewPayloadRequest::Gloas(new_payload_request_gloas) => {

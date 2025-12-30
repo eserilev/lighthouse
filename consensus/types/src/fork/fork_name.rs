@@ -176,13 +176,9 @@ impl ForkName {
             ForkName::Capella => Some(ForkName::Bellatrix),
             ForkName::Deneb => Some(ForkName::Capella),
             ForkName::Electra => Some(ForkName::Deneb),
-<<<<<<< HEAD:consensus/types/src/fork_name.rs
-            ForkName::Eip7805 => Some(ForkName::Electra),
-            ForkName::Fulu => Some(ForkName::Eip7805),
-=======
             ForkName::Fulu => Some(ForkName::Electra),
-            ForkName::Gloas => Some(ForkName::Fulu),
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/fork/fork_name.rs
+            ForkName::Eip7805 => Some(ForkName::Fulu),
+            ForkName::Gloas => Some(ForkName::Eip7805),
         }
     }
 
@@ -196,15 +192,10 @@ impl ForkName {
             ForkName::Bellatrix => Some(ForkName::Capella),
             ForkName::Capella => Some(ForkName::Deneb),
             ForkName::Deneb => Some(ForkName::Electra),
-<<<<<<< HEAD:consensus/types/src/fork_name.rs
-            ForkName::Electra => Some(ForkName::Eip7805),
-            ForkName::Eip7805 => Some(ForkName::Fulu),
-            ForkName::Fulu => None,
-=======
             ForkName::Electra => Some(ForkName::Fulu),
-            ForkName::Fulu => Some(ForkName::Gloas),
+            ForkName::Fulu => Some(ForkName::Eip7805),
+            ForkName::Eip7805 => Some(ForkName::Gloas),
             ForkName::Gloas => None,
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/fork/fork_name.rs
         }
     }
 
@@ -240,45 +231,6 @@ impl ForkName {
         self >= ForkName::Gloas
     }
 
-<<<<<<< HEAD:consensus/types/src/fork_name.rs
-/// Map a fork name into a tuple of `(t, extra)` where `t` is a superstruct type.
-#[macro_export]
-macro_rules! map_fork_name_with {
-    ($fork_name:expr, $t:tt, $body:block) => {
-        match $fork_name {
-            ForkName::Base => {
-                let (value, extra_data) = $body;
-                ($t::Base(value), extra_data)
-            }
-            ForkName::Altair => {
-                let (value, extra_data) = $body;
-                ($t::Altair(value), extra_data)
-            }
-            ForkName::Bellatrix => {
-                let (value, extra_data) = $body;
-                ($t::Bellatrix(value), extra_data)
-            }
-            ForkName::Capella => {
-                let (value, extra_data) = $body;
-                ($t::Capella(value), extra_data)
-            }
-            ForkName::Deneb => {
-                let (value, extra_data) = $body;
-                ($t::Deneb(value), extra_data)
-            }
-            ForkName::Electra => {
-                let (value, extra_data) = $body;
-                ($t::Electra(value), extra_data)
-            }
-            ForkName::Eip7805 => {
-                let (value, extra_data) = $body;
-                ($t::Eip7805(value), extra_data)
-            }
-            ForkName::Fulu => {
-                let (value, extra_data) = $body;
-                ($t::Fulu(value), extra_data)
-            }
-=======
     pub fn fork_ascii(self) {
         if self == ForkName::Fulu {
             println!(
@@ -316,7 +268,6 @@ macro_rules! map_fork_name_with {
              |_______________________________________________________________________________|
             "#
             );
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/fork/fork_name.rs
         }
     }
 }

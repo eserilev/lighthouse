@@ -58,28 +58,7 @@ uint_wrapper!(DecimalU256, alloy_primitives::U256);
 /// Trait for types that can be used in SSZ static tests.
 pub trait SszStaticType: Encode + Clone + PartialEq + Debug + Sync {}
 
-<<<<<<< HEAD
-impl<T> SszStaticType for T where
-    T: serde::de::DeserializeOwned + Encode + Clone + PartialEq + Debug + Sync
-{
-}
-
-/// Return the fork immediately prior to a fork.
-pub fn previous_fork(fork_name: ForkName) -> ForkName {
-    match fork_name {
-        ForkName::Base => ForkName::Base,
-        ForkName::Altair => ForkName::Base,
-        ForkName::Bellatrix => ForkName::Altair,
-        ForkName::Capella => ForkName::Bellatrix,
-        ForkName::Deneb => ForkName::Capella,
-        ForkName::Electra => ForkName::Deneb,
-        ForkName::Eip7805 => ForkName::Electra,
-        ForkName::Fulu => ForkName::Eip7805,
-    }
-}
-=======
 impl<T> SszStaticType for T where T: Encode + Clone + PartialEq + Debug + Sync {}
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
 
 #[macro_export]
 macro_rules! impl_bls_load_case {

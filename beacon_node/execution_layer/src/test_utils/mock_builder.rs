@@ -938,15 +938,17 @@ impl<E: EthSpec> MockBuilder<E> {
                 expected_withdrawals,
                 None,
             ),
-            ForkName::Deneb | ForkName::Electra | ForkName::Fulu | ForkName::Eip7805 | ForkName::Gloas => {
-                PayloadAttributes::new(
-                    timestamp,
-                    *prev_randao,
-                    fee_recipient,
-                    expected_withdrawals,
-                    Some(head_block_root),
-                )
-            }
+            ForkName::Deneb
+            | ForkName::Electra
+            | ForkName::Fulu
+            | ForkName::Eip7805
+            | ForkName::Gloas => PayloadAttributes::new(
+                timestamp,
+                *prev_randao,
+                fee_recipient,
+                expected_withdrawals,
+                Some(head_block_root),
+            ),
             ForkName::Base | ForkName::Altair => {
                 return Err("invalid fork".to_string());
             }

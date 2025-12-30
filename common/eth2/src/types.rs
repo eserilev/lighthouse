@@ -1156,11 +1156,11 @@ impl<'de> ContextDeserialize<'de, ForkName> for SsePayloadAttributes {
             ForkName::Capella => {
                 Self::V2(Deserialize::deserialize(deserializer).map_err(convert_err)?)
             }
-<<<<<<< HEAD
-            ForkName::Deneb | ForkName::Electra | ForkName::Eip7805 | ForkName::Fulu => {
-=======
-            ForkName::Deneb | ForkName::Electra | ForkName::Fulu | ForkName::Gloas => {
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df
+            ForkName::Deneb
+            | ForkName::Electra
+            | ForkName::Fulu
+            | ForkName::Eip7805
+            | ForkName::Gloas => {
                 Self::V3(Deserialize::deserialize(deserializer).map_err(convert_err)?)
             }
         })

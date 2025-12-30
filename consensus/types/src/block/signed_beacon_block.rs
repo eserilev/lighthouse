@@ -17,17 +17,19 @@ use crate::{
     block::{
         BLOB_KZG_COMMITMENTS_INDEX, BeaconBlock, BeaconBlockAltair, BeaconBlockBase,
         BeaconBlockBellatrix, BeaconBlockBodyBellatrix, BeaconBlockBodyCapella,
-        BeaconBlockBodyDeneb, BeaconBlockBodyElectra, BeaconBlockBodyFulu, BeaconBlockCapella,
-        BeaconBlockDeneb, BeaconBlockElectra, BeaconBlockFulu, BeaconBlockGloas, BeaconBlockHeader,
-        BeaconBlockRef, BeaconBlockRefMut, SignedBeaconBlockHeader,
+        BeaconBlockBodyDeneb, BeaconBlockBodyEip7805, BeaconBlockBodyElectra, BeaconBlockBodyFulu,
+        BeaconBlockCapella, BeaconBlockDeneb, BeaconBlockEip7805, BeaconBlockElectra,
+        BeaconBlockFulu, BeaconBlockGloas, BeaconBlockHeader, BeaconBlockRef, BeaconBlockRefMut,
+        SignedBeaconBlockHeader,
     },
     core::{ChainSpec, Domain, Epoch, EthSpec, Hash256, SignedRoot, SigningData, Slot},
     execution::{
         AbstractExecPayload, BlindedPayload, BlindedPayloadBellatrix, BlindedPayloadCapella,
-        BlindedPayloadDeneb, BlindedPayloadElectra, BlindedPayloadFulu, ExecutionPayload,
-        ExecutionPayloadBellatrix, ExecutionPayloadCapella, ExecutionPayloadDeneb,
-        ExecutionPayloadElectra, ExecutionPayloadFulu, FullPayload, FullPayloadBellatrix,
-        FullPayloadCapella, FullPayloadDeneb, FullPayloadElectra, FullPayloadFulu,
+        BlindedPayloadDeneb, BlindedPayloadEip7805, BlindedPayloadElectra, BlindedPayloadFulu,
+        ExecutionPayload, ExecutionPayloadBellatrix, ExecutionPayloadCapella,
+        ExecutionPayloadDeneb, ExecutionPayloadEip7805, ExecutionPayloadElectra,
+        ExecutionPayloadFulu, FullPayload, FullPayloadBellatrix, FullPayloadCapella,
+        FullPayloadDeneb, FullPayloadEip7805, FullPayloadElectra, FullPayloadFulu,
     },
     fork::{Fork, ForkName, ForkVersionDecode, InconsistentFork, map_fork_name},
     kzg_ext::format_kzg_commitments,
@@ -65,11 +67,7 @@ impl From<SignedBeaconBlockHash> for Hash256 {
 
 /// A `BeaconBlock` and a signature from its proposer.
 #[superstruct(
-<<<<<<< HEAD:consensus/types/src/signed_beacon_block.rs
-    variants(Base, Altair, Bellatrix, Capella, Deneb, Electra, Eip7805, Fulu),
-=======
-    variants(Base, Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Gloas),
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/block/signed_beacon_block.rs
+    variants(Base, Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Eip7805, Gloas),
     variant_attributes(
         derive(
             Debug,
@@ -1060,17 +1058,14 @@ mod test {
                 sig.clone(),
             ),
             SignedBeaconBlock::from_block(
-<<<<<<< HEAD:consensus/types/src/signed_beacon_block.rs
-                BeaconBlock::Eip7805(BeaconBlockEip7805::empty(spec)),
-                sig.clone(),
-            ),
-            SignedBeaconBlock::from_block(BeaconBlock::Fulu(BeaconBlockFulu::empty(spec)), sig),
-=======
                 BeaconBlock::Fulu(BeaconBlockFulu::empty(spec)),
                 sig.clone(),
             ),
+            SignedBeaconBlocK::from_block(
+                BeaconBlock::Eip7805(BeaconBlockEip7805::empty(spec)),
+                sig.clone(),
+            ),
             SignedBeaconBlock::from_block(BeaconBlock::Gloas(BeaconBlockGloas::empty(spec)), sig),
->>>>>>> 2ce6b51269708a1c28c69a3241028522ebc153df:consensus/types/src/block/signed_beacon_block.rs
         ];
 
         for block in blocks {

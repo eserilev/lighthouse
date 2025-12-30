@@ -14,8 +14,8 @@ use crate::{
     core::{Address, EthSpec, Hash256, Uint256},
     execution::{
         ExecutionBlockHash, ExecutionPayloadBellatrix, ExecutionPayloadCapella,
-        ExecutionPayloadDeneb, ExecutionPayloadElectra, ExecutionPayloadFulu, ExecutionPayloadRef,
-        Transactions,
+        ExecutionPayloadDeneb, ExecutionPayloadEip7805, ExecutionPayloadElectra,
+        ExecutionPayloadFulu, ExecutionPayloadRef, Transactions,
     },
     fork::ForkName,
     map_execution_payload_ref_into_execution_payload_header,
@@ -252,8 +252,8 @@ impl<E: EthSpec> ExecutionPayloadHeaderDeneb<E> {
 }
 
 impl<E: EthSpec> ExecutionPayloadHeaderElectra<E> {
-    pub fn upgrade_to_eip7805(&self) -> ExecutionPayloadHeaderEip7805<E> {
-        ExecutionPayloadHeaderEip7805 {
+    pub fn upgrade_to_fulu(&self) -> ExecutionPayloadHeaderFulu<E> {
+        ExecutionPayloadHeaderFulu {
             parent_hash: self.parent_hash,
             fee_recipient: self.fee_recipient,
             state_root: self.state_root,
@@ -275,9 +275,9 @@ impl<E: EthSpec> ExecutionPayloadHeaderElectra<E> {
     }
 }
 
-impl<E: EthSpec> ExecutionPayloadHeaderEip7805<E> {
-    pub fn upgrade_to_fulu(&self) -> ExecutionPayloadHeaderFulu<E> {
-        ExecutionPayloadHeaderFulu {
+impl<E: EthSpec> ExecutionPayloadHeaderFulu<E> {
+    pub fn upgrade_to_eip7805(&self) -> ExecutionPayloadHeaderEip7805<E> {
+        ExecutionPayloadHeaderEip7805 {
             parent_hash: self.parent_hash,
             fee_recipient: self.fee_recipient,
             state_root: self.state_root,

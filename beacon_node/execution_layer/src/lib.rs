@@ -28,6 +28,7 @@ use payload_status::process_payload_status;
 use sensitive_url::SensitiveUrl;
 use serde::{Deserialize, Serialize};
 use slot_clock::SlotClock;
+use ssz_types::VariableList;
 use std::collections::{HashMap, hash_map::Entry};
 use std::fmt;
 use std::future::Future;
@@ -55,8 +56,8 @@ use types::{
 };
 use types::{
     BeaconStateError, BlindedPayload, ChainSpec, Epoch, ExecPayload, ExecutionPayloadBellatrix,
-    ExecutionPayloadCapella, ExecutionPayloadElectra, ExecutionPayloadFulu, FullPayload,
-    ProposerPreparationData, Slot,
+    ExecutionPayloadCapella, ExecutionPayloadEip7805, ExecutionPayloadElectra,
+    ExecutionPayloadFulu, FullPayload, ProposerPreparationData, Slot,
 };
 
 mod block_hash;
@@ -188,12 +189,6 @@ impl From<ssz_types::Error> for Error {
 impl From<hex::FromHexError> for Error {
     fn from(e: hex::FromHexError) -> Self {
         Error::HexError(e)
-    }
-}
-
-impl From<ssz_types::Error> for Error {
-    fn from(e: ssz_types::Error) -> Self {
-        Error::SszTypesError(e)
     }
 }
 
@@ -2043,16 +2038,16 @@ impl<E: EthSpec> ExecutionLayer<E> {
 
         let Some(raw_transactions) = raw_transactions else {
             debug!(%parent_hash, "The EL sent an empty inclusion list");
-            return Ok(transactions.into());
+            return Ok(transactions.try_into()?);
         };
         for raw_tx in raw_transactions {
             let decoded_hex_tx =
                 VariableList::new(hex::decode(raw_tx.strip_prefix("0x").unwrap_or(&raw_tx))?)?;
             transactions.push(decoded_hex_tx);
         }
-        Ok(transactions.into())
+        Ok(transactions.try_into()?)
     }
-    
+
     async fn post_builder_blinded_blocks_v2(
         &self,
         block_root: Hash256,
