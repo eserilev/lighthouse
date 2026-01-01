@@ -5,7 +5,7 @@ use beacon_chain::{
     inclusion_list_verification::GossipInclusionListError,
     test_utils::{AttestationStrategy, BeaconChainHarness, BlockStrategy, EphemeralHarnessType},
 };
-use bls::{PublicKeyBytes, SecretKey, Keypair, generics::GenericSignature};
+use bls::{Keypair, PublicKeyBytes, SecretKey, generics::GenericSignature};
 use types::{
     ChainSpec, Domain, Epoch, EthSpec, Fork, Hash256, InclusionList, MainnetEthSpec,
     SignedInclusionList, SignedRoot, Slot,
@@ -258,7 +258,9 @@ async fn inclusion_list_verification() {
         .inspect_inclusion_list_err(
             "inclusion list with too many transactions",
             |_, il| {
-                il.message.transactions = vec![vec![0u8; 5].try_into().unwrap(); 8193].try_into().unwrap();
+                il.message.transactions = vec![vec![0u8; 5].try_into().unwrap(); 8193]
+                    .try_into()
+                    .unwrap();
             },
             |_, error| {
                 assert!(matches!(
