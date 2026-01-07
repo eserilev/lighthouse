@@ -3229,9 +3229,9 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
 
         trace!(
             %peer_id,
-            builder_index = execution_payload.message().builder_index(),
-            slot = %execution_payload.message().slot(),
-            beacon_block_root = %execution_payload.message().beacon_block_root(),
+            builder_index = execution_payload.message.builder_index,
+            slot = %execution_payload.message.slot,
+            beacon_block_root = %execution_payload.message.beacon_block_root,
             "Processing execution payload envelope"
         );
 

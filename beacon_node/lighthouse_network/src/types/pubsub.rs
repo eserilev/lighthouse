@@ -15,8 +15,8 @@ use types::{
     SignedBeaconBlockBase, SignedBeaconBlockBellatrix, SignedBeaconBlockCapella,
     SignedBeaconBlockDeneb, SignedBeaconBlockElectra, SignedBeaconBlockFulu,
     SignedBeaconBlockGloas, SignedBlsToExecutionChange, SignedContributionAndProof,
-    SignedExecutionPayloadEnvelope, SignedExecutionPayloadEnvelopeGloas, SignedVoluntaryExit,
-    SingleAttestation, SubnetId, SyncCommitteeMessage, SyncSubnetId,
+    SignedExecutionPayloadEnvelope, SignedVoluntaryExit, SingleAttestation, SubnetId,
+    SyncCommitteeMessage, SyncSubnetId,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -367,10 +367,8 @@ impl<E: EthSpec> PubsubMessage<E> {
                                         fork_name
                                     ));
                                 }
-                                SignedExecutionPayloadEnvelope::Gloas(
-                                    SignedExecutionPayloadEnvelopeGloas::from_ssz_bytes(data)
-                                        .map_err(|e| format!("{:?}", e))?,
-                                )
+                                SignedExecutionPayloadEnvelope::from_ssz_bytes(data)
+                                    .map_err(|e| format!("{:?}", e))?
                             }
                             None => {
                                 return Err(format!(
@@ -531,8 +529,7 @@ impl<E: EthSpec> std::fmt::Display for PubsubMessage<E> {
                 write!(
                     f,
                     "Signed Execution Payload Envelope: slot: {}, builder_index: {}",
-                    data.message().slot(),
-                    data.message().builder_index()
+                    data.message.slot, data.message.builder_index
                 )
             }
             PubsubMessage::PayloadAttestationMessage(data) => {
