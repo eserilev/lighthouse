@@ -22,6 +22,8 @@ pub enum Error {
     BlockReplayError(state_processing::BlockReplayError),
     RebuildingStateCaches(BeaconStateError),
     SlotClockError,
+    InvalidFork,
+    InvalidAvailableBlockData,
 }
 
 #[derive(PartialEq, Eq)]
@@ -44,7 +46,9 @@ impl Error {
             | Error::ParentStateMissing(_)
             | Error::BlockReplayError(_)
             | Error::RebuildingStateCaches(_)
-            | Error::SlotClockError => ErrorCategory::Internal,
+            | Error::SlotClockError
+            | Error::InvalidFork
+            | Error::InvalidAvailableBlockData => ErrorCategory::Internal,
             Error::InvalidBlobs { .. }
             | Error::InvalidColumn { .. }
             | Error::ReconstructColumnsError { .. }
