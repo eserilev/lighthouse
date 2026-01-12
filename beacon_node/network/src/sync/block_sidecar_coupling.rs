@@ -9,6 +9,7 @@ use lighthouse_network::{
     PeerId,
     service::api_types::{
         BlobsByRangeRequestId, BlocksByRangeRequestId, DataColumnsByRangeRequestId,
+        ExecutionPayloadEnvelopesByRangeRequestId,
     },
 };
 use ssz_types::RuntimeVariableList;
@@ -16,7 +17,7 @@ use std::{collections::HashMap, sync::Arc};
 use tracing::{Span, debug};
 use types::{
     BlobSidecar, ChainSpec, ColumnIndex, DataColumnSidecar, DataColumnSidecarList, EthSpec,
-    Hash256, SignedBeaconBlock,
+    Hash256, SignedBeaconBlock, SignedExecutionPayloadEnvelope,
 };
 
 use crate::sync::network_context::MAX_COLUMN_RETRIES;
@@ -37,6 +38,13 @@ pub struct RangeBlockComponentsRequest<E: EthSpec> {
     blocks_request: ByRangeRequest<BlocksByRangeRequestId, Vec<Arc<SignedBeaconBlock<E>>>>,
     /// Sidecars we have received awaiting for their corresponding block.
     block_data_request: RangeBlockDataRequest<E>,
+    /// Execution payload envelopes we have received awaiting for their corresponding block.\
+    execution_payload_envelopes_request: Option<
+        ByRangeRequest<
+            ExecutionPayloadEnvelopesByRangeRequestId,
+            Vec<Arc<SignedExecutionPayloadEnvelope<E>>>,
+        >,
+    >,
     /// Span to track the range request and all children range requests.
     pub(crate) request_span: Span,
 }
@@ -88,6 +96,7 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
             Vec<(DataColumnsByRangeRequestId, Vec<ColumnIndex>)>,
             Vec<ColumnIndex>,
         )>,
+        execution_payload_envelopes_req_id: Option<ExecutionPayloadEnvelopesByRangeRequestId>,
         request_span: Span,
     ) -> Self {
         let block_data_request = if let Some(blobs_req_id) = blobs_req_id {
@@ -107,9 +116,13 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
             RangeBlockDataRequest::NoData
         };
 
+        let execution_payload_envelopes_request =
+            execution_payload_envelopes_req_id.map(ByRangeRequest::Active);
+
         Self {
             blocks_request: ByRangeRequest::Active(blocks_req_id),
             block_data_request,
+            execution_payload_envelopes_request,
             request_span,
         }
     }
@@ -191,6 +204,21 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
         }
     }
 
+    /// Adds received execution payload envelopes to the request.
+    ///
+    /// Returns an error if this request is for a pre-gloas block
+    /// or if the request id is unknown
+    pub fn add_execution_payload_envelopes(
+        &mut self,
+        req_id: ExecutionPayloadEnvelopesByRangeRequestId,
+        execution_payload_envelope: Vec<Arc<SignedExecutionPayloadEnvelope<E>>>,
+    ) -> Result<(), String> {
+        match &mut self.execution_payload_envelopes_request {
+            None => Err("received execution payload envelope but expected none.".to_owned()),
+            Some(req) => req.finish(req_id, execution_payload_envelope),
+        }
+    }
+
     /// Attempts to construct RPC blocks from all received components.
     ///
     /// Returns `None` if not all expected requests have completed.
@@ -206,6 +234,15 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
     {
         let Some(blocks) = self.blocks_request.to_finished() else {
             return None;
+        };
+
+        // TODO(gloas-sync) this is confusing maybe theres a better way
+        let _payloads = match &self.execution_payload_envelopes_request {
+            // No `execution_payload_envelopes_request` to process, we can continue with coupling
+            None => None,
+            // There are `execution_payload_envelopes_request` to process. If the payload requests aren't finished yet
+            // we return early.
+            Some(req) => Some(req.to_finished()?),
         };
 
         // Increment the attempt once this function returns the response or errors
@@ -351,6 +388,23 @@ impl<E: EthSpec> RangeBlockComponentsRequest<E> {
 
         Ok(responses)
     }
+
+    // TODO(gloas-sync)
+    // fn responses_with_payloads<T>(
+    //     _blocks: Vec<Arc<SignedBeaconBlock<E>>>,
+    //     _payloads: Vec<Arc<SignedExecutionPayloadEnvelope<E>>>,
+    //     _data_columns: Option<DataColumnSidecarList<E>>,
+    //     _column_to_peer: HashMap<u64, PeerId>,
+    //     _expects_custody_columns: &[ColumnIndex],
+    //     _attempt: usize,
+    //     _da_checker: Arc<DataAvailabilityChecker<T>>,
+    //     _spec: Arc<ChainSpec>,
+    // ) -> Result<Vec<RpcBlock<E>>, CouplingError>
+    // where
+    //     T: BeaconChainTypes<EthSpec = E>,
+    // {
+    //     todo!()
+    // }
 
     fn responses_with_custody_columns<T>(
         blocks: Vec<Arc<SignedBeaconBlock<E>>>,
@@ -559,7 +613,7 @@ mod tests {
 
         let blocks_req_id = blocks_id(components_id());
         let mut info =
-            RangeBlockComponentsRequest::<E>::new(blocks_req_id, None, None, Span::none());
+            RangeBlockComponentsRequest::<E>::new(blocks_req_id, None, None, None, Span::none());
 
         // Send blocks and complete terminate response
         info.add_blocks(blocks_req_id, blocks).unwrap();
@@ -589,6 +643,7 @@ mod tests {
         let mut info = RangeBlockComponentsRequest::<E>::new(
             blocks_req_id,
             Some(blobs_req_id),
+            None,
             None,
             Span::none(),
         );
@@ -649,6 +704,7 @@ mod tests {
             blocks_req_id,
             None,
             Some((columns_req_id.clone(), expects_custody_columns.clone())),
+            None,
             Span::none(),
         );
         // Send blocks and complete terminate response
@@ -723,6 +779,7 @@ mod tests {
             blocks_req_id,
             None,
             Some((columns_req_id.clone(), expected_custody_columns.clone())),
+            None,
             Span::none(),
         );
 
@@ -815,6 +872,7 @@ mod tests {
             blocks_req_id,
             None,
             Some((columns_req_id.clone(), expected_custody_columns.clone())),
+            None,
             Span::none(),
         );
 
@@ -908,6 +966,7 @@ mod tests {
             blocks_req_id,
             None,
             Some((columns_req_id.clone(), expected_custody_columns.clone())),
+            None,
             Span::none(),
         );
 
@@ -1036,6 +1095,7 @@ mod tests {
             blocks_req_id,
             None,
             Some((columns_req_id.clone(), expected_custody_columns.clone())),
+            None,
             Span::none(),
         );
 

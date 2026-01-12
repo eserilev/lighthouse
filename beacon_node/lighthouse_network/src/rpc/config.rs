@@ -222,6 +222,12 @@ impl FromStr for RateLimiterConfig {
                 Protocol::DataColumnsByRange => {
                     data_columns_by_range_quota = data_columns_by_range_quota.or(quota)
                 }
+                Protocol::ExecutionPayloadEnvelopesByRange => {
+                    blocks_by_range_quota = blocks_by_range_quota.or(quota)
+                }
+                Protocol::ExecutionPayloadEnvelopesByRoot => {
+                    blocks_by_root_quota = blocks_by_root_quota.or(quota)
+                }
                 Protocol::Ping => ping_quota = ping_quota.or(quota),
                 Protocol::MetaData => meta_data_quota = meta_data_quota.or(quota),
                 Protocol::LightClientBootstrap => {

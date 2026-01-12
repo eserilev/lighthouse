@@ -531,6 +531,29 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
         })
     }
 
+    /// Create a new `Work` event for some blobs, where the result from computation (if any) is
+    /// sent to the other side of `result_tx`.
+    pub fn send_rpc_execution_payload_envelope(
+        self: &Arc<Self>,
+        block_root: Hash256,
+        payload: Arc<SignedExecutionPayloadEnvelope<T::EthSpec>>,
+        seen_timestamp: Duration,
+        process_type: BlockProcessType,
+    ) -> Result<(), Error<T::EthSpec>> {
+        let process_fn = self
+            .clone()
+            .generate_rpc_execution_payload_envelope_process_fn(
+                block_root,
+                payload,
+                seen_timestamp,
+                process_type,
+            );
+        self.try_send(BeaconWorkEvent {
+            drop_during_sync: false,
+            work: Work::RpcBlobs { process_fn },
+        })
+    }
+
     pub fn send_historic_data_columns(
         self: &Arc<Self>,
         batch_id: CustodyBackfillBatchId,

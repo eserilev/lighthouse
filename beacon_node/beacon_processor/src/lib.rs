@@ -115,6 +115,7 @@ pub struct BeaconProcessorQueueLengths {
     rpc_block_queue: usize,
     rpc_blob_queue: usize,
     rpc_custody_column_queue: usize,
+    rpc_execution_payload_envelope_queue: usize,
     column_reconstruction_queue: usize,
     chain_segment_queue: usize,
     backfill_chain_segment: usize,
@@ -183,6 +184,7 @@ impl BeaconProcessorQueueLengths {
             // We don't request more than `PARENT_DEPTH_TOLERANCE` (32) lookups, so we can limit
             // this queue size. With 48 max blobs per block, each column sidecar list could be up to 12MB.
             rpc_custody_column_queue: 64,
+            rpc_execution_payload_envelope_queue: 1024,
             column_reconstruction_queue: 1,
             chain_segment_queue: 64,
             backfill_chain_segment: 64,
@@ -605,6 +607,7 @@ pub enum Work<E: EthSpec> {
         process_fn: AsyncFn,
     },
     RpcCustodyColumn(AsyncFn),
+    RpcExecutionPayloadEnvelope(AsyncFn),
     ColumnReconstruction(AsyncFn),
     IgnoredRpcBlock {
         process_fn: BlockingFn,
@@ -661,6 +664,7 @@ pub enum WorkType {
     RpcBlock,
     RpcBlobs,
     RpcCustodyColumn,
+    RpcExecutionPayloadEnvelope,
     ColumnReconstruction,
     IgnoredRpcBlock,
     ChainSegment,
@@ -715,6 +719,7 @@ impl<E: EthSpec> Work<E> {
             Work::RpcBlock { .. } => WorkType::RpcBlock,
             Work::RpcBlobs { .. } => WorkType::RpcBlobs,
             Work::RpcCustodyColumn { .. } => WorkType::RpcCustodyColumn,
+            Work::RpcExecutionPayloadEnvelope { .. } => WorkType::RpcExecutionPayloadEnvelope,
             Work::ColumnReconstruction(_) => WorkType::ColumnReconstruction,
             Work::IgnoredRpcBlock { .. } => WorkType::IgnoredRpcBlock,
             Work::ChainSegment { .. } => WorkType::ChainSegment,
@@ -879,6 +884,8 @@ impl<E: EthSpec> BeaconProcessor<E> {
         let mut rpc_block_queue = FifoQueue::new(queue_lengths.rpc_block_queue);
         let mut rpc_blob_queue = FifoQueue::new(queue_lengths.rpc_blob_queue);
         let mut rpc_custody_column_queue = FifoQueue::new(queue_lengths.rpc_custody_column_queue);
+        let mut rpc_execution_payload_envelope_queue =
+            FifoQueue::new(queue_lengths.rpc_execution_payload_envelope_queue);
         let mut column_reconstruction_queue =
             LifoQueue::new(queue_lengths.column_reconstruction_queue);
         let mut chain_segment_queue = FifoQueue::new(queue_lengths.chain_segment_queue);
@@ -1373,6 +1380,9 @@ impl<E: EthSpec> BeaconProcessor<E> {
                             Work::RpcCustodyColumn { .. } => {
                                 rpc_custody_column_queue.push(work, work_id)
                             }
+                            Work::RpcExecutionPayloadEnvelope { .. } => {
+                                rpc_execution_payload_envelope_queue.push(work, work_id)
+                            }
                             Work::ColumnReconstruction(_) => column_reconstruction_queue.push(work),
                             Work::ChainSegment { .. } => chain_segment_queue.push(work, work_id),
                             Work::ChainSegmentBackfill { .. } => {
@@ -1463,6 +1473,9 @@ impl<E: EthSpec> BeaconProcessor<E> {
                         }
                         WorkType::RpcBlock => rpc_block_queue.len(),
                         WorkType::RpcBlobs | WorkType::IgnoredRpcBlock => rpc_blob_queue.len(),
+                        WorkType::RpcExecutionPayloadEnvelope => {
+                            rpc_execution_payload_envelope_queue.len()
+                        }
                         WorkType::RpcCustodyColumn => rpc_custody_column_queue.len(),
                         WorkType::ColumnReconstruction => column_reconstruction_queue.len(),
                         WorkType::ChainSegment => chain_segment_queue.len(),
@@ -1624,7 +1637,8 @@ impl<E: EthSpec> BeaconProcessor<E> {
             Work::RpcBlock { process_fn }
             | Work::RpcBlobs { process_fn }
             | Work::RpcCustodyColumn(process_fn)
-            | Work::ColumnReconstruction(process_fn) => task_spawner.spawn_async(process_fn),
+            | Work::ColumnReconstruction(process_fn)
+            | Work::RpcExecutionPayloadEnvelope(process_fn) => task_spawner.spawn_async(process_fn),
             Work::IgnoredRpcBlock { process_fn } => task_spawner.spawn_blocking(process_fn),
             Work::GossipBlock(work)
             | Work::GossipBlobSidecar(work)

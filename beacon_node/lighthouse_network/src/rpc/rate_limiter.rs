@@ -105,6 +105,10 @@ pub struct RPCRateLimiter {
     dcbroot_rl: Limiter<PeerId>,
     /// DataColumnsByRange rate limiter.
     dcbrange_rl: Limiter<PeerId>,
+    /// ExecutionPayloadEnvelopesByRange rate limiter
+    eperange_rl: Limiter<PeerId>,
+    /// ExecutionPayloadEnvelopesByRoot rate limiter
+    eperoot_rl: Limiter<PeerId>,
     /// LightClientBootstrap rate limiter.
     lc_bootstrap_rl: Limiter<PeerId>,
     /// LightClientOptimisticUpdate rate limiter.
@@ -173,6 +177,8 @@ impl RPCRateLimiterBuilder {
             Protocol::BlobsByRoot => self.blbroot_quota = q,
             Protocol::DataColumnsByRoot => self.dcbroot_quota = q,
             Protocol::DataColumnsByRange => self.dcbrange_quota = q,
+            Protocol::ExecutionPayloadEnvelopesByRange => self.bbrange_quota = q,
+            Protocol::ExecutionPayloadEnvelopesByRoot => self.bbroots_quota = q,
             Protocol::LightClientBootstrap => self.lcbootstrap_quota = q,
             Protocol::LightClientOptimisticUpdate => self.lc_optimistic_update_quota = q,
             Protocol::LightClientFinalityUpdate => self.lc_finality_update_quota = q,
@@ -226,12 +232,14 @@ impl RPCRateLimiterBuilder {
         let metadata_rl = Limiter::from_quota(metadata_quota)?;
         let status_rl = Limiter::from_quota(status_quota)?;
         let goodbye_rl = Limiter::from_quota(goodbye_quota)?;
-        let bbroots_rl = Limiter::from_quota(bbroots_quota)?;
-        let bbrange_rl = Limiter::from_quota(bbrange_quota)?;
+        let bbroots_rl = Limiter::from_quota(bbroots_quota.clone())?;
+        let bbrange_rl = Limiter::from_quota(bbrange_quota.clone())?;
         let blbrange_rl = Limiter::from_quota(blbrange_quota)?;
         let blbroot_rl = Limiter::from_quota(blbroots_quota)?;
         let dcbroot_rl = Limiter::from_quota(dcbroot_quota)?;
         let dcbrange_rl = Limiter::from_quota(dcbrange_quota)?;
+        let eperange_rl = Limiter::from_quota(bbrange_quota)?;
+        let eperoot_rl = Limiter::from_quota(bbroots_quota)?;
         let lc_bootstrap_rl = Limiter::from_quota(lc_bootstrap_quota)?;
         let lc_optimistic_update_rl = Limiter::from_quota(lc_optimistic_update_quota)?;
         let lc_finality_update_rl = Limiter::from_quota(lc_finality_update_quota)?;
@@ -255,6 +263,8 @@ impl RPCRateLimiterBuilder {
             blbroot_rl,
             dcbroot_rl,
             dcbrange_rl,
+            eperoot_rl,
+            eperange_rl,
             lc_bootstrap_rl,
             lc_optimistic_update_rl,
             lc_finality_update_rl,
@@ -372,6 +382,8 @@ impl RPCRateLimiter {
             Protocol::BlobsByRoot => &mut self.blbroot_rl,
             Protocol::DataColumnsByRoot => &mut self.dcbroot_rl,
             Protocol::DataColumnsByRange => &mut self.dcbrange_rl,
+            Protocol::ExecutionPayloadEnvelopesByRange => &mut self.eperange_rl,
+            Protocol::ExecutionPayloadEnvelopesByRoot => &mut self.eperoot_rl,
             Protocol::LightClientBootstrap => &mut self.lc_bootstrap_rl,
             Protocol::LightClientOptimisticUpdate => &mut self.lc_optimistic_update_rl,
             Protocol::LightClientFinalityUpdate => &mut self.lc_finality_update_rl,
@@ -396,6 +408,8 @@ impl RPCRateLimiter {
             blbroot_rl,
             dcbroot_rl,
             dcbrange_rl,
+            eperange_rl,
+            eperoot_rl,
             lc_bootstrap_rl,
             lc_optimistic_update_rl,
             lc_finality_update_rl,
@@ -413,6 +427,8 @@ impl RPCRateLimiter {
         blbroot_rl.prune(time_since_start);
         dcbrange_rl.prune(time_since_start);
         dcbroot_rl.prune(time_since_start);
+        eperange_rl.prune(time_since_start);
+        eperoot_rl.prune(time_since_start);
         lc_bootstrap_rl.prune(time_since_start);
         lc_optimistic_update_rl.prune(time_since_start);
         lc_finality_update_rl.prune(time_since_start);

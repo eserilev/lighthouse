@@ -615,6 +615,20 @@ pub static BEACON_BLOB_GOSSIP_ARRIVED_LATE_TOTAL: LazyLock<Result<IntCounter>> =
     },
 );
 
+pub static BEACON_PAYLOAD_RPC_SLOT_START_DELAY_TIME: LazyLock<Result<Histogram>> = LazyLock::new(
+    || {
+        try_create_histogram_with_buckets(
+            "beacon_payload_rpc_slot_start_delay_time",
+            "Duration between when a payload is received over rpc and the start of the slot it belongs to.",
+            // Create a custom bucket list for greater granularity in block delay
+            Ok(vec![
+                0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0,
+                6.0, 7.0, 8.0, 9.0, 10.0, 15.0, 20.0,
+            ]),
+        )
+    },
+);
+
 /*
  * Light client update reprocessing queue metrics.
  */

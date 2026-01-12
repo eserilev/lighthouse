@@ -45,6 +45,7 @@ use crate::service::NetworkMessage;
 use crate::status::ToStatusMessage;
 use crate::sync::block_lookups::{
     BlobRequestState, BlockComponent, BlockRequestState, CustodyRequestState, DownloadResult,
+    ExecutionPayloadEnvelopeRequestState,
 };
 use crate::sync::custody_backfill_sync::CustodyBackFillSync;
 use crate::sync::network_context::{PeerGroup, RpcResponseResult};
@@ -60,7 +61,8 @@ use lighthouse_network::service::api_types::{
     BlobsByRangeRequestId, BlocksByRangeRequestId, ComponentsByRangeRequestId,
     CustodyBackFillBatchRequestId, CustodyBackfillBatchId, CustodyRequester,
     DataColumnsByRangeRequestId, DataColumnsByRangeRequester, DataColumnsByRootRequestId,
-    DataColumnsByRootRequester, Id, SingleLookupReqId, SyncRequestId,
+    DataColumnsByRootRequester, ExecutionPayloadEnvelopesByRangeRequestId, Id, SingleLookupReqId,
+    SyncRequestId,
 };
 use lighthouse_network::types::{NetworkGlobals, SyncState};
 use lighthouse_network::{PeerAction, PeerId};
@@ -73,7 +75,8 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, trace};
 use types::{
-    BlobSidecar, DataColumnSidecar, EthSpec, ForkContext, Hash256, SignedBeaconBlock, Slot,
+    BlobSidecar, DataColumnSidecar, EthSpec, ForkContext, Hash256, SignedBeaconBlock,
+    SignedExecutionPayloadEnvelope, Slot,
 };
 
 /// The number of slots ahead of us that is allowed before requesting a long-range (batch)  Sync
@@ -129,6 +132,13 @@ pub enum SyncMessage<E: EthSpec> {
         sync_request_id: SyncRequestId,
         peer_id: PeerId,
         data_column: Option<Arc<DataColumnSidecar<E>>>,
+        seen_timestamp: Duration,
+    },
+
+    RpcExecutionPayloadEnvelope {
+        sync_request_id: SyncRequestId,
+        peer_id: PeerId,
+        payload_envelope: Option<Arc<SignedExecutionPayloadEnvelope<E>>>,
         seen_timestamp: Duration,
     },
 
@@ -494,6 +504,12 @@ impl<T: BeaconChainTypes> SyncManager<T> {
             SyncRequestId::DataColumnsByRoot(req_id) => {
                 self.on_data_columns_by_root_response(req_id, peer_id, RpcEvent::RPCError(error))
             }
+            SyncRequestId::ExecutionPayloadEnvelopesByRoot { id } => self
+                .on_execution_payload_envelope_by_root_response(
+                    id,
+                    peer_id,
+                    RpcEvent::RPCError(error),
+                ),
             SyncRequestId::BlocksByRange(req_id) => {
                 self.on_blocks_by_range_response(req_id, peer_id, RpcEvent::RPCError(error))
             }
@@ -503,6 +519,12 @@ impl<T: BeaconChainTypes> SyncManager<T> {
             SyncRequestId::DataColumnsByRange(req_id) => {
                 self.on_data_columns_by_range_response(req_id, peer_id, RpcEvent::RPCError(error))
             }
+            SyncRequestId::ExecutionPayloadEnvelopesByRange(req_id) => self
+                .on_execution_payload_envelopes_by_range_response(
+                    req_id,
+                    peer_id,
+                    RpcEvent::RPCError(error),
+                ),
         }
     }
 
@@ -833,6 +855,17 @@ impl<T: BeaconChainTypes> SyncManager<T> {
             } => {
                 self.rpc_data_column_received(sync_request_id, peer_id, data_column, seen_timestamp)
             }
+            SyncMessage::RpcExecutionPayloadEnvelope {
+                sync_request_id,
+                peer_id,
+                payload_envelope,
+                seen_timestamp,
+            } => self.rpc_execution_payload_envelope_received(
+                sync_request_id,
+                peer_id,
+                payload_envelope,
+                seen_timestamp,
+            ),
             SyncMessage::UnknownParentBlock(peer_id, block, block_root) => {
                 let block_slot = block.slot();
                 let parent_root = block.parent_root();
@@ -1201,6 +1234,71 @@ impl<T: BeaconChainTypes> SyncManager<T> {
                     }),
                     &mut self.network,
                 )
+        }
+    }
+
+    fn rpc_execution_payload_envelope_received(
+        &mut self,
+        sync_request_id: SyncRequestId,
+        peer_id: PeerId,
+        blob: Option<Arc<SignedExecutionPayloadEnvelope<T::EthSpec>>>,
+        seen_timestamp: Duration,
+    ) {
+        match sync_request_id {
+            SyncRequestId::ExecutionPayloadEnvelopesByRoot { id } => self
+                .on_execution_payload_envelope_by_root_response(
+                    id,
+                    peer_id,
+                    RpcEvent::from_chunk(blob, seen_timestamp),
+                ),
+            SyncRequestId::ExecutionPayloadEnvelopesByRange(id) => self
+                .on_execution_payload_envelopes_by_range_response(
+                    id,
+                    peer_id,
+                    RpcEvent::from_chunk(blob, seen_timestamp),
+                ),
+            _ => {
+                crit!(%peer_id, "bad request id for payload");
+            }
+        }
+    }
+
+    fn on_execution_payload_envelope_by_root_response(
+        &mut self,
+        id: SingleLookupReqId,
+        peer_id: PeerId,
+        payload: RpcEvent<Arc<SignedExecutionPayloadEnvelope<T::EthSpec>>>,
+    ) {
+        if let Some(resp) = self
+            .network
+            .on_execution_payload_envelope_by_root_response(id, peer_id, payload)
+        {
+            self.block_lookups
+                .on_download_response::<ExecutionPayloadEnvelopeRequestState<T::EthSpec>>(
+                    id,
+                    resp.map(|(value, seen_timestamp)| {
+                        (value, PeerGroup::from_single(peer_id), seen_timestamp)
+                    }),
+                    &mut self.network,
+                )
+        }
+    }
+
+    fn on_execution_payload_envelopes_by_range_response(
+        &mut self,
+        id: ExecutionPayloadEnvelopesByRangeRequestId,
+        peer_id: PeerId,
+        block: RpcEvent<Arc<SignedExecutionPayloadEnvelope<T::EthSpec>>>,
+    ) {
+        if let Some(resp) = self
+            .network
+            .on_execution_payload_envelopes_by_range_response(id, peer_id, block)
+        {
+            self.on_range_components_response(
+                id.parent_request_id,
+                peer_id,
+                RangeBlockComponent::ExecutionPayloadEnvelopes(id, resp),
+            );
         }
     }
 

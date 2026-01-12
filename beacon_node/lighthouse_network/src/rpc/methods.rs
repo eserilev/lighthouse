@@ -12,6 +12,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use strum::IntoStaticStr;
 use superstruct::superstruct;
+use types::SignedExecutionPayloadEnvelope;
 use types::blob_sidecar::BlobIdentifier;
 use types::light_client_update::MAX_REQUEST_LIGHT_CLIENT_UPDATES;
 use types::{
@@ -417,6 +418,22 @@ impl DataColumnsByRangeRequest {
     }
 }
 
+/// Request a number of signed execution payload envelopes from a peer.
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+pub struct ExecutionPayloadEnvelopesByRangeRequest {
+    /// The starting slot to request payloads.
+    pub start_slot: u64,
+
+    /// The number of payloads from the start slot.
+    pub count: u64,
+}
+
+impl ExecutionPayloadEnvelopesByRangeRequest {
+    pub fn new(start_slot: u64, count: u64) -> Self {
+        Self { start_slot, count }
+    }
+}
+
 /// Request a number of beacon block roots from a peer.
 #[superstruct(
     variants(V1, V2),
@@ -546,6 +563,33 @@ impl<E: EthSpec> DataColumnsByRootRequest<E> {
     }
 }
 
+/// Request a number of signed execution payload envelopes from a peer.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ExecutionPayloadEnvelopesByRootRequest {
+    /// The list of beacon block roots being requested.
+    pub execution_payload_envelope_ids: RuntimeVariableList<Hash256>,
+}
+
+impl ExecutionPayloadEnvelopesByRootRequest {
+    pub fn new(
+        execution_payload_envelope_ids: Vec<Hash256>,
+        fork_context: &ForkContext,
+    ) -> Result<Self, String> {
+        // TODO(gloas-sync) what should max be
+        let max_request_execution_payloads = fork_context
+            .spec
+            .max_request_blocks(fork_context.current_fork_name());
+        let execution_payload_envelope_ids = RuntimeVariableList::new(
+            execution_payload_envelope_ids,
+            max_request_execution_payloads,
+        )
+        .map_err(|e| format!("ExecutionPayloadEnvelopesByRoot too many roots: {e:?}"))?;
+        Ok(Self {
+            execution_payload_envelope_ids,
+        })
+    }
+}
+
 /// Request a number of beacon data columns from a peer.
 #[derive(Encode, Decode, Clone, Debug, PartialEq)]
 pub struct LightClientUpdatesByRangeRequest {
@@ -591,6 +635,12 @@ pub enum RpcSuccessResponse<E: EthSpec> {
 
     /// A response to a get BLOBS_BY_RANGE request
     BlobsByRange(Arc<BlobSidecar<E>>),
+
+    /// A response to a get PAYLOAD_ENVELOPES_BY_RANGE request
+    ExecutionPayloadEnvelopesByRange(Arc<SignedExecutionPayloadEnvelope<E>>),
+
+    /// A response to a get PAYLOAD_ENVELOPES_BY_ROOT request
+    ExecutionPayloadEnvelopesByRoot(Arc<SignedExecutionPayloadEnvelope<E>>),
 
     /// A response to a get LIGHT_CLIENT_BOOTSTRAP request.
     LightClientBootstrap(Arc<LightClientBootstrap<E>>),
@@ -641,6 +691,12 @@ pub enum ResponseTermination {
     /// Data column sidecars by range stream termination.
     DataColumnsByRange,
 
+    /// Execution payload envelopes by root stream termination.
+    ExecutionPayloadEnvelopesByRoot,
+
+    /// Execution payload envelopes by range stream termination.
+    ExecutionPayloadEnvelopesByRange,
+
     /// Light client updates by range stream termination.
     LightClientUpdatesByRange,
 }
@@ -654,6 +710,12 @@ impl ResponseTermination {
             ResponseTermination::BlobsByRoot => Protocol::BlobsByRoot,
             ResponseTermination::DataColumnsByRoot => Protocol::DataColumnsByRoot,
             ResponseTermination::DataColumnsByRange => Protocol::DataColumnsByRange,
+            ResponseTermination::ExecutionPayloadEnvelopesByRoot => {
+                Protocol::ExecutionPayloadEnvelopesByRoot
+            }
+            ResponseTermination::ExecutionPayloadEnvelopesByRange => {
+                Protocol::ExecutionPayloadEnvelopesByRange
+            }
             ResponseTermination::LightClientUpdatesByRange => Protocol::LightClientUpdatesByRange,
         }
     }
@@ -749,6 +811,12 @@ impl<E: EthSpec> RpcSuccessResponse<E> {
             RpcSuccessResponse::BlobsByRoot(_) => Protocol::BlobsByRoot,
             RpcSuccessResponse::DataColumnsByRoot(_) => Protocol::DataColumnsByRoot,
             RpcSuccessResponse::DataColumnsByRange(_) => Protocol::DataColumnsByRange,
+            RpcSuccessResponse::ExecutionPayloadEnvelopesByRange(_) => {
+                Protocol::ExecutionPayloadEnvelopesByRange
+            }
+            RpcSuccessResponse::ExecutionPayloadEnvelopesByRoot(_) => {
+                Protocol::ExecutionPayloadEnvelopesByRoot
+            }
             RpcSuccessResponse::Pong(_) => Protocol::Ping,
             RpcSuccessResponse::MetaData(_) => Protocol::MetaData,
             RpcSuccessResponse::LightClientBootstrap(_) => Protocol::LightClientBootstrap,
@@ -769,6 +837,8 @@ impl<E: EthSpec> RpcSuccessResponse<E> {
             Self::DataColumnsByRange(r) | Self::DataColumnsByRoot(r) => {
                 Some(r.signed_block_header.message.slot)
             }
+            Self::ExecutionPayloadEnvelopesByRange(r)
+            | Self::ExecutionPayloadEnvelopesByRoot(r) => Some(r.slot()),
             Self::LightClientBootstrap(r) => Some(r.get_slot()),
             Self::LightClientFinalityUpdate(r) => Some(r.get_attested_header_slot()),
             Self::LightClientOptimisticUpdate(r) => Some(r.get_slot()),
@@ -831,6 +901,20 @@ impl<E: EthSpec> std::fmt::Display for RpcSuccessResponse<E> {
                     f,
                     "DataColumnsByRange: Data column slot: {}",
                     sidecar.slot()
+                )
+            }
+            RpcSuccessResponse::ExecutionPayloadEnvelopesByRange(payload_envelope) => {
+                write!(
+                    f,
+                    "PayloadEnvelopesByRange: payload slot: {}",
+                    payload_envelope.slot()
+                )
+            }
+            RpcSuccessResponse::ExecutionPayloadEnvelopesByRoot(payload_envelope) => {
+                write!(
+                    f,
+                    "PayloadEnvelopesByRoot: payload slot: {}",
+                    payload_envelope.slot()
                 )
             }
             RpcSuccessResponse::Pong(ping) => write!(f, "Pong: {}", ping.data),

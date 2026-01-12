@@ -2,7 +2,8 @@ use crate::sync::block_lookups::single_block_lookup::{
     LookupRequestError, SingleBlockLookup, SingleLookupRequestState,
 };
 use crate::sync::block_lookups::{
-    BlobRequestState, BlockRequestState, CustodyRequestState, PeerId,
+    BlobRequestState, BlockRequestState, CustodyRequestState, ExecutionPayloadEnvelopeRequestState,
+    PeerId,
 };
 use crate::sync::manager::BlockProcessType;
 use crate::sync::network_context::{LookupRequestResult, SyncNetworkContext};
@@ -12,7 +13,7 @@ use parking_lot::RwLock;
 use std::collections::HashSet;
 use std::sync::Arc;
 use types::blob_sidecar::FixedBlobSidecarList;
-use types::{DataColumnSidecarList, SignedBeaconBlock};
+use types::{DataColumnSidecarList, SignedBeaconBlock, SignedExecutionPayloadEnvelope};
 
 use super::SingleLookupId;
 use super::single_block_lookup::{ComponentRequests, DownloadResult};
@@ -22,6 +23,7 @@ pub enum ResponseType {
     Block,
     Blob,
     CustodyColumn,
+    ExecutionPayloadEnvelope,
 }
 
 /// This trait unifies common single block lookup functionality across blocks and blobs. This
@@ -151,6 +153,58 @@ impl<T: BeaconChainTypes> RequestState<T> for BlobRequestState<T::EthSpec> {
             ComponentRequests::WaitingForBlock => Err("waiting for block"),
             ComponentRequests::ActiveBlobRequest(request, _) => Ok(request),
             ComponentRequests::ActiveCustodyRequest { .. } => Err("expecting custody request"),
+            ComponentRequests::ActiveExecutionPayloadEnvelopeRequest { .. } => {
+                Err("expecting payload request")
+            }
+            ComponentRequests::NotNeeded { .. } => Err("not needed"),
+        }
+    }
+    fn get_state(&self) -> &SingleLookupRequestState<Self::VerifiedResponseType> {
+        &self.state
+    }
+    fn get_state_mut(&mut self) -> &mut SingleLookupRequestState<Self::VerifiedResponseType> {
+        &mut self.state
+    }
+}
+
+impl<T: BeaconChainTypes> RequestState<T> for ExecutionPayloadEnvelopeRequestState<T::EthSpec> {
+    type VerifiedResponseType = Arc<SignedExecutionPayloadEnvelope<T::EthSpec>>;
+
+    fn make_request(
+        &self,
+        id: Id,
+        lookup_peers: Arc<RwLock<HashSet<PeerId>>>,
+        _: usize,
+        cx: &mut SyncNetworkContext<T>,
+    ) -> Result<LookupRequestResult, LookupRequestError> {
+        cx.execution_payload_envelope_lookup_request(id, lookup_peers, self.requested_block_root)
+            .map_err(LookupRequestError::SendFailedNetwork)
+    }
+
+    fn send_for_processing(
+        id: Id,
+        download_result: DownloadResult<Self::VerifiedResponseType>,
+        cx: &SyncNetworkContext<T>,
+    ) -> Result<(), LookupRequestError> {
+        let DownloadResult {
+            value,
+            block_root,
+            seen_timestamp,
+            ..
+        } = download_result;
+        cx.send_execution_payload_envelope_for_processing(id, block_root, value, seen_timestamp)
+            .map_err(LookupRequestError::SendFailedProcessor)
+    }
+
+    fn response_type() -> ResponseType {
+        ResponseType::ExecutionPayloadEnvelope
+    }
+    fn request_state_mut(request: &mut SingleBlockLookup<T>) -> Result<&mut Self, &'static str> {
+        match &mut request.component_requests {
+            ComponentRequests::WaitingForBlock => Err("waiting for block"),
+            ComponentRequests::ActiveBlobRequest { .. } => Err("Expecting blob request"),
+            ComponentRequests::ActiveCustodyRequest { .. } => Err("expecting custody request"),
+            ComponentRequests::ActiveExecutionPayloadEnvelopeRequest(request) => Ok(request),
             ComponentRequests::NotNeeded { .. } => Err("not needed"),
         }
     }
@@ -205,6 +259,9 @@ impl<T: BeaconChainTypes> RequestState<T> for CustodyRequestState<T::EthSpec> {
             ComponentRequests::WaitingForBlock => Err("waiting for block"),
             ComponentRequests::ActiveBlobRequest { .. } => Err("expecting blob request"),
             ComponentRequests::ActiveCustodyRequest(request) => Ok(request),
+            ComponentRequests::ActiveExecutionPayloadEnvelopeRequest { .. } => {
+                Err("expecting payload request")
+            }
             ComponentRequests::NotNeeded { .. } => Err("not needed"),
         }
     }

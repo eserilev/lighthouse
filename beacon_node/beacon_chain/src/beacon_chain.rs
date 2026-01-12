@@ -3333,6 +3333,32 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         }
     }
 
+    /// Cache the payload in the processing cache, process it, then evict it from the cache if it was
+    /// imported or errors.
+    #[instrument(skip_all, level = "debug")]
+    pub async fn process_rpc_execution_payload_envelope(
+        self: &Arc<Self>,
+        slot: Slot,
+        block_root: Hash256,
+        payload: Arc<SignedExecutionPayloadEnvelope<T::EthSpec>>,
+    ) -> Result<AvailabilityProcessingStatus, BlockError> {
+        // If this block has already been imported to forkchoice it must have been available, so
+        // we don't need to process its payload again.
+        if self
+            .canonical_head
+            .fork_choice_read_lock()
+            .contains_block(&block_root)
+        {
+            return Err(BlockError::DuplicateFullyImported(block_root));
+        }
+
+        // TODO(gloas-sync)
+        // self.emit_sse_execution_payload_envelope_events(&block_root, blobs.iter().flatten().map(Arc::as_ref));
+
+        self.check_rpc_execution_payload_envelope_availability_and_import(slot, block_root, payload)
+            .await
+    }
+
     /// Check for known and configured invalid block roots before processing.
     pub fn check_invalid_block_roots(&self, block_root: Hash256) -> Result<(), BlockError> {
         if self.config.invalid_block_roots.contains(&block_root) {
@@ -3725,6 +3751,28 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             }
         }
         Ok(())
+    }
+
+    /// Checks if the provided payload can make any cached blocks available, and imports immediately
+    /// if so, otherwise cache the payload in the data availability checker.
+    async fn check_rpc_execution_payload_envelope_availability_and_import(
+        self: &Arc<Self>,
+        _slot: Slot,
+        _block_root: Hash256,
+        _payload: Arc<SignedExecutionPayloadEnvelope<T::EthSpec>>,
+    ) -> Result<AvailabilityProcessingStatus, BlockError> {
+        // TODO(gloas-sync)
+        // self.check_blob_header_signature_and_slashability(
+        //     block_root,
+        //     blobs.iter().flatten().map(Arc::as_ref),
+        // )?;
+        // let availability = self
+        //     .data_availability_checker
+        //     .put_rpc_blobs(block_root, blobs)?;
+
+        // self.process_availability(slot, availability, || Ok(()))
+        //     .await
+        todo!()
     }
 
     /// Imports a fully available block. Otherwise, returns `AvailabilityProcessingStatus::MissingComponents`
@@ -7367,6 +7415,13 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
     pub fn should_fetch_custody_columns(&self, block_epoch: Epoch) -> bool {
         self.da_check_required_for_epoch(block_epoch)
             && self.spec.is_peer_das_enabled_for_epoch(block_epoch)
+    }
+
+    /// Returns true if we should fetch custody columns for this block
+    pub fn should_fetch_execution_payload_envelopes(&self, block_epoch: Epoch) -> bool {
+        self.spec
+            .gloas_fork_epoch
+            .is_some_and(|gloas_fork_epoch| block_epoch >= gloas_fork_epoch)
     }
 
     /// Gets the `LightClientBootstrap` object for a requested block root.

@@ -25,6 +25,7 @@ pub const SPAN_OUTGOING_CUSTODY_REQUEST: &str = "outgoing_custody_request";
 pub const SPAN_PROCESS_RPC_BLOCK: &str = "process_rpc_block";
 pub const SPAN_PROCESS_RPC_BLOBS: &str = "process_rpc_blobs";
 pub const SPAN_PROCESS_RPC_CUSTODY_COLUMNS: &str = "process_rpc_custody_columns";
+pub const SPAN_PROCESS_RPC_PAYLOAD: &str = "process_rpc_payload";
 pub const SPAN_PROCESS_CHAIN_SEGMENT: &str = "process_chain_segment";
 pub const SPAN_CUSTODY_BACKFILL_SYNC_BATCH_REQUEST: &str = "custody_backfill_sync_batch_request";
 pub const SPAN_PROCESS_CHAIN_SEGMENT_BACKFILL: &str = "process_chain_segment_backfill";

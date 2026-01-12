@@ -17,7 +17,9 @@ use store::Hash256;
 use strum::IntoStaticStr;
 use tracing::{Span, debug_span};
 use types::blob_sidecar::FixedBlobSidecarList;
-use types::{DataColumnSidecarList, EthSpec, SignedBeaconBlock, Slot};
+use types::{
+    DataColumnSidecarList, EthSpec, SignedBeaconBlock, SignedExecutionPayloadEnvelope, Slot,
+};
 
 // Dedicated enum for LookupResult to force its usage
 #[must_use = "LookupResult must be handled with on_lookup_result"]
@@ -80,6 +82,7 @@ pub(crate) enum ComponentRequests<E: EthSpec> {
     WaitingForBlock,
     ActiveBlobRequest(BlobRequestState<E>, usize),
     ActiveCustodyRequest(CustodyRequestState<E>),
+    ActiveExecutionPayloadEnvelopeRequest(ExecutionPayloadEnvelopeRequestState<E>),
     // When printing in debug this state display the reason why it's not needed
     #[allow(dead_code)]
     NotNeeded(&'static str),
@@ -173,6 +176,9 @@ impl<T: BeaconChainTypes> SingleBlockLookup<T> {
                 ComponentRequests::WaitingForBlock => false,
                 ComponentRequests::ActiveBlobRequest(request, _) => request.state.is_processed(),
                 ComponentRequests::ActiveCustodyRequest(request) => request.state.is_processed(),
+                ComponentRequests::ActiveExecutionPayloadEnvelopeRequest(request) => {
+                    request.state.is_processed()
+                }
                 ComponentRequests::NotNeeded { .. } => true,
             }
     }
@@ -190,6 +196,9 @@ impl<T: BeaconChainTypes> SingleBlockLookup<T> {
                     request.state.is_awaiting_event()
                 }
                 ComponentRequests::ActiveCustodyRequest(request) => {
+                    request.state.is_awaiting_event()
+                }
+                ComponentRequests::ActiveExecutionPayloadEnvelopeRequest(request) => {
                     request.state.is_awaiting_event()
                 }
                 ComponentRequests::NotNeeded { .. } => false,
@@ -236,6 +245,14 @@ impl<T: BeaconChainTypes> SingleBlockLookup<T> {
                     self.component_requests = ComponentRequests::ActiveCustodyRequest(
                         CustodyRequestState::new(self.block_root),
                     );
+                } else if cx
+                    .chain
+                    .should_fetch_execution_payload_envelopes(block_epoch)
+                {
+                    self.component_requests =
+                        ComponentRequests::ActiveExecutionPayloadEnvelopeRequest(
+                            ExecutionPayloadEnvelopeRequestState::new(self.block_root),
+                        )
                 } else {
                     self.component_requests = ComponentRequests::NotNeeded("outside da window");
                 }
@@ -260,6 +277,9 @@ impl<T: BeaconChainTypes> SingleBlockLookup<T> {
             }
             ComponentRequests::ActiveCustodyRequest(_) => {
                 self.continue_request::<CustodyRequestState<T::EthSpec>>(cx, 0)?
+            }
+            ComponentRequests::ActiveExecutionPayloadEnvelopeRequest(_) => {
+                self.continue_request::<ExecutionPayloadEnvelopeRequestState<T::EthSpec>>(cx, 0)?
             }
             ComponentRequests::NotNeeded { .. } => {} // do nothing
         }
@@ -381,6 +401,24 @@ impl<E: EthSpec> BlobRequestState<E> {
     pub fn new(block_root: Hash256) -> Self {
         Self {
             block_root,
+            state: SingleLookupRequestState::new(),
+        }
+    }
+}
+
+/// The state of the payload request component of a `SingleBlockLookup`.
+#[derive(Educe)]
+#[educe(Debug)]
+pub struct ExecutionPayloadEnvelopeRequestState<E: EthSpec> {
+    #[educe(Debug(ignore))]
+    pub requested_block_root: Hash256,
+    pub state: SingleLookupRequestState<Arc<SignedExecutionPayloadEnvelope<E>>>,
+}
+
+impl<E: EthSpec> ExecutionPayloadEnvelopeRequestState<E> {
+    pub fn new(block_root: Hash256) -> Self {
+        Self {
+            requested_block_root: block_root,
             state: SingleLookupRequestState::new(),
         }
     }

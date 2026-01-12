@@ -924,6 +924,12 @@ impl TestRig {
                     (ev.work_type() == beacon_processor::WorkType::RpcCustodyColumn).then_some(())
                 })
                 .unwrap_or_else(|e| panic!("Expected column work event: {e}")),
+            ResponseType::ExecutionPayloadEnvelope => self
+                .pop_received_processor_event(|ev| {
+                    (ev.work_type() == beacon_processor::WorkType::RpcExecutionPayloadEnvelope)
+                        .then_some(())
+                })
+                .unwrap_or_else(|e| panic!("Expected payload work event: {e}")),
         }
     }
 

@@ -20,6 +20,8 @@ pub type BatchId = Epoch;
 #[derive(Debug, Clone, Display)]
 #[strum(serialize_all = "snake_case")]
 pub enum ByRangeRequestType {
+    BlocksAndPayloads,
+    BlocksAndPayloadsAndColumns,
     BlocksAndColumns,
     BlocksAndBlobs,
     Blocks,

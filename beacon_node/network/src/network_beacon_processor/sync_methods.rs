@@ -23,7 +23,7 @@ use lighthouse_network::service::api_types::CustodyBackfillBatchId;
 use lighthouse_tracing::{
     SPAN_CUSTODY_BACKFILL_SYNC_IMPORT_COLUMNS, SPAN_PROCESS_CHAIN_SEGMENT,
     SPAN_PROCESS_CHAIN_SEGMENT_BACKFILL, SPAN_PROCESS_RPC_BLOBS, SPAN_PROCESS_RPC_BLOCK,
-    SPAN_PROCESS_RPC_CUSTODY_COLUMNS,
+    SPAN_PROCESS_RPC_CUSTODY_COLUMNS, SPAN_PROCESS_RPC_PAYLOAD,
 };
 use logging::crit;
 use std::sync::Arc;
@@ -32,7 +32,9 @@ use store::KzgCommitment;
 use tracing::{debug, debug_span, error, info, instrument, warn};
 use types::beacon_block_body::format_kzg_commitments;
 use types::blob_sidecar::FixedBlobSidecarList;
-use types::{BlockImportSource, DataColumnSidecarList, Epoch, Hash256};
+use types::{
+    BlockImportSource, DataColumnSidecarList, Epoch, Hash256, SignedExecutionPayloadEnvelope,
+};
 
 /// Id associated to a batch processing request, either a sync batch or a parent lookup.
 #[derive(Clone, Debug, PartialEq)]
@@ -518,6 +520,104 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
             }
         };
         self.send_sync_message(SyncMessage::CustodyBatchProcessed { result, batch_id });
+    }
+
+    /// Returns an async closure which processes an execution payload envelope received via RPC.
+    ///
+    /// This separate function was required to prevent a cycle during compiler
+    /// type checking.
+    pub fn generate_rpc_execution_payload_envelope_process_fn(
+        self: Arc<Self>,
+        block_root: Hash256,
+        payload: Arc<SignedExecutionPayloadEnvelope<T::EthSpec>>,
+        seen_timestamp: Duration,
+        process_type: BlockProcessType,
+    ) -> AsyncFn {
+        let process_fn = async move {
+            self.process_rpc_execution_payload_envelope(
+                block_root,
+                payload,
+                seen_timestamp,
+                process_type,
+            )
+            .await;
+        };
+        Box::pin(process_fn)
+    }
+
+    /// Attempt to process a block received from a direct RPC request.
+    #[allow(clippy::too_many_arguments)]
+    #[instrument(
+        name = SPAN_PROCESS_RPC_PAYLOAD,
+        parent = None,
+        level = "debug",
+        skip_all,
+        fields(?block_root),
+    )]
+    pub async fn process_rpc_execution_payload_envelope(
+        self: Arc<NetworkBeaconProcessor<T>>,
+        block_root: Hash256,
+        payload: Arc<SignedExecutionPayloadEnvelope<T::EthSpec>>,
+        seen_timestamp: Duration,
+        process_type: BlockProcessType,
+    ) {
+        let slot = payload.slot();
+
+        debug!(
+            %block_root,
+            %slot,
+            "RPC payload received"
+        );
+
+        if let Ok(current_slot) = self.chain.slot()
+            && current_slot == slot
+        {
+            // Note: this metric is useful to gauge how long it takes to receive payloads requested
+            // over rpc.
+            let delay = get_slot_delay_ms(seen_timestamp, slot, &self.chain.slot_clock);
+
+            metrics::observe_duration(&metrics::BEACON_PAYLOAD_RPC_SLOT_START_DELAY_TIME, delay);
+        }
+
+        let result = self
+            .chain
+            .process_rpc_execution_payload_envelope(slot, block_root, payload)
+            .await;
+        register_process_result_metrics(&result, metrics::BlockSource::Rpc, "payload");
+
+        match &result {
+            Ok(AvailabilityProcessingStatus::Imported(hash)) => {
+                debug!(
+                    result = "imported block, payload and columns",
+                    %slot,
+                    block_hash = %hash,
+                    "Block components retrieved"
+                );
+                self.chain.recompute_head_at_current_slot().await;
+            }
+            Ok(AvailabilityProcessingStatus::MissingComponents(_, _)) => {
+                debug!(
+                    block_hash = %block_root,
+                    %slot,
+                    "Missing components over rpc"
+                );
+            }
+            Err(BlockError::DuplicateFullyImported(_)) => {
+                debug!(
+                    block_hash = %block_root,
+                    %slot,
+                    "Payload has already been imported"
+                );
+            }
+            // Errors are handled and logged in `block_lookups`
+            Err(_) => {}
+        }
+
+        // Sync handles these results
+        self.send_sync_message(SyncMessage::BlockComponentProcessed {
+            process_type,
+            result: result.into(),
+        });
     }
 
     /// Attempt to import the chain segment (`blocks`) to the beacon chain, informing the sync
