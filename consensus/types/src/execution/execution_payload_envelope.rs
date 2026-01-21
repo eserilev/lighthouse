@@ -1,6 +1,6 @@
 use crate::test_utils::TestRandom;
 use crate::{
-    EthSpec, ExecutionPayloadGloas, ExecutionRequests, ForkName, Hash256, KzgCommitments,
+    Epoch, EthSpec, ExecutionPayloadGloas, ExecutionRequests, ForkName, Hash256, KzgCommitments,
     SignedRoot, Slot,
 };
 use context_deserialize::context_deserialize;
@@ -26,6 +26,16 @@ pub struct ExecutionPayloadEnvelope<E: EthSpec> {
 }
 
 impl<E: EthSpec> SignedRoot for ExecutionPayloadEnvelope<E> {}
+
+impl<E: EthSpec> ExecutionPayloadEnvelope<E> {
+    pub fn num_blobs_expected(&self) -> usize {
+        self.blob_kzg_commitments.len()
+    }
+
+    pub fn epoch(&self) -> Epoch {
+        self.slot.epoch(E::slots_per_epoch())
+    }
+}
 
 #[cfg(test)]
 mod tests {

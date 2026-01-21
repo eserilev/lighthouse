@@ -333,6 +333,16 @@ struct PartialBeaconBlock<E: EthSpec> {
     bls_to_execution_changes: Vec<SignedBlsToExecutionChange>,
 }
 
+pub enum PayloadProcessStatus<E: EthSpec> {
+    /// Envelope is not in any pre-import cache. Envelope may be in the database or in fork choice.
+    Unknown,
+    /// Envelope is currently processing but not yet validated.
+    NotValidated(Arc<SignedExecutionPayloadEnvelope<E>>, BlockImportSource),
+    /// Payload is fully valid, but not yet imported. It's cached in the da_checker while awaiting
+    /// missing envelope components.
+    ExecutionValidated(Arc<SignedExecutionPayloadEnvelope<E>>),
+}
+
 pub enum BlockProcessStatus<E: EthSpec> {
     /// Block is not in any pre-import cache. Block may be in the data-base or in the fork-choice.
     Unknown,
