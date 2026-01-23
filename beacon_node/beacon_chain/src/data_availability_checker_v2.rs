@@ -1,19 +1,11 @@
 use crate::beacon_chain::PayloadProcessStatus;
-use crate::blob_verification::{
-    GossipVerifiedBlob, KzgVerifiedBlob, KzgVerifiedBlobList, verify_kzg_for_blob_list,
-};
-use crate::block_verification_types::{
-    AvailabilityPendingExecutedBlock, AvailableExecutedBlock, RpcBlock,
-};
 use crate::data_availability_checker_v2::overflow_lru_cache::{
     DataAvailabilityCheckerInner, ReconstructColumnsDecision,
 };
 use crate::payload_verification_types::{
     AvailabilityPendingExecutedPayload, AvailableExecutedPayload,
 };
-use crate::{
-    BeaconChain, BeaconChainTypes, BeaconStore, BlockProcessStatus, CustodyContext, metrics,
-};
+use crate::{BeaconChain, BeaconChainTypes, BeaconStore, CustodyContext, metrics};
 use educe::Educe;
 use kzg::Kzg;
 use slot_clock::SlotClock;
@@ -25,10 +17,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use task_executor::TaskExecutor;
 use tracing::{debug, error, instrument};
-use types::data::{BlobIdentifier, BlobSidecar, FixedBlobSidecarList};
 use types::{
-    BlobSidecarList, BlockImportSource, ChainSpec, DataColumnSidecar, DataColumnSidecarList, Epoch,
-    EthSpec, Hash256, SignedBeaconBlock, SignedExecutionPayloadEnvelope, Slot,
+    BlockImportSource, ChainSpec, DataColumnSidecar, DataColumnSidecarList, Epoch, EthSpec,
+    Hash256, SignedBeaconBlock, SignedExecutionPayloadEnvelope, Slot,
 };
 
 mod error;
@@ -40,8 +31,8 @@ pub use crate::data_availability_checker_v2::error::{
     Error as AvailabilityCheckError, ErrorCategory as AvailabilityCheckErrorCategory,
 };
 use crate::data_column_verification::{
-    CustodyDataColumn, GossipVerifiedDataColumn, KzgVerifiedCustodyDataColumn,
-    KzgVerifiedDataColumn, verify_kzg_for_data_column_list,
+    GossipVerifiedDataColumn, KzgVerifiedCustodyDataColumn, KzgVerifiedDataColumn,
+    verify_kzg_for_data_column_list,
 };
 use crate::metrics::{
     KZG_DATA_COLUMN_RECONSTRUCTION_ATTEMPTS, KZG_DATA_COLUMN_RECONSTRUCTION_FAILURES,
@@ -503,9 +494,21 @@ pub struct DataAvailabilityCheckerMetrics {
 }
 
 pub fn start_availability_cache_maintenance_service<T: BeaconChainTypes>(
-    _executor: TaskExecutor,
-    _chain: Arc<BeaconChain<T>>,
+    executor: TaskExecutor,
+    chain: Arc<BeaconChain<T>>,
 ) {
+    if chain.spec.gloas_fork_epoch.is_some() {
+        let overflow_cache = chain
+            .data_availability_checker_v2
+            .availability_cache
+            .clone();
+        executor.spawn(
+            async move { availability_cache_maintenance_service(chain, overflow_cache).await },
+            "availability_cache_service",
+        );
+    } else {
+        debug!("Gloas fork not configured, not starting availability cache maintenance service");
+    }
     // TODO(gloas)
     // this cache only needs to be maintained if deneb is configured
     // if chain.spec.deneb_fork_epoch.is_some() {
@@ -622,6 +625,7 @@ impl<E: EthSpec> AvailablePayloadData<E> {
 #[educe(Hash(bound(E: EthSpec)))]
 pub struct AvailablePayload<E: EthSpec> {
     block_root: Hash256,
+    block: Arc<SignedBeaconBlock<E>>,
     payload: Arc<SignedExecutionPayloadEnvelope<E>>,
     #[educe(Hash(ignore))]
     column_data: AvailablePayloadData<E>,
@@ -643,6 +647,7 @@ impl<E: EthSpec> AvailablePayload<E> {
     /// - Custody columns are incomplete
     pub fn new<T>(
         payload: Arc<SignedExecutionPayloadEnvelope<T::EthSpec>>,
+        block: Arc<SignedBeaconBlock<E>>,
         column_data: AvailablePayloadData<T::EthSpec>,
         da_checker: &DataAvailabilityChecker<T>,
         spec: Arc<ChainSpec>,
@@ -682,6 +687,7 @@ impl<E: EthSpec> AvailablePayload<E> {
 
         Ok(Self {
             block_root: payload.message.beacon_block_root,
+            block,
             payload,
             column_data,
             payload_available_timestamp: None,
@@ -730,6 +736,7 @@ impl<E: EthSpec> AvailablePayload<E> {
         Self {
             block_root: self.block_root,
             payload: self.payload.clone(),
+            block: self.block.clone(),
             column_data: match &self.column_data {
                 AvailablePayloadData::NoData => AvailablePayloadData::NoData,
                 AvailablePayloadData::DataColumns(data_columns) => {

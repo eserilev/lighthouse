@@ -1079,7 +1079,9 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
                                             slot: *slot,
                                             process_fn: Box::pin(async move {
                                                 cloned_self
-                                                    .attempt_data_column_reconstruction(block_root)
+                                                    .attempt_data_column_reconstruction(
+                                                        block_root, *slot,
+                                                    )
                                                     .await;
                                             }),
                                         },

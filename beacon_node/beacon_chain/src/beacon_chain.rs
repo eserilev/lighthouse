@@ -25,6 +25,11 @@ use crate::data_availability_checker::{
     Availability, AvailabilityCheckError, AvailableBlock, AvailableBlockData,
     DataAvailabilityChecker, DataColumnReconstructionResult,
 };
+use crate::data_availability_checker_v2::{
+    Availability as AvailabilityV2, AvailablePayload,
+    DataAvailabilityChecker as DataAvailabilityCheckerV2,
+    DataColumnReconstructionResult as DataColumnReconstructionResultV2,
+};
 use crate::data_column_verification::{GossipDataColumnError, GossipVerifiedDataColumn};
 use crate::early_attester_cache::EarlyAttesterCache;
 use crate::errors::{BeaconChainError as Error, BlockProductionError};
@@ -56,6 +61,7 @@ use crate::observed_block_producers::ObservedBlockProducers;
 use crate::observed_data_sidecars::ObservedDataSidecars;
 use crate::observed_operations::{ObservationOutcome, ObservedOperations};
 use crate::observed_slashable::ObservedSlashable;
+use crate::payload_verification_types::{AvailabilityPendingExecutedPayload, AvailableExecutedPayload, PayloadImportData};
 use crate::persisted_beacon_chain::PersistedBeaconChain;
 use crate::persisted_custody::persist_custody_context;
 use crate::persisted_fork_choice::PersistedForkChoice;
@@ -488,6 +494,9 @@ pub struct BeaconChain<T: BeaconChainTypes> {
     /// Provides a KZG verification and temporary storage for blocks and blobs as
     /// they are collected and combined.
     pub data_availability_checker: Arc<DataAvailabilityChecker<T>>,
+    /// Provides a KZG verification and temporary storage for payloads and columns as
+    /// they are collected and combined.
+    pub data_availability_checker_v2: Arc<DataAvailabilityCheckerV2<T>>,
     /// The KZG trusted setup used by this chain.
     pub kzg: Arc<Kzg>,
     /// RNG instance used by the chain. Currently used for shuffling column sidecars in block publishing.
@@ -657,6 +666,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         Ok(())
     }
 
+    // TODO(gloas) move this to da checker v2
     /// Persists the custody information to disk.
     pub fn persist_custody_context(&self) -> Result<(), Error> {
         if !self.spec.is_peer_das_scheduled() {
@@ -1135,9 +1145,15 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         block_root: Hash256,
         indices: &[ColumnIndex],
     ) -> Result<DataColumnSidecarList<T::EthSpec>, Error> {
+        // TODO(deprecate-da-checker) we want to eventually deprecate data_availability_checker
+        // and just use v2. I think this is our best bet until then
         let all_cached_columns_opt = self
             .data_availability_checker
             .get_data_columns(block_root)
+            .or_else(|| {
+                self.data_availability_checker_v2
+                    .get_data_columns(block_root)
+            })
             .or_else(|| self.early_attester_cache.get_data_columns(block_root));
 
         if let Some(mut all_cached_columns) = all_cached_columns_opt {
@@ -1293,6 +1309,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         Ok(self.store.get_blinded_block(block_root)?)
     }
 
+    // TODO(deprecate-da-checker) we can get rid of this after gloas
     /// Return the status of a block as it progresses through the various caches of the beacon
     /// chain. Used by sync to learn the status of a block and prevent repeated downloads /
     /// processing attempts.
@@ -1302,6 +1319,23 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         }
 
         BlockProcessStatus::Unknown
+    }
+
+    /// Return the status of a payload as it progresses through the various caches of the beacon
+    /// chain. Used by sync to learn the status of a payload and prevent repeated downloads /
+    /// processing attempts.
+    pub fn get_payload_process_status(
+        &self,
+        block_root: &Hash256,
+    ) -> PayloadProcessStatus<T::EthSpec> {
+        if let Some(cached_payload) = self
+            .data_availability_checker_v2
+            .get_cached_payload(block_root)
+        {
+            return cached_payload;
+        }
+
+        PayloadProcessStatus::Unknown
     }
 
     /// Returns the state at the given root, if any.
@@ -3188,9 +3222,14 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         if let Some(event_handler) = self.event_handler.as_ref()
             && event_handler.has_data_column_sidecar_subscribers()
         {
+            // TODO(deprecate-da-checker) we hop from one cache to the next
             let imported_data_columns = self
                 .data_availability_checker
                 .cached_data_column_indexes(block_root)
+                .ok_or(|| {
+                    self.data_availability_checker_v2
+                        .cached_data_column_indexes(block_root)
+                })
                 .unwrap_or_default();
             let new_data_columns =
                 data_columns_iter.filter(|b| !imported_data_columns.contains(&b.index));
@@ -3254,6 +3293,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
     pub async fn reconstruct_data_columns(
         self: &Arc<Self>,
         block_root: Hash256,
+        slot: Slot,
     ) -> Result<
         Option<(
             AvailabilityProcessingStatus,
@@ -3273,38 +3313,85 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         }
 
         let data_availability_checker = self.data_availability_checker.clone();
-
+        let data_availability_checker_v2 = self.data_availability_checker_v2.clone();
+        let fork_name = self.spec.fork_name_at_slot::<T::EthSpec>(slot);
         let current_span = Span::current();
-        let result = self
-            .task_executor
-            .spawn_blocking_with_rayon_async(RayonPoolType::HighPriority, move || {
-                let _guard = current_span.enter();
-                data_availability_checker.reconstruct_data_columns(&block_root)
-            })
-            .await
-            .map_err(|_| BeaconChainError::RuntimeShutdown)??;
 
-        match result {
-            DataColumnReconstructionResult::Success((availability, data_columns_to_publish)) => {
-                let Some(slot) = data_columns_to_publish.first().map(|d| d.slot()) else {
-                    // This should be unreachable because empty result would return `RecoveredColumnsNotImported` instead of success.
-                    return Ok(None);
-                };
 
-                self.process_availability(slot, availability, || Ok(()))
-                    .await
-                    .map(|availability_processing_status| {
-                        Some((availability_processing_status, data_columns_to_publish))
-                    })
+        // TODO(gloas) we can clean this up
+        if fork_name.gloas_enabled() {
+            let result = self
+                .task_executor
+                .spawn_blocking_with_rayon_async(RayonPoolType::HighPriority, move || {
+                    let _guard = current_span.enter();
+                    // TODO(deprecate-da-checker) can be deleted after gloas
+                    data_availability_checker_v2.reconstruct_data_columns(&block_root)
+                })
+                .await
+                .map_err(|_| BeaconChainError::RuntimeShutdown)??;
+
+            match result {
+                DataColumnReconstructionResultV2::Success((
+                    availability,
+                    data_columns_to_publish,
+                )) => {
+                    let Some(slot) = data_columns_to_publish.first().map(|d| d.slot()) else {
+                        // This should be unreachable because empty result would return `RecoveredColumnsNotImported` instead of success.
+                        return Ok(None);
+                    };
+
+                    self.process_availability_gloas(slot, availability, || Ok(()))
+                        .await
+                        .map(|availability_processing_status| {
+                            Some((availability_processing_status, data_columns_to_publish))
+                        })
+                }
+                DataColumnReconstructionResultV2::NotStarted(reason)
+                | DataColumnReconstructionResultV2::RecoveredColumnsNotImported(reason) => {
+                    // We use metric here because logging this would be *very* noisy.
+                    metrics::inc_counter_vec(
+                        &metrics::KZG_DATA_COLUMN_RECONSTRUCTION_INCOMPLETE_TOTAL,
+                        &[reason],
+                    );
+                    Ok(None)
+                }
             }
-            DataColumnReconstructionResult::NotStarted(reason)
-            | DataColumnReconstructionResult::RecoveredColumnsNotImported(reason) => {
-                // We use metric here because logging this would be *very* noisy.
-                metrics::inc_counter_vec(
-                    &metrics::KZG_DATA_COLUMN_RECONSTRUCTION_INCOMPLETE_TOTAL,
-                    &[reason],
-                );
-                Ok(None)
+        } else {
+            let result = self
+                .task_executor
+                .spawn_blocking_with_rayon_async(RayonPoolType::HighPriority, move || {
+                    let _guard = current_span.enter();
+                    // TODO(deprecate-da-checker) can be deleted after gloas
+                    data_availability_checker.reconstruct_data_columns(&block_root)
+                })
+                .await
+                .map_err(|_| BeaconChainError::RuntimeShutdown)??;
+
+            match result {
+                DataColumnReconstructionResult::Success((
+                    availability,
+                    data_columns_to_publish,
+                )) => {
+                    let Some(slot) = data_columns_to_publish.first().map(|d| d.slot()) else {
+                        // This should be unreachable because empty result would return `RecoveredColumnsNotImported` instead of success.
+                        return Ok(None);
+                    };
+
+                    self.process_availability(slot, availability, || Ok(()))
+                        .await
+                        .map(|availability_processing_status| {
+                            Some((availability_processing_status, data_columns_to_publish))
+                        })
+                }
+                DataColumnReconstructionResult::NotStarted(reason)
+                | DataColumnReconstructionResult::RecoveredColumnsNotImported(reason) => {
+                    // We use metric here because logging this would be *very* noisy.
+                    metrics::inc_counter_vec(
+                        &metrics::KZG_DATA_COLUMN_RECONSTRUCTION_INCOMPLETE_TOTAL,
+                        &[reason],
+                    );
+                    Ok(None)
+                }
             }
         }
     }
@@ -3318,6 +3405,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         }
     }
 
+    // TODO(gloas) what does this look like for payloads
     /// Returns `Ok(block_root)` if the given `unverified_block` was successfully verified and
     /// imported into the chain.
     ///
@@ -3519,9 +3607,30 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         self: &Arc<Self>,
         block: AvailabilityPendingExecutedBlock<T::EthSpec>,
     ) -> Result<AvailabilityProcessingStatus, BlockError> {
+
         let slot = block.block.slot();
-        let availability = self.data_availability_checker.put_executed_block(block)?;
-        self.process_availability(slot, availability, || Ok(()))
+
+        if self.spec.fork_name_at_slot(slot).gloas_enabled() {
+            // TODO(gloas) need to just import the block directly with no availability checks
+            self.import_available_block(block.block).await
+        } else {
+            let availability = self.data_availability_checker.put_executed_block(block)?;
+            self.process_availability(slot, availability, || Ok(()))
+                .await
+        }
+       
+    }
+
+    /// Checks if the payload is available, and imports immediately if so, otherwise caches the payload
+    /// in the data availability checker.
+    #[instrument(skip_all)]
+    async fn check_payload_availability_and_import(
+        self: &Arc<Self>,
+        payload: AvailabilityPendingExecutedPayload<T::EthSpec>,
+    ) -> Result<AvailabilityProcessingStatus, BlockError> {
+        let slot = payload.payload.message.slot;
+        let availability = self.data_availability_checker_v2.put_executed_payload(payload)?;
+        self.process_availability_gloas(slot, availability, || Ok(()))
             .await
     }
 
@@ -3543,7 +3652,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             .await
     }
 
-    /// Checks if the provided data column can make any cached blocks available, and imports immediately
+    /// Checks if the provided data column can make any cached blocks/payloads available, and imports immediately
     /// if so, otherwise caches the data column in the data availability checker.
     async fn check_gossip_data_columns_availability_and_import(
         self: &Arc<Self>,
@@ -3552,18 +3661,41 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         data_columns: Vec<GossipVerifiedDataColumn<T>>,
         publish_fn: impl FnOnce() -> Result<(), BlockError>,
     ) -> Result<AvailabilityProcessingStatus, BlockError> {
-        if let Some(slasher) = self.slasher.as_ref() {
-            for data_colum in &data_columns {
-                slasher.accept_block_header(data_colum.signed_block_header());
-            }
+
+        let fork_name = self.spec.fork_name_at_slot(slot);
+
+        match fork_name {
+            ForkName::Base => todo!(),
+            ForkName::Altair => todo!(),
+            ForkName::Bellatrix => todo!(),
+            ForkName::Capella => todo!(),
+            ForkName::Deneb => todo!(),
+            ForkName::Electra => todo!(),
+            ForkName::Fulu => {
+                if let Some(slasher) = self.slasher.as_ref() {
+                    for data_colum in &data_columns {
+                        slasher.accept_block_header(data_colum.signed_block_header());
+                    }
+                }
+        
+                let availability = self
+                    .data_availability_checker
+                    .put_gossip_verified_data_columns(block_root, slot, data_columns)?;
+        
+                self.process_availability(slot, availability, publish_fn)
+                    .await
+            },
+            ForkName::Gloas => {
+                // TODO(gloas) how to add slashing checks for gloas  
+                let availability = self
+                    .data_availability_checker_v2
+                    .put_gossip_verified_data_columns(block_root, slot, data_columns)?;
+        
+                self.process_availability_gloas(slot, availability, publish_fn)
+                    .await
+            },
         }
-
-        let availability = self
-            .data_availability_checker
-            .put_gossip_verified_data_columns(block_root, slot, data_columns)?;
-
-        self.process_availability(slot, availability, publish_fn)
-            .await
+       
     }
 
     fn check_blob_header_signature_and_slashability<'a>(
@@ -3653,21 +3785,39 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         block_root: Hash256,
         custody_columns: DataColumnSidecarList<T::EthSpec>,
     ) -> Result<AvailabilityProcessingStatus, BlockError> {
-        self.check_data_column_sidecar_header_signature_and_slashability(
-            block_root,
-            custody_columns.iter().map(|c| c.as_ref()),
-        )?;
 
-        // This slot value is purely informative for the consumers of
-        // `AvailabilityProcessingStatus::MissingComponents` to log an error with a slot.
-        let availability = self.data_availability_checker.put_rpc_custody_columns(
-            block_root,
-            slot,
-            custody_columns,
-        )?;
+        let fork_name = self.spec.fork_name_at_slot(slot);
 
-        self.process_availability(slot, availability, || Ok(()))
-            .await
+        if fork_name.gloas_enabled() {
+            // This slot value is purely informative for the consumers of
+            // `AvailabilityProcessingStatus::MissingComponents` to log an error with a slot.
+            let availability = self.data_availability_checker_v2.put_rpc_custody_columns(
+                block_root,
+                slot,
+                custody_columns,
+            )?;
+    
+            self.process_availability_gloas(slot, availability, || Ok(()))
+                .await
+        } else {
+
+            self.check_data_column_sidecar_header_signature_and_slashability(
+                block_root,
+                custody_columns.iter().map(|c| c.as_ref()),
+            )?;
+    
+            // This slot value is purely informative for the consumers of
+            // `AvailabilityProcessingStatus::MissingComponents` to log an error with a slot.
+            let availability = self.data_availability_checker.put_rpc_custody_columns(
+                block_root,
+                slot,
+                custody_columns,
+            )?;
+    
+            self.process_availability(slot, availability, || Ok(()))
+                .await
+        }
+
     }
 
     fn check_data_column_sidecar_header_signature_and_slashability<'a>(
@@ -3725,6 +3875,30 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         }
     }
 
+    /// Imports a fully available block. Otherwise, returns `AvailabilityProcessingStatus::MissingComponents`
+    ///
+    /// An error is returned if the block was unable to be imported. It may be partially imported
+    /// (i.e., this function is not atomic).
+    async fn process_availability_gloas(
+        self: &Arc<Self>,
+        slot: Slot,
+        availability: AvailabilityV2<T::EthSpec>,
+        publish_fn: impl FnOnce() -> Result<(), BlockError>,
+    ) -> Result<AvailabilityProcessingStatus, BlockError> {
+        match availability {
+            AvailabilityV2::Available(payload) => {
+                publish_fn()?;
+                // Payload is fully available, import into fork choice
+                self.import_available_payload(payload).await
+            }
+            AvailabilityV2::MissingComponents(block_root) => Ok(
+                AvailabilityProcessingStatus::MissingComponents(slot, block_root),
+            ),
+        }
+    }
+
+    // TODO(deprecate-da-checker) this can be deprecated after gloas,
+    // we can just import blocks immediately without a da check
     #[instrument(skip_all)]
     pub async fn import_available_block(
         self: &Arc<Self>,
@@ -3779,6 +3953,59 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         Ok(AvailabilityProcessingStatus::Imported(block_root))
     }
 
+    #[instrument(skip_all)]
+    pub async fn import_available_payload(
+        self: &Arc<Self>,
+        payload: Box<AvailableExecutedPayload<T::EthSpec>>,
+    ) -> Result<AvailabilityProcessingStatus, BlockError> {
+        let AvailableExecutedPayload {
+            payload,
+            import_data,
+            payload_verification_outcome,
+        } = *payload;
+
+        let PayloadImportData {
+            state,
+            consensus_context,
+        } = import_data;
+
+        // Record the time at which this payload has become fully available.
+        if let Some(payload_available) = payload.payload_available_timestamp() {
+            // TODO(gloas) maybe we should write this to a different observed cache?
+            self.block_times_cache.write().set_time_blob_observed(
+                payload.payload().message.beacon_block_root,
+                payload.payload().message.slot,
+                payload_available,
+            );
+        }
+
+        // TODO(das) record custody column available timestamp
+
+        let block_root = {
+            // Capture the current span before moving into the blocking task
+            let current_span = tracing::Span::current();
+            let chain = self.clone();
+            self.spawn_blocking_handle(
+                move || {
+                    let block_root = payload.block_root();
+                    // Enter the captured span in the blocking thread
+                    let _guard = current_span.enter();
+                    chain.import_payload(
+                        payload,
+                        block_root,
+                        state,
+                        payload_verification_outcome.payload_verification_status,
+                        consensus_context,
+                    )
+                },
+                "payload_verification_handle",
+            )
+            .await??
+        };
+
+        Ok(AvailabilityProcessingStatus::Imported(block_root))
+    }
+
     /// Accepts a fully-verified and available block and imports it into the chain without performing any
     /// additional verification.
     ///
@@ -3806,7 +4033,11 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         let post_exec_timer = metrics::start_timer(&metrics::BLOCK_PROCESSING_POST_EXEC_PROCESSING);
 
         // Check against weak subjectivity checkpoint.
-        self.check_block_against_weak_subjectivity_checkpoint(block, block_root, &state)?;
+        self.check_block_against_weak_subjectivity_checkpoint(
+            Some(block.block_header().parent_root),
+            block_root,
+            &state,
+        )?;
 
         // If there are new validators in this block, update our pubkey cache.
         //
@@ -4039,6 +4270,219 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         Ok(block_root)
     }
 
+    /// Accepts a fully-verified and available payload and imports it into the chain without performing any
+    /// additional verification.
+    ///
+    /// An error is returned if the payload was unable to be imported. It may be partially imported
+    /// (i.e., this function is not atomic).
+    #[allow(clippy::too_many_arguments)]
+    #[instrument(skip_all)]
+    fn import_payload(
+        &self,
+        signed_payload: AvailablePayload<T::EthSpec>,
+        signed_block: Arc<SignedBeaconBlock<T::EthSpec>>,
+        block_root: Hash256,
+        mut state: BeaconState<T::EthSpec>,
+        payload_verification_status: PayloadVerificationStatus,
+        mut consensus_context: ConsensusContext<T::EthSpec>,
+    ) -> Result<Hash256, BlockError> {
+        // ----------------------------- PAYLOAD NOT YET ATTESTABLE ----------------------------------
+        // Everything in this initial section is on the hot path between processing the payload and
+        // being able to attest to it. DO NOT add any extra processing in this initial section
+        // unless it must run before fork choice.
+        // -----------------------------------------------------------------------------------------
+        let current_slot = self.slot()?;
+        let current_epoch = current_slot.epoch(T::EthSpec::slots_per_epoch());
+        let payload = signed_payload.payload().message;
+        let post_exec_timer = metrics::start_timer(&metrics::BLOCK_PROCESSING_POST_EXEC_PROCESSING);
+
+        // Check against weak subjectivity checkpoint.
+        self.check_block_against_weak_subjectivity_checkpoint(None, block_root, &state)?;
+
+        // If there are new validators in this block, update our pubkey cache.
+        //
+        // The only keys imported here will be ones for validators deposited in this block, because
+        // the cache *must* already have been updated for the parent block when it was imported.
+        // Newly deposited validators are not active and their keys are not required by other parts
+        // of block processing. The reason we do this here and not after making the block attestable
+        // is so we don't have to think about lock ordering with respect to the fork choice lock.
+        // There are a bunch of places where we lock both fork choice and the pubkey cache and it
+        // would be difficult to check that they all lock fork choice first.
+        let mut ops = {
+            let _timer = metrics::start_timer(&metrics::BLOCK_PROCESSING_PUBKEY_CACHE_LOCK);
+            let pubkey_cache = self.validator_pubkey_cache.upgradable_read();
+
+            // Only take a write lock if there are new keys to import.
+            if state.validators().len() > pubkey_cache.len() {
+                let _pubkey_span = debug_span!(
+                    "pubkey_cache_update",
+                    new_validators = tracing::field::Empty,
+                    cache_len_before = pubkey_cache.len()
+                )
+                .entered();
+
+                parking_lot::RwLockUpgradableReadGuard::upgrade(pubkey_cache)
+                    .import_new_pubkeys(&state)?
+            } else {
+                vec![]
+            }
+        };
+
+        // Take an upgradable read lock on fork choice so we can check if this block has already
+        // been imported. We don't want to repeat work importing a block that is already imported.
+        let fork_choice_reader = self.canonical_head.fork_choice_upgradable_read_lock();
+        if fork_choice_reader.contains_block(&block_root) {
+            return Err(BlockError::DuplicateFullyImported(block_root));
+        }
+
+        // Take an exclusive write-lock on fork choice. It's very important to prevent deadlocks by
+        // avoiding taking other locks whilst holding this lock.
+        let mut fork_choice = parking_lot::RwLockUpgradableReadGuard::upgrade(fork_choice_reader);
+
+        // Do not import a payload from a block that doesn't descend from the finalized root.
+        let signed_block =
+            check_block_is_finalized_checkpoint_or_descendant(self, &fork_choice, signed_block)?;
+        let block = signed_block.message();
+
+        // Register the new payload with the fork choice service.
+        {
+            let block_delay = self
+                .slot_clock
+                .seconds_from_current_slot_start()
+                .ok_or(Error::UnableToComputeTimeAtSlot)?;
+
+            // TODO(gloas) register new payload with fork choice
+
+            // fork_choice
+            //     .on_payload(
+            //         current_slot,
+            //         block,
+            //         block_root,
+            //         block_delay,
+            //         &state,
+            //         payload_verification_status,
+            //         &self.spec,
+            //     )
+            //     .map_err(|e| BlockError::BeaconChainError(Box::new(e.into())))?;
+        }
+
+        // TODO(gloas) as an optimization we could add the payload to the early attester cache?
+        // might be important for PTC committee?
+        drop(post_exec_timer);
+
+        // ---------------------------- PAYLOAD NOT ATTESTABLE ----------------------------------
+        // Payloads are not yet capable of being attested because we are not yet using the `early_attester_cache`
+        // Resume non-essential processing.
+        //
+        // It is important NOT to return errors here before the database commit, because the payload
+        // has already been added to fork choice and the database would be left in an inconsistent
+        // state if we returned early without committing. In other words, an error here would
+        // corrupt the node's database permanently.
+        // -----------------------------------------------------------------------------------------
+        self.import_block_update_shuffling_cache(block_root, &mut state);
+        self.import_block_observe_attestations(
+            block,
+            &state,
+            &mut consensus_context,
+            current_epoch,
+        );
+        self.import_block_update_validator_monitor(
+            block,
+            &state,
+            &mut consensus_context,
+            current_slot,
+            parent_block.slot(),
+        );
+        self.import_block_update_slasher(block, &state, &mut consensus_context);
+
+        // Store the block and its state, and execute the confirmation batch for the intermediate
+        // states, which will delete their temporary flags.
+        // If the write fails, revert fork choice to the version from disk, else we can
+        // end up with blocks in fork choice that are missing from disk.
+        // See https://github.com/sigp/lighthouse/issues/2028
+        let (_, signed_block, block_data) = signed_block.deconstruct();
+
+        match self.get_blobs_or_columns_store_op(block_root, signed_block.slot(), block_data) {
+            Ok(Some(blobs_or_columns_store_op)) => {
+                ops.push(blobs_or_columns_store_op);
+            }
+            Ok(None) => {}
+            Err(e) => {
+                error!(
+                    msg = "Restoring fork choice from disk",
+                    error = &e,
+                    ?block_root,
+                    "Failed to store data columns into the database"
+                );
+                return Err(self
+                    .handle_import_block_db_write_error(fork_choice)
+                    .err()
+                    .unwrap_or(BlockError::InternalError(e)));
+            }
+        }
+
+        let block = signed_block.message();
+        let db_write_timer = metrics::start_timer(&metrics::BLOCK_PROCESSING_DB_WRITE);
+        ops.push(StoreOp::PutBlock(block_root, signed_block.clone()));
+        ops.push(StoreOp::PutState(block.state_root(), &state));
+
+        let db_span = info_span!("persist_blocks_and_blobs").entered();
+
+        if let Err(e) = self.store.do_atomically_with_block_and_blobs_cache(ops) {
+            error!(
+                msg = "Restoring fork choice from disk",
+                error = ?e,
+                "Database write failed!"
+            );
+            return Err(self
+                .handle_import_block_db_write_error(fork_choice)
+                .err()
+                .unwrap_or(e.into()));
+        }
+
+        drop(db_span);
+
+        // The fork choice write-lock is dropped *after* the on-disk database has been updated.
+        // This prevents inconsistency between the two at the expense of concurrency.
+        drop(fork_choice);
+
+        // We're declaring the block "imported" at this point, since fork choice and the DB know
+        // about it.
+        let block_time_imported = timestamp_now();
+
+        // compute state proofs for light client updates before inserting the state into the
+        // snapshot cache.
+        if self.config.enable_light_client_server {
+            self.light_client_server_cache
+                .cache_state_data(
+                    &self.spec, block, block_root,
+                    // mutable reference on the state is needed to compute merkle proofs
+                    &mut state,
+                )
+                .unwrap_or_else(|e| {
+                    debug!("error caching light_client data {:?}", e);
+                });
+        }
+
+        metrics::stop_timer(db_write_timer);
+
+        metrics::inc_counter(&metrics::BLOCK_PROCESSING_SUCCESSES);
+
+        // Inform the unknown block cache, in case it was waiting on this block.
+        self.pre_finalization_block_cache
+            .block_processed(block_root);
+
+        self.import_block_update_metrics_and_events(
+            block,
+            block_root,
+            block_time_imported,
+            payload_verification_status,
+            current_slot,
+        );
+
+        Ok(block_root)
+    }
+
     fn handle_import_block_db_write_error(
         &self,
         // We don't actually need this value, however it's always present when we call this function
@@ -4075,7 +4519,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
     /// Check block's consistentency with any configured weak subjectivity checkpoint.
     fn check_block_against_weak_subjectivity_checkpoint(
         &self,
-        block: BeaconBlockRef<T::EthSpec>,
+        beacon_block_parent_root: Option<Hash256>,
         block_root: Hash256,
         state: &BeaconState<T::EthSpec>,
     ) -> Result<(), BlockError> {
@@ -4103,12 +4547,12 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             let mut shutdown_sender = self.shutdown_sender();
             crit!(
                 ?block_root,
-                parent_root = ?block.parent_root(),
+                parent_root = ?beacon_block_parent_root,
                 old_finalized_epoch = ?current_head_finalized_checkpoint.epoch,
                 new_finalized_epoch = ?new_finalized_checkpoint.epoch,
                 weak_subjectivity_epoch = ?wss_checkpoint.epoch,
                 error = ?e,
-                "Weak subjectivity checkpoint verification failed while importing block!"
+                "Weak subjectivity checkpoint verification failed while importing block or payload!"
             );
             crit!(
                 "You must use the `--purge-db` flag to clear the database and restart sync. \
@@ -4228,6 +4672,71 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
     /// This will stop us from propagating them on the gossip network.
     #[instrument(skip_all, level = "debug")]
     fn import_block_observe_attestations(
+        &self,
+        block: BeaconBlockRef<T::EthSpec>,
+        state: &BeaconState<T::EthSpec>,
+        ctxt: &mut ConsensusContext<T::EthSpec>,
+        current_epoch: Epoch,
+    ) {
+        // To avoid slowing down sync, only observe attestations if the block is from the
+        // previous epoch or later.
+        if state.current_epoch() + 1 < current_epoch {
+            return;
+        }
+
+        let _timer = metrics::start_timer(&metrics::BLOCK_PROCESSING_ATTESTATION_OBSERVATION);
+
+        for a in block.body().attestations() {
+            match self.observed_attestations.write().observe_item(a, None) {
+                // If the observation was successful or if the slot for the attestation was too
+                // low, continue.
+                //
+                // We ignore `SlotTooLow` since this will be very common whilst syncing.
+                Ok(_) | Err(AttestationObservationError::SlotTooLow { .. }) => {}
+                Err(e) => {
+                    debug!(
+                        error = ?e,
+                        epoch = %a.data().target.epoch,
+                        "Failed to register observed attestation"
+                    );
+                }
+            }
+
+            let indexed_attestation = match ctxt.get_indexed_attestation(state, a) {
+                Ok(indexed) => indexed,
+                Err(e) => {
+                    debug!(
+                        purpose = "observation",
+                        attestation_slot = %a.data().slot,
+                        error = ?e,
+                        "Failed to get indexed attestation"
+                    );
+                    continue;
+                }
+            };
+
+            let mut observed_block_attesters = self.observed_block_attesters.write();
+
+            for &validator_index in indexed_attestation.attesting_indices_iter() {
+                if let Err(e) = observed_block_attesters
+                    .observe_validator(a.data().target.epoch, validator_index as usize)
+                {
+                    debug!(
+                        error = ?e,
+                        epoch = %a.data().target.epoch,
+                        validator_index,
+                        "Failed to register observed block attester"
+                    )
+                }
+            }
+        }
+    }
+
+    /// Iterate through the attestations in the payload and register them as "observed".
+    ///
+    /// This will stop us from propagating them on the gossip network.
+    #[instrument(skip_all, level = "debug")]
+    fn import_payload_observe_attestations(
         &self,
         block: BeaconBlockRef<T::EthSpec>,
         state: &BeaconState<T::EthSpec>,

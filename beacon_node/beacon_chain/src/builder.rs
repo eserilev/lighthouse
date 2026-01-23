@@ -6,6 +6,7 @@ use crate::beacon_chain::{
 use crate::beacon_proposer_cache::BeaconProposerCache;
 use crate::custody_context::NodeCustodyType;
 use crate::data_availability_checker::DataAvailabilityChecker;
+use crate::data_availability_checker_v2::DataAvailabilityChecker as DataAvailabilityCheckerV2;
 use crate::fork_choice_signal::ForkChoiceSignalTx;
 use crate::fork_revert::{reset_fork_choice_to_finalization, revert_to_fork_boundary};
 use crate::graffiti_calculator::{GraffitiCalculator, GraffitiOrigin};
@@ -975,6 +976,8 @@ where
         };
         debug!(?custody_context, "Loaded persisted custody context");
 
+        let custody_context = Arc::new(custody_context);
+
         let beacon_chain = BeaconChain {
             spec: self.spec.clone(),
             config: self.chain_config,
@@ -1046,13 +1049,24 @@ where
             data_availability_checker: Arc::new(
                 DataAvailabilityChecker::new(
                     complete_blob_backfill,
+                    slot_clock.clone(),
+                    self.kzg.clone(),
+                    store.clone(),
+                    custody_context.clone(),
+                    self.spec.clone(),
+                )
+                .map_err(|e| format!("Error initializing DataAvailabilityChecker: {:?}", e))?,
+            ),
+            data_availability_checker_v2: Arc::new(
+                DataAvailabilityCheckerV2::new(
+                    complete_blob_backfill,
                     slot_clock,
                     self.kzg.clone(),
                     store,
-                    Arc::new(custody_context),
+                    custody_context,
                     self.spec,
                 )
-                .map_err(|e| format!("Error initializing DataAvailabilityChecker: {:?}", e))?,
+                .map_err(|e| format!("Error initializing DataAvailabilityCheckerV2: {:?}", e))?,
             ),
             kzg: self.kzg.clone(),
             rng: Arc::new(Mutex::new(rng)),

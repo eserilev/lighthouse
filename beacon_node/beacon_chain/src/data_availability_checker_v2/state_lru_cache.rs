@@ -1,16 +1,13 @@
-use crate::block_verification_types::AsBlock;
 use crate::payload_verification_types::{AvailabilityPendingExecutedPayload, PayloadImportData};
 use crate::{
-    AvailabilityPendingExecutedBlock, BeaconChainTypes, BeaconStore, PayloadVerificationOutcome,
-    block_verification_types::BlockImportData,
+    BeaconChainTypes, BeaconStore, PayloadVerificationOutcome,
     data_availability_checker_v2::{AvailabilityCheckError, STATE_LRU_CAPACITY_NON_ZERO},
 };
 use lru::LruCache;
 use parking_lot::RwLock;
-use state_processing::BlockReplayer;
 use std::sync::Arc;
 use store::OnDiskConsensusContext;
-use tracing::{Span, debug_span, instrument};
+use tracing::{Span, instrument};
 use types::{
     BeaconState, BlindedPayload, ChainSpec, Epoch, EthSpec, Hash256, SignedBeaconBlock,
     SignedExecutionPayloadEnvelope,

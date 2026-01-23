@@ -1,10 +1,7 @@
 use super::state_lru_cache::{DietAvailabilityPendingExecutedPayload, StateLRUCache};
+use crate::BeaconChainTypes;
 use crate::CustodyContext;
 use crate::beacon_chain::{BeaconStore, PayloadProcessStatus};
-use crate::blob_verification::KzgVerifiedBlob;
-use crate::block_verification_types::{
-    AvailabilityPendingExecutedBlock, AvailableBlock, AvailableExecutedBlock,
-};
 use crate::data_availability_checker_v2::{
     Availability, AvailabilityCheckError, AvailablePayload, AvailablePayloadData,
 };
@@ -12,21 +9,17 @@ use crate::data_column_verification::KzgVerifiedCustodyDataColumn;
 use crate::payload_verification_types::{
     AvailabilityPendingExecutedPayload, AvailableExecutedPayload,
 };
-use crate::{BeaconChainTypes, BlockProcessStatus};
 use lighthouse_tracing::SPAN_PENDING_COMPONENTS;
 use lru::LruCache;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use ssz_types::{RuntimeFixedVector, RuntimeVariableList};
 use std::cmp::Ordering;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use tracing::{Span, debug, debug_span};
-use types::data::BlobIdentifier;
 use types::kzg_ext::KzgCommitments;
 use types::{
-    BlobSidecar, BlockImportSource, ChainSpec, ColumnIndex, DataColumnSidecar,
-    DataColumnSidecarList, Epoch, EthSpec, Hash256, SignedBeaconBlock,
-    SignedExecutionPayloadEnvelope,
+    BlockImportSource, ChainSpec, ColumnIndex, DataColumnSidecar, DataColumnSidecarList, Epoch,
+    EthSpec, Hash256, SignedBeaconBlock, SignedExecutionPayloadEnvelope,
 };
 
 #[derive(Clone)]
@@ -59,6 +52,7 @@ impl<E: EthSpec> CachedPayload<E> {
 /// The payload has completed all verifications except the availability check.
 pub struct PendingComponents<E: EthSpec> {
     pub block_root: Hash256,
+    pub block: Option<Arc<SignedBeaconBlock<E>>>,
     pub verified_data_columns: Vec<KzgVerifiedCustodyDataColumn<E>>,
     pub payload: Option<CachedPayload<E>>,
     pub reconstruction_started: bool,
@@ -184,6 +178,13 @@ impl<E: EthSpec> PendingComponents<E> {
             return Ok(None);
         };
 
+        let Some(block) = self.block.clone() else {
+            // This should never happen
+            return Err(AvailabilityCheckError::Unexpected(format!(
+                "Payload is being made available but no block exists"
+            )));
+        };
+
         // Payload is available, construct `AvailableExecutedPayload`
 
         let payload_available_timestamp = match column_data {
@@ -201,6 +202,7 @@ impl<E: EthSpec> PendingComponents<E> {
         let available_payload = AvailablePayload {
             block_root: payload.message.beacon_block_root,
             payload,
+            block,
             column_data,
             payload_available_timestamp,
             spec: spec.clone(),
@@ -217,11 +219,12 @@ impl<E: EthSpec> PendingComponents<E> {
     }
 
     /// Returns an empty `PendingComponents` object with the given block root.
-    pub fn empty(block_root: Hash256, max_len: usize) -> Self {
+    pub fn empty(block_root: Hash256) -> Self {
         let span = debug_span!(parent: None, SPAN_PENDING_COMPONENTS, %block_root);
         let _guard = span.clone().entered();
         Self {
             block_root,
+            block: None,
             verified_data_columns: vec![],
             payload: None,
             reconstruction_started: false,
@@ -361,8 +364,8 @@ impl<T: BeaconChainTypes> DataAvailabilityCheckerInner<T> {
             return Ok(Availability::MissingComponents(block_root));
         };
 
-        let pending_components =
-            self.update_or_insert_pending_components(block_root, epoch, |pending_components| {
+        let pending_components = self
+            .update_or_insert_pending_components(block_root, |pending_components| {
                 pending_components.merge_data_columns(kzg_verified_data_columns)
             })?;
 
@@ -424,7 +427,6 @@ impl<T: BeaconChainTypes> DataAvailabilityCheckerInner<T> {
     fn update_or_insert_pending_components<F>(
         &self,
         block_root: Hash256,
-        epoch: Epoch,
         update_fn: F,
     ) -> Result<MappedRwLockReadGuard<'_, PendingComponents<T::EthSpec>>, AvailabilityCheckError>
     where
@@ -433,9 +435,8 @@ impl<T: BeaconChainTypes> DataAvailabilityCheckerInner<T> {
         let mut write_lock = self.critical.write();
 
         {
-            let pending_components = write_lock.get_or_insert_mut(block_root, || {
-                PendingComponents::empty(block_root, self.spec.max_blobs_per_block(epoch) as usize)
-            });
+            let pending_components =
+                write_lock.get_or_insert_mut(block_root, || PendingComponents::empty(block_root));
             update_fn(pending_components)?
         }
 
@@ -515,7 +516,7 @@ impl<T: BeaconChainTypes> DataAvailabilityCheckerInner<T> {
     ) -> Result<(), AvailabilityCheckError> {
         let epoch = payload.message.epoch();
         let pending_components =
-            self.update_or_insert_pending_components(block_root, epoch, |pending_components| {
+            self.update_or_insert_pending_components(block_root, |pending_components| {
                 pending_components.insert_pre_execution_payload(payload, source);
                 Ok(())
             })?;
@@ -558,7 +559,7 @@ impl<T: BeaconChainTypes> DataAvailabilityCheckerInner<T> {
             .register_pending_executed_payload(executed_payload);
 
         let pending_components =
-            self.update_or_insert_pending_components(block_root, epoch, |pending_components| {
+            self.update_or_insert_pending_components(block_root, |pending_components| {
                 pending_components.merge_payload(diet_executed_payload);
                 Ok(())
             })?;
