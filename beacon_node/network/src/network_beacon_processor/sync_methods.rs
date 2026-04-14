@@ -6,9 +6,9 @@ use crate::sync::{
     ChainId,
     manager::{BlockProcessType, SyncMessage},
 };
-use beacon_chain::block_verification_types::{AsBlock, RpcBlock};
+use beacon_chain::block_verification_types::LookupBlock;
+use beacon_chain::block_verification_types::{AsBlock, RangeSyncBlock};
 use beacon_chain::data_availability_checker::AvailabilityCheckError;
-use beacon_chain::data_availability_checker::MaybeAvailableBlock;
 use beacon_chain::historical_data_columns::HistoricalDataColumnError;
 use beacon_chain::{
     AvailabilityProcessingStatus, BeaconChainTypes, BlockError, ChainSegmentResult,
@@ -52,16 +52,16 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
     ///
     /// This separate function was required to prevent a cycle during compiler
     /// type checking.
-    pub fn generate_rpc_beacon_block_process_fn(
+    pub fn generate_lookup_beacon_block_process_fn(
         self: Arc<Self>,
         block_root: Hash256,
-        block: RpcBlock<T::EthSpec>,
+        block: LookupBlock<T::EthSpec>,
         seen_timestamp: Duration,
         process_type: BlockProcessType,
     ) -> AsyncFn {
         let process_fn = async move {
             let duplicate_cache = self.duplicate_cache.clone();
-            self.process_rpc_block(
+            self.process_lookup_block(
                 block_root,
                 block,
                 seen_timestamp,
@@ -74,15 +74,15 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
     }
 
     /// Returns the `process_fn` and `ignore_fn` required when requeuing an RPC block.
-    pub fn generate_rpc_beacon_block_fns(
+    pub fn generate_lookup_beacon_block_fns(
         self: Arc<Self>,
         block_root: Hash256,
-        block: RpcBlock<T::EthSpec>,
+        block: LookupBlock<T::EthSpec>,
         seen_timestamp: Duration,
         process_type: BlockProcessType,
     ) -> (AsyncFn, BlockingFn) {
         // An async closure which will import the block.
-        let process_fn = self.clone().generate_rpc_beacon_block_process_fn(
+        let process_fn = self.clone().generate_lookup_beacon_block_process_fn(
             block_root,
             block,
             seen_timestamp,
@@ -108,10 +108,10 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
         skip_all,
         fields(?block_root),
     )]
-    pub async fn process_rpc_block(
+    pub async fn process_lookup_block(
         self: Arc<NetworkBeaconProcessor<T>>,
         block_root: Hash256,
-        block: RpcBlock<T::EthSpec>,
+        block: LookupBlock<T::EthSpec>,
         seen_timestamp: Duration,
         process_type: BlockProcessType,
         duplicate_cache: DuplicateCache,
@@ -119,14 +119,14 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
         // Check if the block is already being imported through another source
         let Some(handle) = duplicate_cache.check_and_insert(block_root) else {
             debug!(
-                action = "sending rpc block to reprocessing queue",
+                action = "sending lookup block to reprocessing queue",
                 %block_root,
                 ?process_type,
                 "Gossip block is being processed"
             );
 
             // Send message to work reprocess queue to retry the block
-            let (process_fn, ignore_fn) = self.clone().generate_rpc_beacon_block_fns(
+            let (process_fn, ignore_fn) = self.clone().generate_lookup_beacon_block_fns(
                 block_root,
                 block,
                 seen_timestamp,
@@ -161,7 +161,7 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
             slot = %block.slot(),
             commitments_formatted,
             ?process_type,
-            "Processing RPC block"
+            "Processing Lookup block"
         );
 
         let signed_beacon_block = block.block_cloned();
@@ -220,7 +220,7 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
                 // to be sent from the peers if we already have them.
                 let publish_blobs = false;
                 self.fetch_engine_blobs_and_publish(signed_beacon_block, block_root, publish_blobs)
-                    .await
+                    .await;
             }
             _ => {}
         }
@@ -298,7 +298,7 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
             && current_slot == slot
         {
             // Note: this metric is useful to gauge how long it takes to receive blobs requested
-            // over rpc. Since we always send the request for block components at `slot_clock.single_lookup_delay()`
+            // over rpc. Since we always send the request for block components at `get_unaggregated_attestation_due() / 2`
             // we can use that as a baseline to measure against.
             let delay = get_slot_delay_ms(seen_timestamp, slot, &self.chain.slot_clock);
 
@@ -531,7 +531,7 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
     pub async fn process_chain_segment(
         &self,
         process_id: ChainSegmentProcessId,
-        downloaded_blocks: Vec<RpcBlock<T::EthSpec>>,
+        downloaded_blocks: Vec<RangeSyncBlock<T::EthSpec>>,
     ) {
         let ChainSegmentProcessId::RangeBatchId(chain_id, epoch) = process_id else {
             // This is a request from range sync, this should _never_ happen
@@ -612,7 +612,7 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
     pub fn process_chain_segment_backfill(
         &self,
         process_id: ChainSegmentProcessId,
-        downloaded_blocks: Vec<RpcBlock<T::EthSpec>>,
+        downloaded_blocks: Vec<RangeSyncBlock<T::EthSpec>>,
     ) {
         let ChainSegmentProcessId::BackSyncBatchId(epoch) = process_id else {
             // this a request from RangeSync, this should _never_ happen
@@ -683,7 +683,7 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
     #[instrument(skip_all)]
     async fn process_blocks<'a>(
         &self,
-        downloaded_blocks: impl Iterator<Item = &'a RpcBlock<T::EthSpec>>,
+        downloaded_blocks: impl Iterator<Item = &'a RangeSyncBlock<T::EthSpec>>,
         notify_execution_layer: NotifyExecutionLayer,
     ) -> (usize, Result<(), ChainSegmentFailed>) {
         let blocks: Vec<_> = downloaded_blocks.cloned().collect();
@@ -717,21 +717,20 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
     #[instrument(skip_all)]
     fn process_backfill_blocks(
         &self,
-        downloaded_blocks: Vec<RpcBlock<T::EthSpec>>,
+        downloaded_blocks: Vec<RangeSyncBlock<T::EthSpec>>,
     ) -> (usize, Result<(), ChainSegmentFailed>) {
         let total_blocks = downloaded_blocks.len();
-        let available_blocks = match self
+        let available_blocks = downloaded_blocks
+            .into_iter()
+            .map(|block| block.into_available_block())
+            .collect::<Vec<_>>();
+
+        match self
             .chain
             .data_availability_checker
-            .verify_kzg_for_rpc_blocks(downloaded_blocks)
+            .batch_verify_kzg_for_available_blocks(&available_blocks)
         {
-            Ok(blocks) => blocks
-                .into_iter()
-                .filter_map(|maybe_available| match maybe_available {
-                    MaybeAvailableBlock::Available(block) => Some(block),
-                    MaybeAvailableBlock::AvailabilityPending { .. } => None,
-                })
-                .collect::<Vec<_>>(),
+            Ok(()) => {}
             Err(e) => match e {
                 AvailabilityCheckError::StoreError(_) => {
                     return (

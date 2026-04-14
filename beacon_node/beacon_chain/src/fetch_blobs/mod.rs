@@ -19,7 +19,6 @@ use crate::data_column_verification::{KzgVerifiedCustodyDataColumn, KzgVerifiedD
 use crate::fetch_blobs::fetch_blobs_beacon_adapter::FetchBlobsBeaconAdapter;
 use crate::kzg_utils::blobs_to_data_column_sidecars;
 use crate::observed_data_sidecars::ObservationKey;
-use crate::validator_monitor::timestamp_now;
 use crate::{
     AvailabilityProcessingStatus, BeaconChain, BeaconChainError, BeaconChainTypes, BlockError,
     metrics,
@@ -29,10 +28,11 @@ use execution_layer::json_structures::{BlobAndProofV1, BlobAndProofV2};
 use metrics::{TryExt, inc_counter};
 #[cfg(test)]
 use mockall_double::double;
+use slot_clock::timestamp_now;
 use ssz_types::FixedVector;
 use state_processing::per_block_processing::deneb::kzg_commitment_to_versioned_hash;
 use std::sync::Arc;
-use tracing::{Span, debug, instrument, warn};
+use tracing::{debug, instrument, warn};
 use types::data::{BlobSidecarError, DataColumnSidecarError};
 use types::{
     BeaconStateError, Blob, BlobSidecar, ColumnIndex, EthSpec, FullPayload, Hash256, KzgProofs,
@@ -193,11 +193,10 @@ async fn fetch_and_process_blobs_v1<T: BeaconChainTypes>(
         &kzg_commitments_proof,
     )?;
 
-    if let Some(observed_blobs) =
-        ObservationKey::new_proposer_key(Some(block.message().proposer_index()), block.slot())
-            .ok()
-            .and_then(|key| chain_adapter.blobs_known_for_observation_key(key))
-    {
+    let observation_key =
+        ObservationKey::new_proposer_key(block.message().proposer_index(), block.slot());
+
+    if let Some(observed_blobs) = chain_adapter.blobs_known_for_observation_key(observation_key) {
         blob_sidecar_list.retain(|blob| !observed_blobs.contains(&blob.blob_index()));
         if blob_sidecar_list.is_empty() {
             debug!(
@@ -357,12 +356,10 @@ async fn compute_custody_columns_to_import<T: BeaconChainTypes>(
     let spec = chain_adapter.spec().clone();
     let chain_adapter_cloned = chain_adapter.clone();
     let custody_columns_indices = custody_columns_indices.to_vec();
-    let current_span = Span::current();
     chain_adapter
         .executor()
         .spawn_blocking_handle(
             move || {
-                let _guard = current_span.enter();
                 let mut timer = metrics::start_timer_vec(
                     &metrics::DATA_COLUMN_SIDECAR_COMPUTATION,
                     &[&blobs.len().to_string()],
@@ -393,20 +390,10 @@ async fn compute_custody_columns_to_import<T: BeaconChainTypes>(
                     .map_err(FetchEngineBlobError::DataColumnSidecarError)?;
 
                 // Only consider columns that are not already observed on gossip.
-                let observation_key = if spec
-                    .fork_name_at_slot::<T::EthSpec>(block.slot())
-                    .gloas_enabled()
-                {
-                    Some(ObservationKey::new_block_root_key(block_root, block.slot()))
-                } else {
-                    ObservationKey::new_proposer_key(
-                        Some(block.message().proposer_index()),
-                        block.slot(),
-                    )
-                    .ok()
-                };
-                if let Some(observed_columns) = observation_key
-                    .and_then(|key| chain_adapter_cloned.data_column_known_for_observation_key(key))
+                let observation_key = ObservationKey::from_block(&block, block_root, &spec);
+
+                if let Some(observed_columns) =
+                    chain_adapter_cloned.data_column_known_for_observation_key(observation_key)
                 {
                     custody_columns.retain(|col| !observed_columns.contains(&col.index()));
                     if custody_columns.is_empty() {

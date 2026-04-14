@@ -20,6 +20,7 @@ use tree_hash::TreeHash;
 use types::data::BlobIdentifier;
 use types::{
     BeaconStateError, BlobSidecar, Epoch, EthSpec, Hash256, SignedBeaconBlockHeader, Slot,
+    StatePayloadStatus,
 };
 
 /// An error occurred while validating a gossip blob.
@@ -455,6 +456,7 @@ pub fn validate_blob_sidecar_for_gossip<T: BeaconChainTypes, O: ObservationStrat
         .read()
         .observation_key_is_known(&blob_sidecar)
         .map_err(|e| GossipBlobError::BeaconChainError(Box::new(e.into())))?
+        .is_some()
     {
         return Err(GossipBlobError::RepeatBlob {
             proposer: blob_proposer_index,
@@ -507,9 +509,16 @@ pub fn validate_blob_sidecar_for_gossip<T: BeaconChainTypes, O: ObservationStrat
                 index = %blob_index,
                 "Proposer shuffling cache miss for blob verification"
             );
+            // Blob verification is only relevant pre-Fulu and pre-Gloas, so `Pending` payload
+            // status is sufficient.
             chain
                 .store
-                .get_advanced_hot_state(block_parent_root, blob_slot, parent_block.state_root)
+                .get_advanced_hot_state(
+                    block_parent_root,
+                    StatePayloadStatus::Pending,
+                    blob_slot,
+                    parent_block.state_root,
+                )
                 .map_err(|e| GossipBlobError::BeaconChainError(Box::new(e.into())))?
                 .ok_or_else(|| {
                     GossipBlobError::BeaconChainError(Box::new(BeaconChainError::DBInconsistent(
@@ -598,6 +607,7 @@ pub fn observe_gossip_blob<T: BeaconChainTypes>(
         .map_err(|e: ObservedDataSidecarsError| {
             GossipBlobError::BeaconChainError(Box::new(e.into()))
         })?
+        .is_some()
     {
         return Err(GossipBlobError::RepeatBlob {
             proposer: blob_sidecar.block_proposer_index(),

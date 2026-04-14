@@ -2,25 +2,23 @@ use crate::metrics;
 use std::future::Future;
 
 use beacon_chain::blob_verification::{GossipBlobError, GossipVerifiedBlob};
-use beacon_chain::block_verification_types::{AsBlock, RpcBlock};
+use beacon_chain::block_verification_types::{AsBlock, LookupBlock};
 use beacon_chain::data_column_verification::GossipVerifiedDataColumn;
-use beacon_chain::validator_monitor::{get_block_delay_ms, timestamp_now};
+use beacon_chain::validator_monitor::get_block_delay_ms;
 use beacon_chain::{
     AvailabilityProcessingStatus, BeaconChain, BeaconChainError, BeaconChainTypes, BlockError,
     IntoGossipVerifiedBlock, NotifyExecutionLayer, build_blob_data_column_sidecars,
 };
-use eth2::{
-    StatusCode,
-    types::{
-        BlobsBundle, BroadcastValidation, ErrorMessage, ExecutionPayloadAndBlobs,
-        FullPayloadContents, PublishBlockRequest, SignedBlockContents,
-    },
+use eth2::types::{
+    BlobsBundle, BroadcastValidation, ErrorMessage, ExecutionPayloadAndBlobs, FullPayloadContents,
+    PublishBlockRequest, SignedBlockContents,
 };
 use execution_layer::{ProvenancedPayload, SubmitBlindedBlockResponse};
 use futures::TryFutureExt;
 use lighthouse_network::PubsubMessage;
 use network::NetworkMessage;
 use rand::prelude::SliceRandom;
+use reqwest::StatusCode;
 use slot_clock::SlotClock;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -91,7 +89,7 @@ pub async fn publish_block<T: BeaconChainTypes, B: IntoGossipVerifiedBlock<T>>(
     validation_level: BroadcastValidation,
     duplicate_status_code: StatusCode,
 ) -> Result<Response, Rejection> {
-    let seen_timestamp = timestamp_now();
+    let seen_timestamp = chain.slot_clock.now_duration().unwrap_or_default();
     let block_publishing_delay_for_testing = chain.config.block_publishing_delay;
     let data_column_publishing_delay_for_testing = chain.config.data_column_publishing_delay;
 
@@ -116,11 +114,12 @@ pub async fn publish_block<T: BeaconChainTypes, B: IntoGossipVerifiedBlock<T>>(
     debug!("Signed block received in HTTP API");
 
     /* actually publish a block */
+    let publish_chain = chain.clone();
     let publish_block_p2p = move |block: Arc<SignedBeaconBlock<T::EthSpec>>,
                                   sender,
                                   seen_timestamp|
           -> Result<(), BlockError> {
-        let publish_timestamp = timestamp_now();
+        let publish_timestamp = publish_chain.slot_clock.now_duration().unwrap_or_default();
         let publish_delay = publish_timestamp
             .checked_sub(seen_timestamp)
             .unwrap_or_else(|| Duration::from_secs(0));
@@ -149,12 +148,8 @@ pub async fn publish_block<T: BeaconChainTypes, B: IntoGossipVerifiedBlock<T>>(
     let slot = block.message().slot();
     let sender_clone = network_tx.clone();
 
-    let build_sidecar_task_handle = spawn_build_data_sidecar_task(
-        chain.clone(),
-        block.clone(),
-        unverified_blobs,
-        current_span.clone(),
-    )?;
+    let build_sidecar_task_handle =
+        spawn_build_data_sidecar_task(chain.clone(), block.clone(), unverified_blobs)?;
 
     // Gossip verify the block and blobs/data columns separately.
     let gossip_verified_block_result = unverified_block.into_gossip_verified_block(&chain);
@@ -314,9 +309,11 @@ pub async fn publish_block<T: BeaconChainTypes, B: IntoGossipVerifiedBlock<T>>(
                 slot = %block.slot(),
                 "Block previously seen"
             );
+            // try to reprocess as a lookup (single) block and let sync take care of missing components
+            let lookup_block = LookupBlock::new(block.clone());
             let import_result = Box::pin(chain.process_block(
                 block_root,
-                RpcBlock::new_without_blobs(Some(block_root), block.clone()),
+                lookup_block,
                 NotifyExecutionLayer::Yes,
                 BlockImportSource::HttpApi,
                 publish_fn,
@@ -359,7 +356,6 @@ fn spawn_build_data_sidecar_task<T: BeaconChainTypes>(
     chain: Arc<BeaconChain<T>>,
     block: Arc<SignedBeaconBlock<T::EthSpec, FullPayload<T::EthSpec>>>,
     proofs_and_blobs: UnverifiedBlobs<T>,
-    current_span: Span,
 ) -> Result<impl Future<Output = BuildDataSidecarTaskResult<T>>, Rejection> {
     chain
         .clone()
@@ -369,7 +365,7 @@ fn spawn_build_data_sidecar_task<T: BeaconChainTypes>(
                 let Some((kzg_proofs, blobs)) = proofs_and_blobs else {
                     return Ok((vec![], vec![]));
                 };
-                let _guard = debug_span!(parent: current_span, "build_data_sidecars").entered();
+                let _span = debug_span!("build_data_sidecars").entered();
 
                 let peer_das_enabled = chain.spec.is_peer_das_enabled_for_epoch(block.epoch());
                 if !peer_das_enabled {
@@ -682,7 +678,7 @@ pub async fn reconstruct_block<T: BeaconChainTypes>(
             // us.
             late_block_logging(
                 &chain,
-                timestamp_now(),
+                chain.slot_clock.now_duration().unwrap_or_default(),
                 block.message(),
                 block_root,
                 "builder",
@@ -761,7 +757,7 @@ fn late_block_logging<T: BeaconChainTypes, P: AbstractExecPayload<T::EthSpec>>(
     //
     // Check to see the thresholds are non-zero to avoid logging errors with small
     // slot times (e.g., during testing)
-    let too_late_threshold = chain.slot_clock.unagg_attestation_production_delay();
+    let too_late_threshold = chain.spec.get_unaggregated_attestation_due();
     let delayed_threshold = too_late_threshold / 2;
     if delay >= too_late_threshold {
         error!(

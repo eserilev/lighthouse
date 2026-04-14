@@ -71,18 +71,19 @@ pub type DataColumnSidecarList<E> = Vec<Arc<DataColumnSidecar<E>>>;
     derive(arbitrary::Arbitrary),
     arbitrary(bound = "E: EthSpec")
 )]
-#[derive(Debug, Clone, Serialize, TreeHash, Encode, Decode, Educe, Deserialize)]
+#[derive(Debug, Clone, Serialize, TreeHash, Encode, Educe, Deserialize)]
 #[educe(PartialEq, Hash(bound(E: EthSpec)))]
-#[serde(untagged)]
+#[serde(bound = "E: EthSpec", untagged, deny_unknown_fields)]
 #[tree_hash(enum_behaviour = "transparent")]
 #[ssz(enum_behaviour = "transparent")]
-#[serde(bound = "E: EthSpec", deny_unknown_fields)]
 pub struct DataColumnSidecar<E: EthSpec> {
     #[serde(with = "serde_utils::quoted_u64")]
     pub index: ColumnIndex,
     #[serde(with = "ssz_types::serde_utils::list_of_hex_fixed_vec")]
     pub column: DataColumn<E>,
-    /// All the KZG commitments and proofs associated with the block, used for verifying sample cells.
+    /// All the KZG commitments associated with the block, used for verifying sample cells.
+    /// In Gloas, commitments come from `block.body.signed_execution_payload_bid.message.blob_kzg_commitments`.
+    #[superstruct(only(Fulu))]
     pub kzg_commitments: KzgCommitments<E>,
     pub kzg_proofs: VariableList<KzgProof, E::MaxBlobCommitmentsPerBlock>,
     #[superstruct(only(Fulu))]
@@ -127,11 +128,11 @@ impl<E: EthSpec> DataColumnSidecar<E> {
             | ForkName::Capella
             | ForkName::Deneb
             | ForkName::Electra => Err(ssz::DecodeError::NoMatchingVariant),
-            ForkName::Fulu => Ok(DataColumnSidecar::Gloas(
-                DataColumnSidecarGloas::from_ssz_bytes(bytes)?,
-            )),
-            ForkName::Gloas => Ok(DataColumnSidecar::Fulu(
+            ForkName::Fulu => Ok(DataColumnSidecar::Fulu(
                 DataColumnSidecarFulu::from_ssz_bytes(bytes)?,
+            )),
+            ForkName::Gloas => Ok(DataColumnSidecar::Gloas(
+                DataColumnSidecarGloas::from_ssz_bytes(bytes)?,
             )),
         }
     }
@@ -211,7 +212,6 @@ impl<E: EthSpec> DataColumnSidecarGloas<E> {
         Self {
             index: 0,
             column: VariableList::new(vec![Cell::<E>::default()]).unwrap(),
-            kzg_commitments: VariableList::new(vec![KzgCommitment::empty_for_testing()]).unwrap(),
             kzg_proofs: VariableList::new(vec![KzgProof::empty()]).unwrap(),
             slot: Slot::new(0),
             beacon_block_root: Hash256::ZERO,
@@ -224,11 +224,6 @@ impl<E: EthSpec> DataColumnSidecarGloas<E> {
         Self {
             index: 0,
             column: VariableList::new(vec![Cell::<E>::default(); max_blobs_per_block]).unwrap(),
-            kzg_commitments: VariableList::new(vec![
-                KzgCommitment::empty_for_testing();
-                max_blobs_per_block
-            ])
-            .unwrap(),
             kzg_proofs: VariableList::new(vec![KzgProof::empty(); max_blobs_per_block]).unwrap(),
             slot: Slot::new(0),
             beacon_block_root: Hash256::ZERO,

@@ -5,8 +5,12 @@ use crate::common::spec_with_all_forks_enabled;
 use crate::common::{Protocol, build_tracing_subscriber};
 use bls::Signature;
 use fixed_bytes::FixedBytesExtended;
+use libp2p::PeerId;
 use lighthouse_network::rpc::{RequestType, methods::*};
-use lighthouse_network::service::api_types::AppRequestId;
+use lighthouse_network::service::api_types::{
+    AppRequestId, BlobsByRangeRequestId, BlocksByRangeRequestId, ComponentsByRangeRequestId,
+    DataColumnsByRangeRequestId, DataColumnsByRangeRequester, RangeRequestId, SyncRequestId,
+};
 use lighthouse_network::{NetworkEvent, ReportSource, Response};
 use ssz::Encode;
 use ssz_types::{RuntimeVariableList, VariableList};
@@ -42,8 +46,10 @@ fn bellatrix_block_small(spec: &ChainSpec) -> BeaconBlock<E> {
 /// Hence, we generate a bellatrix block just greater than `MAX_RPC_SIZE` to test rejection on the rpc layer.
 fn bellatrix_block_large(spec: &ChainSpec) -> BeaconBlock<E> {
     let mut block = BeaconBlockBellatrix::<E>::empty(spec);
+    // 11,000 × 1KB ≈ 11MB, just above the 10MB max_payload_size.
+    // Previously used 100,000 txs (~100MB) which caused hangs and timeouts.
     let tx = VariableList::try_from(vec![0; 1024]).unwrap();
-    let txs = VariableList::try_from(std::iter::repeat_n(tx, 100000).collect::<Vec<_>>()).unwrap();
+    let txs = VariableList::try_from(std::iter::repeat_n(tx, 11000).collect::<Vec<_>>()).unwrap();
 
     block.body.execution_payload.execution_payload.transactions = txs;
 
@@ -952,9 +958,7 @@ fn test_tcp_blocks_by_root_chunked_rpc() {
     })
 }
 
-#[test]
-#[allow(clippy::single_match)]
-fn test_tcp_columns_by_root_chunked_rpc() {
+fn test_tcp_columns_by_root_chunked_rpc_for_fork(fork_name: ForkName) {
     // Set up the logging.
     let log_level = "debug";
     let enable_logging = true;
@@ -963,15 +967,17 @@ fn test_tcp_columns_by_root_chunked_rpc() {
     let messages_to_send = 32 * num_of_columns;
 
     let spec = Arc::new(spec_with_all_forks_enabled());
-    let slot = 320u64.into();
-    let current_fork_name = spec.fork_name_at_slot::<E>(slot);
+    let slot = spec
+        .fork_epoch(fork_name)
+        .expect("fork must be scheduled")
+        .start_slot(E::slots_per_epoch());
 
     let rt = Arc::new(Runtime::new().unwrap());
     // get sender/receiver
     rt.block_on(async {
         let (mut sender, mut receiver) = common::build_node_pair(
             Arc::downgrade(&rt),
-            current_fork_name,
+            fork_name,
             spec.clone(),
             Protocol::Tcp,
             false,
@@ -981,7 +987,7 @@ fn test_tcp_columns_by_root_chunked_rpc() {
 
         // DataColumnsByRootRequest Request
 
-        let max_request_blocks = spec.max_request_blocks(current_fork_name);
+        let max_request_blocks = spec.max_request_blocks(fork_name);
         let req = DataColumnsByRootRequest::new(
             vec![
                 DataColumnsByRootIdentifier {
@@ -1000,7 +1006,7 @@ fn test_tcp_columns_by_root_chunked_rpc() {
         let req_decoded = DataColumnsByRootRequest {
             data_column_ids: <RuntimeVariableList<DataColumnsByRootIdentifier<E>>>::from_ssz_bytes(
                 &req_bytes,
-                spec.max_request_blocks(current_fork_name),
+                spec.max_request_blocks(fork_name),
             )
             .unwrap(),
         };
@@ -1008,7 +1014,7 @@ fn test_tcp_columns_by_root_chunked_rpc() {
         let rpc_request = RequestType::DataColumnsByRoot(req);
 
         // DataColumnsByRoot Response
-        let data_column = if current_fork_name.gloas_enabled() {
+        let data_column = if fork_name.gloas_enabled() {
             Arc::new(DataColumnSidecar::Gloas(DataColumnSidecarGloas {
                 index: 1,
                 slot,
@@ -1017,7 +1023,6 @@ fn test_tcp_columns_by_root_chunked_rpc() {
                 column: vec![vec![0; E::bytes_per_cell()].try_into().unwrap()]
                     .try_into()
                     .unwrap(),
-                kzg_commitments: vec![KzgCommitment::empty_for_testing()].try_into().unwrap(),
                 kzg_proofs: vec![KzgProof::empty()].try_into().unwrap(),
             }))
         } else {
@@ -1135,7 +1140,17 @@ fn test_tcp_columns_by_root_chunked_rpc() {
 
 #[test]
 #[allow(clippy::single_match)]
-fn test_tcp_columns_by_range_chunked_rpc() {
+fn test_tcp_columns_by_root_chunked_rpc_fulu() {
+    test_tcp_columns_by_root_chunked_rpc_for_fork(ForkName::Fulu);
+}
+
+#[test]
+#[allow(clippy::single_match)]
+fn test_tcp_columns_by_root_chunked_rpc_gloas() {
+    test_tcp_columns_by_root_chunked_rpc_for_fork(ForkName::Gloas);
+}
+
+fn test_tcp_columns_by_range_chunked_rpc_for_fork(fork_name: ForkName) {
     // Set up the logging.
     let log_level = "debug";
     let enable_logging = true;
@@ -1144,15 +1159,17 @@ fn test_tcp_columns_by_range_chunked_rpc() {
     let messages_to_send = 32;
 
     let spec = Arc::new(spec_with_all_forks_enabled());
-    let slot: Slot = 320u64.into();
-    let current_fork_name = spec.fork_name_at_slot::<E>(slot);
+    let slot = spec
+        .fork_epoch(fork_name)
+        .expect("fork must be scheduled")
+        .start_slot(E::slots_per_epoch());
 
     let rt = Arc::new(Runtime::new().unwrap());
     // get sender/receiver
     rt.block_on(async {
         let (mut sender, mut receiver) = common::build_node_pair(
             Arc::downgrade(&rt),
-            current_fork_name,
+            fork_name,
             spec.clone(),
             Protocol::Tcp,
             false,
@@ -1168,7 +1185,7 @@ fn test_tcp_columns_by_range_chunked_rpc() {
         });
 
         // DataColumnsByRange Response
-        let data_column = if current_fork_name.gloas_enabled() {
+        let data_column = if fork_name.gloas_enabled() {
             Arc::new(DataColumnSidecar::Gloas(DataColumnSidecarGloas {
                 index: 1,
                 slot,
@@ -1176,7 +1193,6 @@ fn test_tcp_columns_by_range_chunked_rpc() {
                 column: vec![vec![0; E::bytes_per_cell()].try_into().unwrap()]
                     .try_into()
                     .unwrap(),
-                kzg_commitments: vec![KzgCommitment::empty_for_testing()].try_into().unwrap(),
                 kzg_proofs: vec![KzgProof::empty()].try_into().unwrap(),
             }))
         } else {
@@ -1247,34 +1263,27 @@ fn test_tcp_columns_by_range_chunked_rpc() {
         // build the receiver future
         let receiver_future = async {
             loop {
-                match receiver.next_event().await {
-                    NetworkEvent::RequestReceived {
+                if let NetworkEvent::RequestReceived {
+                    peer_id,
+                    inbound_request_id,
+                    request_type,
+                } = receiver.next_event().await
+                    && request_type == rpc_request
+                {
+                    // send the response
+                    info!("Receiver got request");
+
+                    for _ in 0..messages_to_send {
+                        receiver.send_response(peer_id, inbound_request_id, rpc_response.clone());
+                        info!("Sending message");
+                    }
+                    // send the stream termination
+                    receiver.send_response(
                         peer_id,
                         inbound_request_id,
-                        request_type,
-                    } => {
-                        if request_type == rpc_request {
-                            // send the response
-                            info!("Receiver got request");
-
-                            for _ in 0..messages_to_send {
-                                receiver.send_response(
-                                    peer_id,
-                                    inbound_request_id,
-                                    rpc_response.clone(),
-                                );
-                                info!("Sending message");
-                            }
-                            // send the stream termination
-                            receiver.send_response(
-                                peer_id,
-                                inbound_request_id,
-                                Response::DataColumnsByRange(None),
-                            );
-                            info!("Send stream term");
-                        }
-                    }
-                    _ => {} // Ignore other events
+                        Response::DataColumnsByRange(None),
+                    );
+                    info!("Send stream term");
                 }
             }
         }
@@ -1287,6 +1296,18 @@ fn test_tcp_columns_by_range_chunked_rpc() {
             }
         }
     })
+}
+
+#[test]
+#[allow(clippy::single_match)]
+fn test_tcp_columns_by_range_chunked_rpc_fulu() {
+    test_tcp_columns_by_range_chunked_rpc_for_fork(ForkName::Fulu);
+}
+
+#[test]
+#[allow(clippy::single_match)]
+fn test_tcp_columns_by_range_chunked_rpc_gloas() {
+    test_tcp_columns_by_range_chunked_rpc_for_fork(ForkName::Gloas);
 }
 
 // Tests a streamed, chunked BlocksByRoot RPC Message terminates when all expected reponses have been received
@@ -1767,4 +1788,158 @@ fn test_active_requests() {
             }
         }
     })
+}
+
+// Test that when a node receives an invalid BlocksByRange request exceeding the maximum count,
+// it bans the sender.
+#[test]
+fn test_request_too_large_blocks_by_range() {
+    let spec = Arc::new(spec_with_all_forks_enabled());
+
+    test_request_too_large(
+        AppRequestId::Sync(SyncRequestId::BlocksByRange(BlocksByRangeRequestId {
+            id: 1,
+            parent_request_id: ComponentsByRangeRequestId {
+                id: 1,
+                requester: RangeRequestId::RangeSync {
+                    chain_id: 1,
+                    batch_id: Epoch::new(1),
+                },
+            },
+        })),
+        RequestType::BlocksByRange(OldBlocksByRangeRequest::new(
+            0,
+            spec.max_request_blocks(ForkName::Base) as u64 + 1, // exceeds the max request defined in the spec.
+            1,
+        )),
+    );
+}
+
+// Test that when a node receives an invalid BlobsByRange request exceeding the maximum count,
+// it bans the sender.
+#[test]
+fn test_request_too_large_blobs_by_range() {
+    let spec = Arc::new(spec_with_all_forks_enabled());
+
+    let max_request_blobs_count = spec.max_request_blob_sidecars(ForkName::Base) as u64
+        / spec.max_blobs_per_block_within_fork(ForkName::Base);
+    test_request_too_large(
+        AppRequestId::Sync(SyncRequestId::BlobsByRange(BlobsByRangeRequestId {
+            id: 1,
+            parent_request_id: ComponentsByRangeRequestId {
+                id: 1,
+                requester: RangeRequestId::RangeSync {
+                    chain_id: 1,
+                    batch_id: Epoch::new(1),
+                },
+            },
+        })),
+        RequestType::BlobsByRange(BlobsByRangeRequest {
+            start_slot: 0,
+            count: max_request_blobs_count + 1, // exceeds the max request defined in the spec.
+        }),
+    );
+}
+
+// Test that when a node receives an invalid DataColumnsByRange request exceeding the columns count,
+// it bans the sender.
+#[test]
+fn test_request_too_large_data_columns_by_range() {
+    test_request_too_large(
+        AppRequestId::Sync(SyncRequestId::DataColumnsByRange(
+            DataColumnsByRangeRequestId {
+                id: 1,
+                parent_request_id: DataColumnsByRangeRequester::ComponentsByRange(
+                    ComponentsByRangeRequestId {
+                        id: 1,
+                        requester: RangeRequestId::RangeSync {
+                            chain_id: 1,
+                            batch_id: Epoch::new(1),
+                        },
+                    },
+                ),
+                peer: PeerId::random(),
+            },
+        )),
+        RequestType::DataColumnsByRange(DataColumnsByRangeRequest {
+            start_slot: 0,
+            count: 0,
+            // exceeds the max request defined in the spec.
+            columns: vec![0; E::number_of_columns() + 1],
+        }),
+    );
+}
+
+fn test_request_too_large(app_request_id: AppRequestId, request: RequestType<E>) {
+    // Set up the logging.
+    let log_level = "debug";
+    let enable_logging = true;
+    let _subscriber = build_tracing_subscriber(log_level, enable_logging);
+    let rt = Arc::new(Runtime::new().unwrap());
+    let spec = Arc::new(spec_with_all_forks_enabled());
+
+    rt.block_on(async {
+        let (mut sender, mut receiver) = common::build_node_pair(
+            Arc::downgrade(&rt),
+            ForkName::Base,
+            spec,
+            Protocol::Tcp,
+            false,
+            None,
+        )
+        .await;
+
+        // Build the sender future
+        let sender_future = async {
+            loop {
+                match sender.next_event().await {
+                    NetworkEvent::PeerConnectedOutgoing(peer_id) => {
+                        debug!(?request, %peer_id, "Sending RPC request");
+                        sender
+                            .send_request(peer_id, app_request_id, request.clone())
+                            .unwrap();
+                    }
+                    NetworkEvent::ResponseReceived {
+                        app_request_id,
+                        response,
+                        ..
+                    } => {
+                        debug!(?app_request_id, ?response, "Received response");
+                    }
+                    NetworkEvent::RPCFailed { error, .. } => {
+                        // This variant should be unreachable, as the receiver doesn't respond with an error when a request exceeds the limit.
+                        debug!(?error, "RPC failed");
+                        unreachable!();
+                    }
+                    NetworkEvent::PeerDisconnected(peer_id) => {
+                        // The receiver should disconnect as a result of the invalid request.
+                        debug!(%peer_id, "Peer disconnected");
+                        // End the test.
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        .instrument(info_span!("Sender"));
+
+        // Build the receiver future
+        let receiver_future = async {
+            loop {
+                if let NetworkEvent::RequestReceived { .. } = receiver.next_event().await {
+                    // This event should be unreachable, as the handler drops the invalid request.
+                    unreachable!();
+                }
+            }
+        }
+        .instrument(info_span!("Receiver"));
+
+        tokio::select! {
+            _ = sender_future => {}
+            _ = receiver_future => {}
+            _ = sleep(Duration::from_secs(30)) => {
+                panic!("Future timed out");
+            }
+        }
+    });
 }

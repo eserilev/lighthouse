@@ -20,7 +20,7 @@ pub mod altair {
     pub const NUM_FLAG_INDICES: usize = 3;
 }
 pub mod bellatrix {
-    pub const INTERVALS_PER_SLOT: u64 = 3;
+    pub const BASIS_POINTS: u64 = 10_000;
 }
 pub mod deneb {
     pub use kzg::VERSIONED_HASH_VERSION_KZG;
@@ -31,9 +31,9 @@ pub mod gloas {
 
     // Fork choice constants
     pub type PayloadStatus = u8;
-    pub const PAYLOAD_STATUS_PENDING: PayloadStatus = 0;
-    pub const PAYLOAD_STATUS_EMPTY: PayloadStatus = 1;
-    pub const PAYLOAD_STATUS_FULL: PayloadStatus = 2;
+    pub const PAYLOAD_STATUS_EMPTY: PayloadStatus = 0;
+    pub const PAYLOAD_STATUS_FULL: PayloadStatus = 1;
+    pub const PAYLOAD_STATUS_PENDING: PayloadStatus = 2;
 
     pub const ATTESTATION_TIMELINESS_INDEX: usize = 0;
     pub const PTC_TIMELINESS_INDEX: usize = 1;

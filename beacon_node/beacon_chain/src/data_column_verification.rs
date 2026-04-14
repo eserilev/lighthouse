@@ -3,24 +3,21 @@ use crate::block_verification::{
 };
 use crate::kzg_utils::{reconstruct_data_columns, validate_data_columns};
 use crate::observed_data_sidecars::{
-    Error as ObservedDataSidecarsError, ObservationStrategy, Observe,
+    Error as ObservedDataSidecarsError, ObservationKey, ObservationStrategy, Observe,
 };
 use crate::{BeaconChain, BeaconChainError, BeaconChainTypes, metrics};
 use educe::Educe;
 use fork_choice::ProtoBlock;
 use kzg::{Error as KzgError, Kzg};
 use proto_array::Block;
-use slot_clock::SlotClock;
-use ssz_derive::Encode;
-use ssz_types::VariableList;
-use std::iter;
-use std::marker::PhantomData;
+use slot_clock::{SlotClock, timestamp_now};
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::{debug, instrument};
 use types::data::ColumnIndex;
 use types::{
     BeaconStateError, ChainSpec, DataColumnSidecar, DataColumnSidecarFulu, DataColumnSubnetId,
-    EthSpec, Hash256, Slot,
+    EthSpec, Hash256, Slot, StatePayloadStatus,
 };
 
 /// An error occurred while validating a gossip data column.
@@ -130,14 +127,13 @@ pub enum GossipDataColumnError {
     ///
     /// The column sidecar is invalid and the peer is faulty
     InvalidInclusionProof,
-    /// A column has already been seen for the given `(sidecar.block_root, sidecar.index)` tuple
-    /// over gossip or no gossip sources.
+    /// A column has already been seen for the given observation key and index.
     ///
     /// ## Peer scoring
     ///
     /// The peer isn't faulty, but we do not forward it over gossip.
     PriorKnown {
-        slot: Slot,
+        observation_key: ObservationKey,
         index: ColumnIndex,
     },
     /// A column has already been processed from non-gossip source and have not yet been seen on
@@ -246,17 +242,6 @@ impl<T: BeaconChainTypes, O: ObservationStrategy> GossipVerifiedDataColumn<T, O>
         }
     }
 
-    /// Construct a `GossipVerifiedBlob` that is assumed to be valid.
-    ///
-    /// This should ONLY be used for testing.
-    pub fn __assumed_valid(column: Arc<DataColumnSidecar<T::EthSpec>>) -> Self {
-        Self {
-            block_root: column.block_root(),
-            data_column: KzgVerifiedDataColumn { data: column },
-            _phantom: PhantomData,
-        }
-    }
-
     /// Create a `GossipVerifiedDataColumn` from `DataColumnSidecar` for block production ONLY.
     /// When publishing a block constructed locally, the EL will have already verified the cell proofs.
     /// When publishing a block constructed externally, there will be no columns here.
@@ -332,25 +317,34 @@ impl<T: BeaconChainTypes, O: ObservationStrategy> GossipVerifiedDataColumn<T, O>
 #[ssz(struct_behaviour = "transparent")]
 pub struct KzgVerifiedDataColumn<E: EthSpec> {
     data: Arc<DataColumnSidecar<E>>,
+    #[ssz(skip_serializing, skip_deserializing)]
+    seen_timestamp: Duration,
 }
 
 impl<E: EthSpec> KzgVerifiedDataColumn<E> {
     pub fn new(
         data_column: Arc<DataColumnSidecar<E>>,
         kzg: &Kzg,
+        seen_timestamp: Duration,
     ) -> Result<Self, (Option<ColumnIndex>, KzgError)> {
-        verify_kzg_for_data_column(data_column, kzg)
+        verify_kzg_for_data_column(data_column, kzg, seen_timestamp)
     }
 
     /// Mark a data column as KZG verified. Caller must ONLY use this on columns constructed
     /// from EL blobs.
     pub fn from_execution_verified(data_column: Arc<DataColumnSidecar<E>>) -> Self {
-        Self { data: data_column }
+        Self {
+            data: data_column,
+            seen_timestamp: timestamp_now(),
+        }
     }
 
     /// Create a `KzgVerifiedDataColumn` from `DataColumnSidecar` for testing ONLY.
     pub(crate) fn __new_for_testing(data_column: Arc<DataColumnSidecar<E>>) -> Self {
-        Self { data: data_column }
+        Self {
+            data: data_column,
+            seen_timestamp: timestamp_now(),
+        }
     }
 
     pub fn from_batch_with_scoring(
@@ -360,7 +354,10 @@ impl<E: EthSpec> KzgVerifiedDataColumn<E> {
         verify_kzg_for_data_column_list(data_columns.iter(), kzg)?;
         Ok(data_columns
             .into_iter()
-            .map(|column| Self { data: column })
+            .map(|column| Self {
+                data: column,
+                seen_timestamp: timestamp_now(),
+            })
             .collect())
     }
 
@@ -419,6 +416,8 @@ impl<E: EthSpec> CustodyDataColumn<E> {
 #[ssz(struct_behaviour = "transparent")]
 pub struct KzgVerifiedCustodyDataColumn<E: EthSpec> {
     data: Arc<DataColumnSidecar<E>>,
+    #[ssz(skip_serializing, skip_deserializing)]
+    seen_timestamp: Duration,
 }
 
 impl<E: EthSpec> KzgVerifiedCustodyDataColumn<E> {
@@ -426,6 +425,7 @@ impl<E: EthSpec> KzgVerifiedCustodyDataColumn<E> {
     /// include this column
     pub fn from_asserted_custody(kzg_verified: KzgVerifiedDataColumn<E>) -> Self {
         Self {
+            seen_timestamp: kzg_verified.seen_timestamp,
             data: kzg_verified.to_data_column(),
         }
     }
@@ -434,10 +434,12 @@ impl<E: EthSpec> KzgVerifiedCustodyDataColumn<E> {
     pub fn new(
         data_column: CustodyDataColumn<E>,
         kzg: &Kzg,
+        seen_timestamp: Duration,
     ) -> Result<Self, (Option<ColumnIndex>, KzgError)> {
-        verify_kzg_for_data_column(data_column.clone_arc(), kzg)?;
+        verify_kzg_for_data_column(data_column.clone_arc(), kzg, seen_timestamp)?;
         Ok(Self {
             data: data_column.data,
+            seen_timestamp,
         })
     }
 
@@ -455,10 +457,15 @@ impl<E: EthSpec> KzgVerifiedCustodyDataColumn<E> {
             spec,
         )?;
 
+        let seen_timestamp = timestamp_now();
+
         Ok(all_data_columns
             .into_iter()
             .map(|data| {
-                KzgVerifiedCustodyDataColumn::from_asserted_custody(KzgVerifiedDataColumn { data })
+                KzgVerifiedCustodyDataColumn::from_asserted_custody(KzgVerifiedDataColumn {
+                    data,
+                    seen_timestamp,
+                })
             })
             .collect::<Vec<_>>())
     }
@@ -476,6 +483,10 @@ impl<E: EthSpec> KzgVerifiedCustodyDataColumn<E> {
     pub fn index(&self) -> ColumnIndex {
         *self.data.index()
     }
+
+    pub fn seen_timestamp(&self) -> Duration {
+        self.seen_timestamp
+    }
 }
 
 /// Complete kzg verification for a `DataColumnSidecar`.
@@ -485,10 +496,14 @@ impl<E: EthSpec> KzgVerifiedCustodyDataColumn<E> {
 pub fn verify_kzg_for_data_column<E: EthSpec>(
     data_column: Arc<DataColumnSidecar<E>>,
     kzg: &Kzg,
+    seen_timestamp: Duration,
 ) -> Result<KzgVerifiedDataColumn<E>, (Option<ColumnIndex>, KzgError)> {
     let _timer = metrics::start_timer(&metrics::KZG_VERIFICATION_DATA_COLUMN_SINGLE_TIMES);
     validate_data_columns(kzg, iter::once(&data_column))?;
-    Ok(KzgVerifiedDataColumn { data: data_column })
+    Ok(KzgVerifiedDataColumn {
+        data: data_column,
+        seen_timestamp,
+    })
 }
 
 /// Complete kzg verification for a list of `DataColumnSidecar`s.
@@ -508,7 +523,11 @@ where
     Ok(())
 }
 
-#[instrument(skip_all, level = "debug")]
+#[instrument(
+    skip_all,
+    name = "validate_data_column_sidecar_for_gossip",
+    level = "debug"
+)]
 pub fn validate_data_column_sidecar_for_gossip_fulu<T: BeaconChainTypes, O: ObservationStrategy>(
     data_column: Arc<DataColumnSidecar<T::EthSpec>>,
     subnet: DataColumnSubnetId,
@@ -546,8 +565,10 @@ pub fn validate_data_column_sidecar_for_gossip_fulu<T: BeaconChainTypes, O: Obse
     verify_slot_higher_than_parent(&parent_block, column_slot)?;
     verify_proposer_and_signature(data_column_fulu, &parent_block, chain)?;
     let kzg = &chain.kzg;
-    let kzg_verified_data_column = verify_kzg_for_data_column(data_column.clone(), kzg)
-        .map_err(|(_, e)| GossipDataColumnError::InvalidKzgProof(e))?;
+    let seen_timestamp = chain.slot_clock.now_duration().unwrap_or_default();
+    let kzg_verified_data_column =
+        verify_kzg_for_data_column(data_column.clone(), kzg, seen_timestamp)
+            .map_err(|(_, e)| GossipDataColumnError::InvalidKzgProof(e))?;
 
     chain
         .observed_slashable
@@ -580,12 +601,18 @@ fn verify_data_column_sidecar<E: EthSpec>(
             *data_column.index(),
         ));
     }
-    if data_column.kzg_commitments().is_empty() {
+
+    // TODO(gloas): implement Gloas verification that takes kzg_commitments from block as parameter
+    let commitments_len = match data_column {
+        DataColumnSidecar::Fulu(dc) => dc.kzg_commitments.len(),
+        DataColumnSidecar::Gloas(_) => return Err(GossipDataColumnError::InvalidVariant),
+    };
+
+    if commitments_len == 0 {
         return Err(GossipDataColumnError::UnexpectedDataColumn);
     }
 
     let cells_len = data_column.column().len();
-    let commitments_len = data_column.kzg_commitments().len();
     let proofs_len = data_column.kzg_proofs().len();
     let max_blobs_per_block = spec.max_blobs_per_block(data_column.epoch()) as usize;
 
@@ -619,7 +646,7 @@ fn verify_is_unknown_sidecar<T: BeaconChainTypes>(
     chain: &BeaconChain<T>,
     column_sidecar: &DataColumnSidecar<T::EthSpec>,
 ) -> Result<(), GossipDataColumnError> {
-    if chain
+    if let Some(observation_key) = chain
         .observed_column_sidecars
         .read()
         .observation_key_is_known(column_sidecar)
@@ -628,7 +655,7 @@ fn verify_is_unknown_sidecar<T: BeaconChainTypes>(
         })?
     {
         return Err(GossipDataColumnError::PriorKnown {
-            slot: column_sidecar.slot(),
+            observation_key,
             index: *column_sidecar.index(),
         });
     }
@@ -708,9 +735,16 @@ fn verify_proposer_and_signature<T: BeaconChainTypes>(
                 index = %column_index,
                 "Proposer shuffling cache miss for column verification"
             );
+            // We assume that the `Pending` state has the same shufflings as a `Full` state
+            // for the same block. Analysis: https://hackmd.io/@dapplion/gloas_dependant_root
             chain
                 .store
-                .get_advanced_hot_state(block_parent_root, column_slot, parent_block.state_root)
+                .get_advanced_hot_state(
+                    block_parent_root,
+                    StatePayloadStatus::Pending,
+                    column_slot,
+                    parent_block.state_root,
+                )
                 .map_err(|e| GossipDataColumnError::BeaconChainError(Box::new(e.into())))?
                 .ok_or_else(|| {
                     GossipDataColumnError::BeaconChainError(Box::new(
@@ -810,18 +844,21 @@ pub fn observe_gossip_data_column<T: BeaconChainTypes>(
     data_column_sidecar: &DataColumnSidecar<T::EthSpec>,
     chain: &BeaconChain<T>,
 ) -> Result<(), GossipDataColumnError> {
-    // Now the signature is valid, store the proposal so we don't accept another data column sidecar
-    // with the same `ColumnIndex`.  It's important to double-check that the proposer still
-    // hasn't been observed so we don't have a race-condition when verifying two blocks
+    // Pre-gloas: Now the signature is valid, store the proposal so we don't accept another data column sidecar
+    // with the same `ColumnIndex`.
+    // Post-gloas: The block associated with the sidecar has already been imported into fork choice. Store the
+    // columns `beacon_block_root` so we don't accept another data column sidecar with the same `ColumnIndex`.
+    // It's important to double-check that the `Observationkey` still
+    // hasn't been observed so we don't have a race-condition when verifying two sidecars
     // simultaneously.
     //
     // Note: If this DataColumnSidecar goes on to fail full verification, we do not evict it from the
     // seen_cache as alternate data_column_sidecars for the same identifier can still be retrieved over
     // rpc. Evicting them from this cache would allow faster propagation over gossip. So we
-    // allow retrieval of potentially valid blocks over rpc, but try to punish the proposer for
+    // allow retrieval of potentially valid sidecars over rpc, but try to punish the proposer for
     // signing invalid messages. Issue for more background
     // https://github.com/ethereum/consensus-specs/issues/3261
-    if chain
+    if let Some(observation_key) = chain
         .observed_column_sidecars
         .write()
         .observe_sidecar(data_column_sidecar)
@@ -830,7 +867,7 @@ pub fn observe_gossip_data_column<T: BeaconChainTypes>(
         })?
     {
         return Err(GossipDataColumnError::PriorKnown {
-            slot: data_column_sidecar.slot(),
+            observation_key,
             index: *data_column_sidecar.index(),
         });
     }
@@ -857,6 +894,7 @@ mod test {
 
     type E = MainnetEthSpec;
 
+    // TODO(gloas) make this generic over gloas/fulu
     #[tokio::test]
     async fn test_validate_data_column_sidecar_for_gossip_fulu() {
         // Setting up harness is slow, we initialise once and use it for all gossip validation tests.
@@ -881,6 +919,7 @@ mod test {
         data_column_sidecar_commitments_exceed_max_blobs_per_block(&harness, &verify_fn).await;
     }
 
+    // TODO(gloas) make this generic over gloas/fulu
     #[tokio::test]
     async fn test_new_for_block_publishing_fulu() {
         // Setting up harness is slow, we initialise once and use it for all gossip validation tests.
@@ -903,6 +942,7 @@ mod test {
         data_column_sidecar_commitments_exceed_max_blobs_per_block(&harness, &verify_fn).await;
     }
 
+    // TODO(gloas) make this generic over gloas/fulu
     async fn empty_data_column_sidecars_fails_validation_fulu<D>(
         harness: &BeaconChainHarness<EphemeralHarnessType<E>>,
         verify_fn: &impl Fn(DataColumnSidecar<E>) -> Result<D, GossipDataColumnError>,
