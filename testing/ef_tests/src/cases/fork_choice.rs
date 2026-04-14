@@ -30,8 +30,12 @@ use types::{
     Attestation, AttestationRef, AttesterSlashing, AttesterSlashingRef, BeaconBlock, BeaconState,
     BlobSidecar, BlobsList, BlockImportSource, Checkpoint, DataColumnSidecar,
     DataColumnSidecarList, DataColumnSubnetId, ExecutionBlockHash, Hash256, IndexedAttestation,
+<<<<<<< HEAD
     KzgProof, ProposerPreparationData, SignedBeaconBlock, SignedExecutionPayloadEnvelope, Slot,
     Uint256,
+=======
+    KzgProof, ProposerPreparationData, SignedBeaconBlock, Slot, Uint256,
+>>>>>>> 791e7be185c8f4cf8df5e56293e914d25035853c
 };
 
 // When set to true, cache any states fetched from the db.

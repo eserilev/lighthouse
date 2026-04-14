@@ -312,6 +312,10 @@ mod tests {
         Arc::new(DataColumnSidecar::Gloas(DataColumnSidecarGloas {
             index,
             column: vec![].try_into().unwrap(),
+<<<<<<< HEAD
+=======
+            kzg_commitments: vec![].try_into().unwrap(),
+>>>>>>> 791e7be185c8f4cf8df5e56293e914d25035853c
             kzg_proofs: vec![].try_into().unwrap(),
             slot: slot.into(),
             beacon_block_root,

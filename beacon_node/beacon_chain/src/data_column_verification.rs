@@ -527,6 +527,10 @@ where
     Ok(())
 }
 
+<<<<<<< HEAD
+=======
+// TODO(gloas) make sure the gloas variant uses the same span name
+>>>>>>> 791e7be185c8f4cf8df5e56293e914d25035853c
 #[instrument(
     skip_all,
     name = "validate_data_column_sidecar_for_gossip",
