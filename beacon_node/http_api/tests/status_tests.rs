@@ -83,8 +83,13 @@ async fn el_offline() {
 }
 
 /// Check `syncing` endpoint when the EL errors on newPaylod but is not fully offline.
+// TODO(EIP-7732): Gloas blocks don't carry execution payloads — the payload arrives via an
+// envelope, so this test's `execution_payload().unwrap()` call doesn't apply.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn el_error_on_new_payload() {
+    if ForkName::latest().gloas_enabled() {
+        return;
+    }
     let num_blocks = E::slots_per_epoch() / 2;
     let num_validators = E::slots_per_epoch();
     let tester = post_merge_tester(num_blocks, num_validators).await;
