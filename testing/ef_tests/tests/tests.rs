@@ -100,6 +100,18 @@ fn operations_execution_payload_bid() {
 }
 
 #[test]
+fn operations_parent_execution_payload() {
+    OperationsHandler::<MinimalEthSpec, ParentExecutionPayloadBlock<_>>::default().run();
+    OperationsHandler::<MainnetEthSpec, ParentExecutionPayloadBlock<_>>::default().run();
+}
+
+#[test]
+fn operations_payload_attestation() {
+    OperationsHandler::<MinimalEthSpec, PayloadAttestation<_>>::default().run();
+    OperationsHandler::<MainnetEthSpec, PayloadAttestation<_>>::default().run();
+}
+
+#[test]
 fn operations_withdrawals() {
     OperationsHandler::<MinimalEthSpec, WithdrawalsPayload<_>>::default().run();
     OperationsHandler::<MainnetEthSpec, WithdrawalsPayload<_>>::default().run();
@@ -963,6 +975,18 @@ fn epoch_processing_proposer_lookahead() {
 }
 
 #[test]
+fn epoch_processing_ptc_window() {
+    EpochProcessingHandler::<MinimalEthSpec, PtcWindow>::default().run();
+    EpochProcessingHandler::<MainnetEthSpec, PtcWindow>::default().run();
+}
+
+#[test]
+fn epoch_processing_builder_pending_payments() {
+    EpochProcessingHandler::<MinimalEthSpec, BuilderPendingPayments>::default().run();
+    EpochProcessingHandler::<MainnetEthSpec, BuilderPendingPayments>::default().run();
+}
+
+#[test]
 fn fork_upgrade() {
     ForkHandler::<MinimalEthSpec>::default().run();
     ForkHandler::<MainnetEthSpec>::default().run();
@@ -1026,6 +1050,18 @@ fn fork_choice_get_proposer_head() {
 fn fork_choice_deposit_with_reorg() {
     ForkChoiceHandler::<MinimalEthSpec>::new("deposit_with_reorg").run();
     // There is no mainnet variant for this test.
+}
+
+#[test]
+fn fork_choice_on_execution_payload_envelope() {
+    ForkChoiceHandler::<MinimalEthSpec>::new("on_execution_payload_envelope").run();
+    ForkChoiceHandler::<MainnetEthSpec>::new("on_execution_payload_envelope").run();
+}
+
+#[test]
+fn fork_choice_get_parent_payload_status() {
+    ForkChoiceHandler::<MinimalEthSpec>::new("get_parent_payload_status").run();
+    ForkChoiceHandler::<MainnetEthSpec>::new("get_parent_payload_status").run();
 }
 
 #[test]
@@ -1115,7 +1151,7 @@ fn kzg_inclusion_merkle_proof_validity() {
 
 #[test]
 fn rewards() {
-    for handler in &["basic", "leak", "random"] {
+    for handler in &["basic", "leak", "random", "inactivity_scores"] {
         RewardsHandler::<MinimalEthSpec>::new(handler).run();
         RewardsHandler::<MainnetEthSpec>::new(handler).run();
     }
