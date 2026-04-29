@@ -14,6 +14,7 @@ mod build_block_contents;
 mod builder_states;
 mod custody;
 mod database;
+mod inclusion_list_duties;
 mod light_client;
 mod metrics;
 mod peer;
@@ -22,6 +23,7 @@ mod proposer_duties;
 mod ptc_duties;
 mod publish_attestations;
 mod publish_blocks;
+mod publish_inclusion_lists;
 mod standard_block_rewards;
 mod state_id;
 mod sync_committee_rewards;
@@ -90,10 +92,10 @@ use tokio_stream::{
     StreamExt,
     wrappers::{BroadcastStream, errors::BroadcastStreamRecvError},
 };
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 use types::{
     BeaconStateError, Checkpoint, ConfigAndPreset, Epoch, EthSpec, ForkName, Hash256,
-    SignedBlindedBeaconBlock,
+    SignedBlindedBeaconBlock, SignedInclusionList, Slot,
 };
 use validator::execution_payload_envelope::get_validator_execution_payload_envelope;
 use version::{
@@ -105,6 +107,7 @@ use warp::Reply;
 use warp::hyper::Body;
 use warp::sse::Event;
 use warp::{Filter, Rejection, http::Response};
+use warp_utils::reject::convert_rejection;
 use warp_utils::{query::multi_key_query, uor::UnifyingOrFilter};
 
 const API_PREFIX: &str = "eth";
@@ -265,6 +268,7 @@ pub fn prometheus_metrics() -> warp::filters::log::Log<impl Fn(warp::filters::lo
                 .or_else(|| starts_with("v1/validator/duties/proposer"))
                 .or_else(|| starts_with("v2/validator/duties/proposer"))
                 .or_else(|| starts_with("v1/validator/duties/sync"))
+                .or_else(|| starts_with("v1/validator/inclusion_list"))
                 .or_else(|| starts_with("v1/validator/liveness"))
                 .or_else(|| starts_with("v1/validator/prepare_beacon_proposer"))
                 .or_else(|| starts_with("v1/validator/register_validator"))
@@ -1510,6 +1514,31 @@ pub fn serve<T: BeaconChainTypes>(
     let post_beacon_pool_bls_to_execution_changes =
         post_beacon_pool_bls_to_execution_changes(&network_tx_filter, &beacon_pool_path);
 
+    // POST beacon/pool/inclusion_lists
+    let post_beacon_pool_inclusion_lists = beacon_pool_path
+        .clone()
+        .and(warp::path("inclusion_lists"))
+        .and(warp::path::end())
+        .and(warp_utils::json::json())
+        .and(network_tx_filter.clone())
+        .then(
+            |task_spawner: TaskSpawner<T::EthSpec>,
+             chain: Arc<BeaconChain<T>>,
+             inclusion_lists: Vec<SignedInclusionList<T::EthSpec>>,
+             network_tx: UnboundedSender<NetworkMessage<T::EthSpec>>| async move {
+                let result = crate::publish_inclusion_lists::publish_inclusion_lists(
+                    task_spawner,
+                    chain,
+                    inclusion_lists,
+                    network_tx,
+                )
+                .await
+                .map(|()| warp::reply::json(&()));
+
+                convert_rejection(result).await
+            },
+        );
+
     // POST beacon/execution_payload_envelope
     let post_beacon_execution_payload_envelope = post_beacon_execution_payload_envelope(
         eth_v1.clone(),
@@ -2592,6 +2621,36 @@ pub fn serve<T: BeaconChainTypes>(
         task_spawner_filter.clone(),
     );
 
+    // TODO(eip7805) update endpoint def
+    // POST validator/duties/inclusion_list/{epoch}
+    let post_validator_duties_inclusion_list = eth_v1
+        .clone()
+        .and(warp::path("validator"))
+        .and(warp::path("duties"))
+        .and(warp::path("inclusion_list"))
+        .and(warp::path::param::<Epoch>().or_else(|_| async {
+            Err(warp_utils::reject::custom_bad_request(
+                "Invalid epoch".to_string(),
+            ))
+        }))
+        .and(warp::path::end())
+        .and(not_while_syncing_filter.clone())
+        .and(warp_utils::json::json())
+        .and(task_spawner_filter.clone())
+        .and(chain_filter.clone())
+        .then(
+            |epoch: Epoch,
+             not_synced_filter: Result<(), Rejection>,
+             indices: api_types::ValidatorIndexData,
+             task_spawner: TaskSpawner<T::EthSpec>,
+             chain: Arc<BeaconChain<T>>| {
+                task_spawner.blocking_json_task(Priority::P0, move || {
+                    not_synced_filter?;
+                    inclusion_list_duties::inclusion_list_duties(epoch, &indices.0, &chain)
+                })
+            },
+        );
+
     // GET validator/sync_committee_contribution
     let get_validator_sync_committee_contribution = get_validator_sync_committee_contribution(
         eth_v1.clone(),
@@ -2600,6 +2659,56 @@ pub fn serve<T: BeaconChainTypes>(
         task_spawner_filter.clone(),
     );
 
+    // TODO(EIP7805) update endpoint definition format
+    // GET validator/inclusion_list?slot
+    let get_validator_inclusion_list = eth_v1
+        .clone()
+        .and(warp::path("validator"))
+        .and(warp::path("inclusion_list"))
+        .and(warp::path::end())
+        .and(warp::query::<api_types::ValidatorInclusionListQuery>())
+        .and(not_while_syncing_filter.clone())
+        .and(task_spawner_filter.clone())
+        .and(chain_filter.clone())
+        .then(
+            |query: api_types::ValidatorInclusionListQuery,
+             not_synced_filter: Result<(), Rejection>,
+             task_spawner: TaskSpawner<T::EthSpec>,
+             chain: Arc<BeaconChain<T>>| {
+                task_spawner.spawn_async_with_rejection(Priority::P0, async move {
+                    not_synced_filter?;
+
+                    let current_slot = chain.slot().map_err(warp_utils::reject::unhandled_error)?;
+
+                    // allow a tolerance of one slot to account for clock skew
+                    //
+                    // TODO(focil) make sure tolerance is consistent with inner logic
+                    if query.slot > current_slot + 1 {
+                        return Err(warp_utils::reject::custom_bad_request(format!(
+                            "request slot {} is more than one slot past the current slot {}",
+                            query.slot, current_slot
+                        )));
+                    }
+
+                    let data = match chain
+                        .produce_inclusion_list(query.slot)
+                        .await
+                        .map(api_types::GenericResponse::from)
+                    {
+                        Ok(data) => data,
+                        Err(e) => {
+                            error!(
+                                error = ?e,
+                                "Failed producing IL",
+                            );
+                            return Err(warp_utils::reject::unhandled_error(e));
+                        }
+                    };
+
+                    Ok::<_, warp::reject::Rejection>(warp::reply::json(&data).into_response())
+                })
+            },
+        );
     // POST validator/aggregate_and_proofs
     let post_validator_aggregate_and_proofs = post_validator_aggregate_and_proofs(
         any_version.clone(),
@@ -3213,6 +3322,9 @@ pub fn serve<T: BeaconChainTypes>(
                                 api_types::EventTopic::BlockGossip => {
                                     event_handler.subscribe_block_gossip()
                                 }
+                                api_types::EventTopic::InclusionList => {
+                                    event_handler.subscribe_inclusion_list()
+                                }
                                 api_types::EventTopic::ExecutionPayload => {
                                     event_handler.subscribe_execution_payload()
                                 }
@@ -3382,6 +3494,7 @@ pub fn serve<T: BeaconChainTypes>(
                 .uor(get_validator_payload_attestation_data)
                 .uor(get_validator_aggregate_attestation)
                 .uor(get_validator_sync_committee_contribution)
+                .uor(get_validator_inclusion_list)
                 .uor(get_lighthouse_health)
                 .uor(get_lighthouse_ui_health)
                 .uor(get_lighthouse_ui_validator_count)
@@ -3438,6 +3551,7 @@ pub fn serve<T: BeaconChainTypes>(
                     .uor(post_validator_duties_attester)
                     .uor(post_validator_duties_ptc)
                     .uor(post_validator_duties_sync)
+                    .uor(post_validator_duties_inclusion_list)
                     .uor(post_validator_aggregate_and_proofs)
                     .uor(post_validator_contribution_and_proofs)
                     .uor(post_validator_beacon_committee_subscriptions)
@@ -3449,6 +3563,7 @@ pub fn serve<T: BeaconChainTypes>(
                     .uor(post_lighthouse_database_reconstruct)
                     .uor(post_lighthouse_ui_validator_metrics)
                     .uor(post_lighthouse_ui_validator_info)
+                    .uor(post_beacon_pool_inclusion_lists)
                     .uor(post_lighthouse_finalize)
                     .uor(post_lighthouse_compaction)
                     .uor(post_lighthouse_add_peer)

@@ -2,7 +2,8 @@ use crate::{
     JustifiedBalances,
     error::Error,
     proto_array::{
-        InvalidationOperation, Iter, NodeDelta, ProtoArray, ProtoNode, calculate_committee_fraction,
+        InvalidationOperation, Iter, NodeDelta, ProtoArray, ProtoNode, ProposerBoost,
+        calculate_committee_fraction,
     },
     ssz_container::SszContainer,
 };
@@ -504,6 +505,7 @@ impl ProtoArrayForkChoice {
         finalized_checkpoint: Checkpoint,
         current_epoch_shuffling_id: AttestationShufflingId,
         next_epoch_shuffling_id: AttestationShufflingId,
+        unsatisfied_inclusion_list_blocks: HashMap<Slot, Hash256>,
         execution_status: ExecutionStatus,
         execution_payload_parent_hash: Option<ExecutionBlockHash>,
         execution_payload_block_hash: Option<ExecutionBlockHash>,
@@ -514,6 +516,8 @@ impl ProtoArrayForkChoice {
             prune_threshold: DEFAULT_PRUNE_THRESHOLD,
             nodes: Vec::with_capacity(1),
             indices: HashMap::with_capacity(1),
+            unsatisfied_inclusion_list_blocks,
+            previous_proposer_boost: ProposerBoost::default(),
         };
 
         let block = Block {
@@ -1372,6 +1376,7 @@ mod test_compute_deltas {
             genesis_checkpoint,
             junk_shuffling_id.clone(),
             junk_shuffling_id.clone(),
+            HashMap::new(),
             execution_status,
             None,
             None,
@@ -1527,6 +1532,7 @@ mod test_compute_deltas {
             genesis_checkpoint,
             junk_shuffling_id.clone(),
             junk_shuffling_id.clone(),
+            HashMap::new(),
             execution_status,
             None,
             None,

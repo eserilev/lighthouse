@@ -11,11 +11,12 @@ use fork_choice::ForkChoiceStore;
 use proto_array::JustifiedBalances;
 use safe_arith::ArithError;
 use ssz_derive::{Decode, Encode};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::marker::PhantomData;
 use std::sync::Arc;
 use store::{Error as StoreError, HotColdDB, ItemStore};
 use superstruct::superstruct;
+use tracing::info;
 use types::{
     AbstractExecPayload, BeaconBlockRef, BeaconState, BeaconStateError, Checkpoint, Epoch, EthSpec,
     Hash256, Slot,
@@ -144,6 +145,8 @@ pub struct BeaconForkChoiceStore<E: EthSpec, Hot: ItemStore<E>, Cold: ItemStore<
     unrealized_finalized_checkpoint: Checkpoint,
     proposer_boost_root: Hash256,
     equivocating_indices: BTreeSet<u64>,
+    inclusion_list_equivocators: HashMap<(Slot, Hash256), BTreeSet<u64>>,
+    unsatisfied_inclusion_list_blocks: HashMap<Slot, Hash256>,
     _phantom: PhantomData<E>,
 }
 
@@ -211,6 +214,8 @@ where
             unrealized_finalized_checkpoint: finalized_checkpoint,
             proposer_boost_root: Hash256::zero(),
             equivocating_indices: BTreeSet::new(),
+            inclusion_list_equivocators: HashMap::new(),
+            unsatisfied_inclusion_list_blocks: HashMap::new(),
             _phantom: PhantomData,
         })
     }
@@ -259,6 +264,8 @@ where
             unrealized_finalized_checkpoint: persisted.unrealized_finalized_checkpoint,
             proposer_boost_root: persisted.proposer_boost_root,
             equivocating_indices: persisted.equivocating_indices,
+            inclusion_list_equivocators: HashMap::new(),
+            unsatisfied_inclusion_list_blocks: HashMap::new(),
             _phantom: PhantomData,
         })
     }
@@ -376,6 +383,24 @@ where
 
     fn extend_equivocating_indices(&mut self, indices: impl IntoIterator<Item = u64>) {
         self.equivocating_indices.extend(indices);
+    }
+
+    fn set_unsatisfied_inclusion_list_block(&mut self, slot: Slot, block_root: Hash256) {
+        info!(
+            ?slot,
+            %block_root,
+            "Set unsatisfied inclusion list block"
+        );
+        self.unsatisfied_inclusion_list_blocks
+            .insert(slot, block_root);
+    }
+
+    fn unsatisfied_inclusion_list_block(&self, slot: Slot) -> Option<&Hash256> {
+        self.unsatisfied_inclusion_list_blocks.get(&slot)
+    }
+
+    fn unsatisfied_inclusion_list_blocks(&self) -> &HashMap<Slot, Hash256> {
+        &self.unsatisfied_inclusion_list_blocks
     }
 }
 

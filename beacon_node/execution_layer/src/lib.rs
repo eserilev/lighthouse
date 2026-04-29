@@ -27,6 +27,7 @@ use payload_status::process_payload_status;
 use sensitive_url::SensitiveUrl;
 use serde::{Deserialize, Serialize};
 use slot_clock::SlotClock;
+use ssz_types::VariableList;
 use std::collections::{HashMap, hash_map::Entry};
 use std::fmt;
 use std::future::Future;
@@ -53,8 +54,8 @@ use types::{
 };
 use types::{
     BeaconStateError, BlindedPayload, ChainSpec, Epoch, ExecPayload, ExecutionPayloadBellatrix,
-    ExecutionPayloadCapella, ExecutionPayloadElectra, ExecutionPayloadFulu, FullPayload,
-    ProposerPreparationData, Slot,
+    ExecutionPayloadCapella, ExecutionPayloadEip7805, ExecutionPayloadElectra,
+    ExecutionPayloadFulu, FullPayload, ProposerPreparationData, Slot,
 };
 
 mod block_hash;
@@ -118,6 +119,13 @@ impl<E: EthSpec> TryFrom<BuilderBid<E>> for ProvenancedPayload<BlockProposalCont
                 blobs_and_proofs: None,
                 requests: Some(builder_bid.execution_requests),
             },
+            BuilderBid::Eip7805(builder_bid) => BlockProposalContents::PayloadAndBlobs {
+                payload: ExecutionPayloadHeader::Eip7805(builder_bid.header).into(),
+                block_value: builder_bid.value,
+                kzg_commitments: builder_bid.blob_kzg_commitments,
+                blobs_and_proofs: None,
+                requests: Some(builder_bid.execution_requests),
+            },
             BuilderBid::Fulu(builder_bid) => BlockProposalContents::PayloadAndBlobs {
                 payload: ExecutionPayloadHeader::Fulu(builder_bid.header).into(),
                 block_value: builder_bid.value,
@@ -162,12 +170,20 @@ pub enum Error {
     BeaconStateError(BeaconStateError),
     PayloadTypeMismatch,
     VerifyingVersionedHashes(versioned_hashes::Error),
+    HexError(hex::FromHexError),
+    SszTypeError(ssz_types::Error),
     Unexpected(String),
 }
 
 impl From<ssz_types::Error> for Error {
     fn from(e: ssz_types::Error) -> Self {
-        Error::SszTypesError(e)
+        Error::SszTypeError(e)
+    }
+}
+
+impl From<hex::FromHexError> for Error {
+    fn from(e: hex::FromHexError) -> Self {
+        Error::HexError(e)
     }
 }
 
@@ -205,6 +221,7 @@ pub struct BlockProposalContentsGloas<E: EthSpec> {
     pub blob_kzg_commitments: KzgCommitments<E>,
     pub blobs_and_proofs: (BlobsList<E>, KzgProofs<E>),
     pub execution_requests: ExecutionRequests<E>,
+    pub should_override_builder: bool,
 }
 
 impl<E: EthSpec> From<GetPayloadResponseGloas<E>> for BlockProposalContentsGloas<E> {
@@ -215,6 +232,7 @@ impl<E: EthSpec> From<GetPayloadResponseGloas<E>> for BlockProposalContentsGloas
             blob_kzg_commitments: response.blobs_bundle.commitments,
             blobs_and_proofs: (response.blobs_bundle.blobs, response.blobs_bundle.proofs),
             execution_requests: response.requests,
+            should_override_builder: response.should_override_builder,
         }
     }
 }
@@ -1443,6 +1461,7 @@ impl<E: EthSpec> ExecutionLayer<E> {
             );
         }
         *self.inner.last_new_payload_errored.write().await = result.is_err();
+        // TODO(focil) write block hash to some store in the case where theres an IL valdation error on newPayloadv5
 
         process_payload_status(block_hash, result)
             .map_err(Box::new)
@@ -1683,6 +1702,7 @@ impl<E: EthSpec> ExecutionLayer<E> {
                 ForkName::Capella => ExecutionPayloadCapella::default().into(),
                 ForkName::Deneb => ExecutionPayloadDeneb::default().into(),
                 ForkName::Electra => ExecutionPayloadElectra::default().into(),
+                ForkName::Eip7805 => ExecutionPayloadEip7805::default().into(),
                 ForkName::Fulu => ExecutionPayloadFulu::default().into(),
                 ForkName::Base | ForkName::Altair => {
                     return Err(Error::InvalidForkForPayload);
@@ -1874,6 +1894,28 @@ impl<E: EthSpec> ExecutionLayer<E> {
         } else {
             Err(Error::NoPayloadBuilder)
         }
+    }
+
+    pub async fn get_inclusion_list(&self, parent_hash: Hash256) -> Result<Transactions<E>, Error> {
+        debug!(%parent_hash, "Requesting inclusion list from EL");
+        let raw_transactions = self
+            .engine()
+            .api
+            .get_inclusion_list::<E>(parent_hash)
+            .await?;
+
+        let mut transactions = vec![];
+
+        let Some(raw_transactions) = raw_transactions else {
+            debug!(%parent_hash, "The EL sent an empty inclusion list");
+            return Ok(transactions.try_into()?);
+        };
+        for raw_tx in raw_transactions {
+            let decoded_hex_tx =
+                VariableList::new(hex::decode(raw_tx.strip_prefix("0x").unwrap_or(&raw_tx))?)?;
+            transactions.push(decoded_hex_tx);
+        }
+        Ok(transactions.try_into()?)
     }
 
     async fn post_builder_blinded_blocks_v2(

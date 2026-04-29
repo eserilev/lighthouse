@@ -10,7 +10,7 @@ use crate::{InvalidationOperation, JustifiedBalances};
 use fixed_bytes::FixedBytesExtended;
 use serde::{Deserialize, Serialize};
 use ssz::BitVector;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::time::Duration;
 use types::{
     AttestationShufflingId, ChainSpec, Checkpoint, Epoch, EthSpec, ExecutionBlockHash, Hash256,
@@ -160,6 +160,7 @@ impl ForkChoiceTestDefinition {
             self.finalized_checkpoint,
             junk_shuffling_id.clone(),
             junk_shuffling_id,
+            HashMap::new(),
             ExecutionStatus::Optimistic(ExecutionBlockHash::zero()),
             self.execution_payload_parent_hash,
             self.execution_payload_block_hash,

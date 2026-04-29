@@ -177,6 +177,7 @@ impl<E: EthSpec> LightClientFinalityUpdate<E> {
                 sync_aggregate,
                 signature_slot,
             }),
+            ForkName::Eip7805 => return Err(LightClientError::GloasNotImplemented),
             ForkName::Gloas => return Err(LightClientError::GloasNotImplemented),
             ForkName::Base => return Err(LightClientError::AltairForkNotActive),
         };
@@ -227,7 +228,7 @@ impl<E: EthSpec> LightClientFinalityUpdate<E> {
                 Self::Capella(LightClientFinalityUpdateCapella::from_ssz_bytes(bytes)?)
             }
             ForkName::Deneb => Self::Deneb(LightClientFinalityUpdateDeneb::from_ssz_bytes(bytes)?),
-            ForkName::Electra => {
+            ForkName::Electra | ForkName::Eip7805 => {
                 Self::Electra(LightClientFinalityUpdateElectra::from_ssz_bytes(bytes)?)
             }
             ForkName::Fulu => Self::Fulu(LightClientFinalityUpdateFulu::from_ssz_bytes(bytes)?),
@@ -251,7 +252,9 @@ impl<E: EthSpec> LightClientFinalityUpdate<E> {
             }
             ForkName::Capella => <LightClientFinalityUpdateCapella<E> as Encode>::ssz_fixed_len(),
             ForkName::Deneb => <LightClientFinalityUpdateDeneb<E> as Encode>::ssz_fixed_len(),
-            ForkName::Electra => <LightClientFinalityUpdateElectra<E> as Encode>::ssz_fixed_len(),
+            ForkName::Electra | ForkName::Eip7805 => {
+                <LightClientFinalityUpdateElectra<E> as Encode>::ssz_fixed_len()
+            }
             ForkName::Fulu => <LightClientFinalityUpdateFulu<E> as Encode>::ssz_fixed_len(),
             // TODO(gloas): implement Gloas light client
             ForkName::Gloas => 0,
@@ -301,7 +304,7 @@ impl<'de, E: EthSpec> ContextDeserialize<'de, ForkName> for LightClientFinalityU
             ForkName::Deneb => {
                 Self::Deneb(Deserialize::deserialize(deserializer).map_err(convert_err)?)
             }
-            ForkName::Electra => {
+            ForkName::Electra | ForkName::Eip7805 => {
                 Self::Electra(Deserialize::deserialize(deserializer).map_err(convert_err)?)
             }
             ForkName::Fulu => {

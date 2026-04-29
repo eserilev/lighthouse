@@ -1,6 +1,6 @@
 use crate::upgrade::{
     upgrade_to_altair, upgrade_to_bellatrix, upgrade_to_capella, upgrade_to_deneb,
-    upgrade_to_electra, upgrade_to_fulu, upgrade_to_gloas,
+    upgrade_to_eip7805, upgrade_to_electra, upgrade_to_fulu, upgrade_to_gloas,
 };
 use crate::{per_epoch_processing::EpochProcessingSummary, *};
 use fixed_bytes::FixedBytesExtended;
@@ -92,12 +92,14 @@ pub fn per_slot_processing<E: EthSpec>(
         if spec.electra_fork_epoch == Some(state.current_epoch()) {
             upgrade_to_electra(state, spec)?;
         }
-
         // Fulu.
         if spec.fulu_fork_epoch == Some(state.current_epoch()) {
             upgrade_to_fulu(state, spec)?;
         }
-
+        // Eip7805.
+        if spec.eip7805_fork_epoch == Some(state.current_epoch()) {
+            upgrade_to_eip7805(state, spec)?;
+        }
         // Gloas.
         if spec.gloas_fork_epoch == Some(state.current_epoch()) {
             upgrade_to_gloas(state, spec)?;

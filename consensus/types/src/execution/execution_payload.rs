@@ -24,7 +24,7 @@ pub type Transactions<E> = VariableList<
 >;
 
 #[superstruct(
-    variants(Bellatrix, Capella, Deneb, Electra, Fulu, Gloas),
+    variants(Bellatrix, Capella, Deneb, Electra, Fulu, Eip7805, Gloas),
     variant_attributes(
         derive(
             Default,
@@ -101,12 +101,12 @@ pub struct ExecutionPayload<E: EthSpec> {
     pub block_hash: ExecutionBlockHash,
     #[serde(with = "ssz_types::serde_utils::list_of_hex_var_list")]
     pub transactions: Transactions<E>,
-    #[superstruct(only(Capella, Deneb, Electra, Fulu, Gloas))]
+    #[superstruct(only(Capella, Deneb, Electra, Fulu, Eip7805, Gloas))]
     pub withdrawals: Withdrawals<E>,
-    #[superstruct(only(Deneb, Electra, Fulu, Gloas), partial_getter(copy))]
+    #[superstruct(only(Deneb, Electra, Fulu, Eip7805, Gloas), partial_getter(copy))]
     #[serde(with = "serde_utils::quoted_u64")]
     pub blob_gas_used: u64,
-    #[superstruct(only(Deneb, Electra, Fulu, Gloas), partial_getter(copy))]
+    #[superstruct(only(Deneb, Electra, Fulu, Eip7805, Gloas), partial_getter(copy))]
     #[serde(with = "serde_utils::quoted_u64")]
     pub excess_blob_gas: u64,
     /// EIP-7928: Block access list
@@ -140,6 +140,7 @@ impl<E: EthSpec> ForkVersionDecode for ExecutionPayload<E> {
             ForkName::Capella => ExecutionPayloadCapella::from_ssz_bytes(bytes).map(Self::Capella),
             ForkName::Deneb => ExecutionPayloadDeneb::from_ssz_bytes(bytes).map(Self::Deneb),
             ForkName::Electra => ExecutionPayloadElectra::from_ssz_bytes(bytes).map(Self::Electra),
+            ForkName::Eip7805 => ExecutionPayloadEip7805::from_ssz_bytes(bytes).map(Self::Eip7805),
             ForkName::Fulu => ExecutionPayloadFulu::from_ssz_bytes(bytes).map(Self::Fulu),
             ForkName::Gloas => ExecutionPayloadGloas::from_ssz_bytes(bytes).map(Self::Gloas),
         }
@@ -187,6 +188,9 @@ impl<'de, E: EthSpec> ContextDeserialize<'de, ForkName> for ExecutionPayload<E> 
             ForkName::Electra => {
                 Self::Electra(Deserialize::deserialize(deserializer).map_err(convert_err)?)
             }
+            ForkName::Eip7805 => {
+                Self::Eip7805(Deserialize::deserialize(deserializer).map_err(convert_err)?)
+            }
             ForkName::Fulu => {
                 Self::Fulu(Deserialize::deserialize(deserializer).map_err(convert_err)?)
             }
@@ -204,6 +208,7 @@ impl<E: EthSpec> ExecutionPayload<E> {
             ExecutionPayload::Capella(_) => ForkName::Capella,
             ExecutionPayload::Deneb(_) => ForkName::Deneb,
             ExecutionPayload::Electra(_) => ForkName::Electra,
+            ExecutionPayload::Eip7805(_) => ForkName::Eip7805,
             ExecutionPayload::Fulu(_) => ForkName::Fulu,
             ExecutionPayload::Gloas(_) => ForkName::Gloas,
         }

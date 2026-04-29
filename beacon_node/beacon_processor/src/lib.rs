@@ -446,6 +446,7 @@ pub enum Work<E: EthSpec> {
     LightClientOptimisticUpdateRequest(BlockingFn),
     LightClientFinalityUpdateRequest(BlockingFn),
     LightClientUpdatesByRangeRequest(BlockingFn),
+    GossipInclusionList(BlockingFn),
     ApiRequestP0(BlockingOrAsync),
     ApiRequestP1(BlockingOrAsync),
     Reprocess(ReprocessQueueMessage),
@@ -506,6 +507,7 @@ pub enum WorkType {
     LightClientOptimisticUpdateRequest,
     LightClientFinalityUpdateRequest,
     LightClientUpdatesByRangeRequest,
+    GossipInclusionList,
     ApiRequestP0,
     ApiRequestP1,
     Reprocess,
@@ -570,6 +572,7 @@ impl<E: EthSpec> Work<E> {
             Work::UnknownLightClientOptimisticUpdate { .. } => {
                 WorkType::UnknownLightClientOptimisticUpdate
             }
+            Work::GossipInclusionList { .. } => WorkType::GossipInclusionList,
             Work::ApiRequestP0 { .. } => WorkType::ApiRequestP0,
             Work::ApiRequestP1 { .. } => WorkType::ApiRequestP1,
             Work::Reprocess { .. } => WorkType::Reprocess,
@@ -958,6 +961,9 @@ impl<E: EthSpec> BeaconProcessor<E> {
                                     None
                                 }
                             }
+                        // Check inclusion lists after attestations since they're time-sensitive.
+                        } else if let Some(item) = work_queues.gossip_inclusion_list_queue.pop() {
+                            Some(item)
                         // Convert any gossip attestations that need to be converted.
                         } else if let Some(item) = work_queues.attestation_to_convert_queue.pop() {
                             Some(item)
@@ -1162,6 +1168,9 @@ impl<E: EthSpec> BeaconProcessor<E> {
                             Work::DelayedImportEnvelope { .. } => {
                                 work_queues.delayed_envelope_queue.push(work, work_id)
                             }
+                            Work::GossipInclusionList { .. } => {
+                                work_queues.gossip_inclusion_list_queue.push(work, work_id)
+                            }
                             Work::GossipVoluntaryExit { .. } => {
                                 work_queues.gossip_voluntary_exit_queue.push(work, work_id)
                             }
@@ -1365,6 +1374,9 @@ impl<E: EthSpec> BeaconProcessor<E> {
                         WorkType::LightClientFinalityUpdateRequest => {
                             work_queues.lc_rpc_finality_update_queue.len()
                         }
+                        WorkType::GossipInclusionList => {
+                            work_queues.gossip_inclusion_list_queue.len()
+                        }
                         WorkType::LightClientUpdatesByRangeRequest => {
                             work_queues.lc_update_range_queue.len()
                         }
@@ -1554,6 +1566,7 @@ impl<E: EthSpec> BeaconProcessor<E> {
             | Work::GossipLightClientOptimisticUpdate(process_fn)
             | Work::Status(process_fn)
             | Work::GossipBlsToExecutionChange(process_fn)
+            | Work::GossipInclusionList(process_fn)
             | Work::GossipExecutionPayloadBid(process_fn)
             | Work::GossipPayloadAttestation(process_fn)
             | Work::GossipProposerPreferences(process_fn)

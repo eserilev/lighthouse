@@ -3335,6 +3335,19 @@ impl ApiTester {
         interesting
     }
 
+    pub async fn test_post_validator_duties_inclusion_list(self) -> Self {
+        let current_epoch = self.chain.epoch().unwrap();
+        let slot = self.chain.slot().unwrap();
+        self.harness.extend_to_slot(slot).await;
+        for validator_indices in self.interesting_validator_indices() {
+            self.client
+                .post_validator_duties_inclusion_list(current_epoch, &validator_indices)
+                .await
+                .unwrap();
+        }
+        self
+    }
+
     pub async fn test_get_validator_duties_attester(self) -> Self {
         let current_epoch = self.chain.epoch().unwrap().as_u64();
 
@@ -3450,17 +3463,20 @@ impl ApiTester {
                 .unwrap()
                 .unwrap_or(self.chain.head_beacon_block_root());
 
-            // Presently, the beacon chain harness never runs the code that primes the proposer
-            // cache. If this changes in the future then we'll need some smarter logic here, but
-            // this is succinct and effective for the time being.
-            assert!(
-                self.chain
-                    .beacon_proposer_cache
-                    .lock()
-                    .get_epoch::<E>(dependent_root, epoch)
-                    .is_none(),
-                "the proposer cache should miss initially"
-            );
+            // Block import primes the proposer cache for each epoch it runs through (to gate
+            // proposer boost), so epochs `<= current_epoch` are already cached. The only epoch
+            // for which we can observe the endpoint's own caching behaviour is
+            // `current_epoch + 1`, which no block import has touched yet.
+            if epoch == current_epoch + 1 {
+                assert!(
+                    self.chain
+                        .beacon_proposer_cache
+                        .lock()
+                        .get_epoch::<E>(dependent_root, epoch)
+                        .is_none(),
+                    "the proposer cache should miss initially for the next epoch"
+                );
+            }
 
             let result = self
                 .client
@@ -3468,8 +3484,9 @@ impl ApiTester {
                 .await
                 .unwrap();
 
-            // Check that current-epoch requests prime the proposer cache, whilst non-current
-            // requests don't.
+            // A current-epoch request should leave the cache primed (block import already did so,
+            // but this is still a useful end-to-end check). A request for `current_epoch + 1`
+            // should not prime the cache.
             if epoch == current_epoch {
                 assert!(
                     self.chain
@@ -3477,16 +3494,16 @@ impl ApiTester {
                         .lock()
                         .get_epoch::<E>(dependent_root, epoch)
                         .is_some(),
-                    "a current-epoch request should prime the proposer cache"
+                    "the proposer cache should be primed for the current epoch"
                 );
-            } else {
+            } else if epoch == current_epoch + 1 {
                 assert!(
                     self.chain
                         .beacon_proposer_cache
                         .lock()
                         .get_epoch::<E>(dependent_root, epoch)
                         .is_none(),
-                    "a non-current-epoch request should not prime the proposer cache"
+                    "a request for the next epoch should not prime the proposer cache"
                 );
             }
 
@@ -7278,6 +7295,22 @@ impl ApiTester {
         self
     }
 
+    pub async fn test_create_inclusion_lists(self) -> Self {
+        let state = self.chain.head_beacon_state_cloned();
+        let slot = self.harness.chain.slot().unwrap();
+        self.harness.extend_to_slot(slot).await;
+        println!("1");
+        let inclusion_list_committee = state
+            .get_inclusion_list_committee(slot + 1, &self.chain.spec)
+            .unwrap();
+        println!("2");
+        self.harness
+            .make_signed_inclusion_lists(inclusion_list_committee, &state, slot + 1)
+            .await;
+        println!("3");
+        self
+    }
+
     pub async fn test_get_events_electra(self) -> Self {
         let topics = vec![EventTopic::SingleAttestation];
         let mut events_future = self
@@ -8949,6 +8982,38 @@ async fn get_beacon_rewards_attestations_fulu() {
     ApiTester::new_from_config(config)
         .await
         .test_beacon_attestation_rewards_fulu()
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn create_signed_inclusion_lists() {
+    let mut config = ApiTesterConfig::default();
+    config.spec.altair_fork_epoch = Some(Epoch::new(0));
+    config.spec.bellatrix_fork_epoch = Some(Epoch::new(0));
+    config.spec.capella_fork_epoch = Some(Epoch::new(0));
+    config.spec.deneb_fork_epoch = Some(Epoch::new(0));
+    config.spec.electra_fork_epoch = Some(Epoch::new(0));
+    config.spec.fulu_fork_epoch = Some(Epoch::new(0));
+    config.spec.eip7805_fork_epoch = Some(Epoch::new(0));
+    ApiTester::new_from_config(config)
+        .await
+        .test_create_inclusion_lists()
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_post_validator_duties_inclusion_list() {
+    let mut config = ApiTesterConfig::default();
+    config.spec.altair_fork_epoch = Some(Epoch::new(0));
+    config.spec.bellatrix_fork_epoch = Some(Epoch::new(0));
+    config.spec.capella_fork_epoch = Some(Epoch::new(0));
+    config.spec.deneb_fork_epoch = Some(Epoch::new(0));
+    config.spec.electra_fork_epoch = Some(Epoch::new(0));
+    config.spec.fulu_fork_epoch = Some(Epoch::new(0));
+    config.spec.eip7805_fork_epoch = Some(Epoch::new(0));
+    ApiTester::new_from_config(config)
+        .await
+        .test_post_validator_duties_inclusion_list()
         .await;
 }
 

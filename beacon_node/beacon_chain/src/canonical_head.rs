@@ -149,6 +149,11 @@ impl<E: EthSpec> CachedHead<E> {
         self.snapshot.beacon_block.slot()
     }
 
+    /// Returns the `execution_payload.block_hash` of the block at the head of the beacon chain.
+    pub fn head_hash(&self) -> Option<ExecutionBlockHash> {
+        self.head_hash
+    }
+
     /// Returns the `Fork` from the `BeaconState` at the head of the chain.
     pub fn head_fork(&self) -> Fork {
         self.snapshot.beacon_state.fork()

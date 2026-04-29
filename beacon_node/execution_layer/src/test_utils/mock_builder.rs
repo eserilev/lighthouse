@@ -30,8 +30,8 @@ use tracing::{debug, error, info, warn};
 use tree_hash::TreeHash;
 use types::ExecutionBlockHash;
 use types::builder::{
-    BuilderBid, BuilderBidBellatrix, BuilderBidCapella, BuilderBidDeneb, BuilderBidElectra,
-    BuilderBidFulu, SignedBuilderBid,
+    BuilderBid, BuilderBidBellatrix, BuilderBidCapella, BuilderBidDeneb, BuilderBidEip7805,
+    BuilderBidElectra, BuilderBidFulu, SignedBuilderBid,
 };
 use types::{
     Address, BeaconState, ChainSpec, Epoch, EthSpec, ExecPayload, ExecutionPayload,
@@ -114,6 +114,9 @@ impl<E: EthSpec> BidStuff<E> for BuilderBid<E> {
             ExecutionPayloadHeaderRefMut::Electra(header) => {
                 header.fee_recipient = fee_recipient;
             }
+            ExecutionPayloadHeaderRefMut::Eip7805(header) => {
+                header.fee_recipient = fee_recipient;
+            }
             ExecutionPayloadHeaderRefMut::Fulu(header) => {
                 header.fee_recipient = fee_recipient;
             }
@@ -132,6 +135,9 @@ impl<E: EthSpec> BidStuff<E> for BuilderBid<E> {
                 header.gas_limit = gas_limit;
             }
             ExecutionPayloadHeaderRefMut::Electra(header) => {
+                header.gas_limit = gas_limit;
+            }
+            ExecutionPayloadHeaderRefMut::Eip7805(header) => {
                 header.gas_limit = gas_limit;
             }
             ExecutionPayloadHeaderRefMut::Fulu(header) => {
@@ -158,6 +164,9 @@ impl<E: EthSpec> BidStuff<E> for BuilderBid<E> {
             ExecutionPayloadHeaderRefMut::Electra(header) => {
                 header.parent_hash = ExecutionBlockHash::from_root(parent_hash);
             }
+            ExecutionPayloadHeaderRefMut::Eip7805(header) => {
+                header.parent_hash = ExecutionBlockHash::from_root(parent_hash);
+            }
             ExecutionPayloadHeaderRefMut::Fulu(header) => {
                 header.parent_hash = ExecutionBlockHash::from_root(parent_hash);
             }
@@ -176,6 +185,9 @@ impl<E: EthSpec> BidStuff<E> for BuilderBid<E> {
                 header.prev_randao = prev_randao;
             }
             ExecutionPayloadHeaderRefMut::Electra(header) => {
+                header.prev_randao = prev_randao;
+            }
+            ExecutionPayloadHeaderRefMut::Eip7805(header) => {
                 header.prev_randao = prev_randao;
             }
             ExecutionPayloadHeaderRefMut::Fulu(header) => {
@@ -198,6 +210,9 @@ impl<E: EthSpec> BidStuff<E> for BuilderBid<E> {
             ExecutionPayloadHeaderRefMut::Electra(header) => {
                 header.block_number = block_number;
             }
+            ExecutionPayloadHeaderRefMut::Eip7805(header) => {
+                header.block_number = block_number;
+            }
             ExecutionPayloadHeaderRefMut::Fulu(header) => {
                 header.block_number = block_number;
             }
@@ -218,6 +233,9 @@ impl<E: EthSpec> BidStuff<E> for BuilderBid<E> {
             ExecutionPayloadHeaderRefMut::Electra(header) => {
                 header.timestamp = timestamp;
             }
+            ExecutionPayloadHeaderRefMut::Eip7805(header) => {
+                header.timestamp = timestamp;
+            }
             ExecutionPayloadHeaderRefMut::Fulu(header) => {
                 header.timestamp = timestamp;
             }
@@ -236,6 +254,9 @@ impl<E: EthSpec> BidStuff<E> for BuilderBid<E> {
                 header.withdrawals_root = withdrawals_root;
             }
             ExecutionPayloadHeaderRefMut::Electra(header) => {
+                header.withdrawals_root = withdrawals_root;
+            }
+            ExecutionPayloadHeaderRefMut::Eip7805(header) => {
                 header.withdrawals_root = withdrawals_root;
             }
             ExecutionPayloadHeaderRefMut::Fulu(header) => {
@@ -267,6 +288,10 @@ impl<E: EthSpec> BidStuff<E> for BuilderBid<E> {
                 header.block_hash = ExecutionBlockHash::from_root(header.tree_hash_root());
             }
             ExecutionPayloadHeaderRefMut::Electra(header) => {
+                header.extra_data = extra_data;
+                header.block_hash = ExecutionBlockHash::from_root(header.tree_hash_root());
+            }
+            ExecutionPayloadHeaderRefMut::Eip7805(header) => {
                 header.extra_data = extra_data;
                 header.block_hash = ExecutionBlockHash::from_root(header.tree_hash_root());
             }
@@ -468,6 +493,9 @@ impl<E: EthSpec> MockBuilder<E> {
             SignedBlindedBeaconBlock::Electra(block) => {
                 block.message.body.execution_payload.tree_hash_root()
             }
+            SignedBlindedBeaconBlock::Eip7805(block) => {
+                block.message.body.execution_payload.tree_hash_root()
+            }
             SignedBlindedBeaconBlock::Fulu(block) => {
                 block.message.body.execution_payload.tree_hash_root()
             }
@@ -600,6 +628,18 @@ impl<E: EthSpec> MockBuilder<E> {
                             .into(),
                         blob_kzg_commitments: maybe_blobs_bundle
                             .map(|b| b.commitments.clone())
+                            .unwrap_or_default(),
+                        value: self.get_bid_value(value),
+                        pubkey: self.builder_sk.public_key().compress(),
+                        execution_requests: maybe_requests.unwrap_or_default(),
+                    }),
+                    ForkName::Eip7805 => BuilderBid::Eip7805(BuilderBidEip7805 {
+                        header: payload
+                            .as_eip7805()
+                            .map_err(|_| "incorrect payload variant".to_string())?
+                            .into(),
+                        blob_kzg_commitments: maybe_blobs_bundle
+                            .map(|b| b.commitments)
                             .unwrap_or_default(),
                         value: self.get_bid_value(value),
                         pubkey: self.builder_sk.public_key().compress(),
@@ -904,14 +944,16 @@ impl<E: EthSpec> MockBuilder<E> {
                 None,
                 None,
             ),
-            ForkName::Deneb | ForkName::Electra | ForkName::Fulu => PayloadAttributes::new(
-                timestamp,
-                *prev_randao,
-                fee_recipient,
-                expected_withdrawals,
-                Some(head_block_root),
-                None,
-            ),
+            ForkName::Deneb | ForkName::Electra | ForkName::Fulu | ForkName::Eip7805 => {
+                PayloadAttributes::new(
+                    timestamp,
+                    *prev_randao,
+                    fee_recipient,
+                    expected_withdrawals,
+                    Some(head_block_root),
+                    None,
+                )
+            }
             ForkName::Gloas => PayloadAttributes::new(
                 timestamp,
                 *prev_randao,

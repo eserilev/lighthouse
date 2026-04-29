@@ -29,6 +29,10 @@ macro_rules! map_execution_payload_into_full_payload {
                 let f: fn(ExecutionPayloadFulu<_>, fn(_) -> _) -> _ = $f;
                 f(inner, FullPayload::Fulu)
             }
+            ExecutionPayload::Eip7805(inner) => {
+                let f: fn(ExecutionPayloadEip7805<_>, fn(_) -> _) -> _ = $f;
+                f(inner, FullPayload::Eip7805)
+            }
             ExecutionPayload::Gloas(_) => panic!("FullPayload::Gloas does not exist!"),
         }
     };
@@ -57,6 +61,10 @@ macro_rules! map_execution_payload_into_blinded_payload {
             ExecutionPayload::Fulu(inner) => {
                 let f: fn(ExecutionPayloadFulu<_>, fn(_) -> _) -> _ = $f;
                 f(inner, BlindedPayload::Fulu)
+            }
+            ExecutionPayload::Eip7805(inner) => {
+                let f: fn(ExecutionPayloadEip7805<_>, fn(_) -> _) -> _ = $f;
+                f(inner, BlindedPayload::Eip7805)
             }
             ExecutionPayload::Gloas(_) => panic!("BlindedPayload::Gloas does not exist!"),
         }
@@ -101,6 +109,13 @@ macro_rules! map_execution_payload_ref_into_execution_payload_header {
                     fn(_) -> _,
                 ) -> _ = $f;
                 f(inner, ExecutionPayloadHeader::Fulu)
+            }
+            ExecutionPayloadRef::Eip7805(inner) => {
+                let f: fn(
+                    &$lifetime ExecutionPayloadEip7805<_>,
+                    fn(_) -> _,
+                ) -> _ = $f;
+                f(inner, ExecutionPayloadHeader::Eip7805)
             }
             ExecutionPayloadRef::Gloas(_) => panic!("ExecutionPayloadHeader::Gloas does not exist!"),
         }

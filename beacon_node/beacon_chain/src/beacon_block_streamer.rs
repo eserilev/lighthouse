@@ -15,8 +15,8 @@ use types::{
     SignedBlindedBeaconBlock, Slot,
 };
 use types::{
-    ExecutionPayload, ExecutionPayloadBellatrix, ExecutionPayloadCapella, ExecutionPayloadElectra,
-    ExecutionPayloadFulu, ExecutionPayloadGloas, ExecutionPayloadHeader,
+    ExecutionPayload, ExecutionPayloadBellatrix, ExecutionPayloadCapella, ExecutionPayloadEip7805,
+    ExecutionPayloadElectra, ExecutionPayloadFulu, ExecutionPayloadGloas, ExecutionPayloadHeader,
 };
 
 #[derive(PartialEq)]
@@ -100,6 +100,7 @@ fn reconstruct_default_header_block<E: EthSpec>(
         ForkName::Capella => ExecutionPayloadCapella::default().into(),
         ForkName::Deneb => ExecutionPayloadDeneb::default().into(),
         ForkName::Electra => ExecutionPayloadElectra::default().into(),
+        ForkName::Eip7805 => ExecutionPayloadEip7805::default().into(),
         ForkName::Fulu => ExecutionPayloadFulu::default().into(),
         ForkName::Gloas => ExecutionPayloadGloas::default().into(),
         ForkName::Base | ForkName::Altair => {
@@ -723,7 +724,8 @@ mod tests {
         let capella_fork_epoch = 4usize;
         let deneb_fork_epoch = 6usize;
         let electra_fork_epoch = 8usize;
-        let fulu_fork_epoch = 10usize;
+        let eip7805_fork_epoch = 10usize;
+        let fulu_fork_epoch = 12usize;
         let num_blocks_produced = num_epochs * slots_per_epoch;
 
         let mut spec = test_spec::<MinimalEthSpec>();
@@ -732,6 +734,7 @@ mod tests {
         spec.capella_fork_epoch = Some(Epoch::new(capella_fork_epoch as u64));
         spec.deneb_fork_epoch = Some(Epoch::new(deneb_fork_epoch as u64));
         spec.electra_fork_epoch = Some(Epoch::new(electra_fork_epoch as u64));
+        spec.eip7805_fork_epoch = Some(Epoch::new(eip7805_fork_epoch as u64));
         spec.fulu_fork_epoch = Some(Epoch::new(fulu_fork_epoch as u64));
         spec.gloas_fork_epoch = None;
         let spec = Arc::new(spec);

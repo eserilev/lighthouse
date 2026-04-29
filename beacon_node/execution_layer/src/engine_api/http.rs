@@ -67,6 +67,9 @@ pub const ENGINE_GET_BLOBS_V2: &str = "engine_getBlobsV2";
 pub const ENGINE_GET_BLOBS_V3: &str = "engine_getBlobsV3";
 pub const ENGINE_GET_BLOBS_TIMEOUT: Duration = Duration::from_secs(1);
 
+pub const ENGINE_GET_INCLUSION_LIST_V1: &str = "engine_getInclusionListV1";
+pub const ENGINE_GET_INCLUSION_LIST_TIMEOUT: Duration = Duration::from_secs(1);
+
 /// This error is returned during a `chainId` call by Geth.
 pub const EIP155_ERROR_STR: &str = "chain not synced beyond EIP-155 replay-protection fork block";
 /// This code is returned by all clients when a method is not supported
@@ -94,6 +97,7 @@ pub static LIGHTHOUSE_CAPABILITIES: &[&str] = &[
     ENGINE_GET_CLIENT_VERSION_V1,
     ENGINE_GET_BLOBS_V1,
     ENGINE_GET_BLOBS_V2,
+    ENGINE_GET_INCLUSION_LIST_V1,
 ];
 
 /// We opt to initialize the JsonClientVersionV1 rather than the ClientVersionV1
@@ -744,6 +748,22 @@ impl HttpJsonRpc {
         .await
     }
 
+    pub async fn update_payload_with_inclusion_list<E: EthSpec>(&self) {}
+
+    pub async fn get_inclusion_list<E: EthSpec>(
+        &self,
+        parent_hash: Hash256,
+    ) -> Result<Option<Vec<String>>, Error> {
+        let params = json!([parent_hash]);
+
+        self.rpc_request(
+            ENGINE_GET_INCLUSION_LIST_V1,
+            params,
+            ENGINE_GET_INCLUSION_LIST_TIMEOUT,
+        )
+        .await
+    }
+
     pub async fn get_blobs_v3<E: EthSpec>(
         &self,
         versioned_hashes: Vec<Hash256>,
@@ -904,6 +924,47 @@ impl HttpJsonRpc {
         Ok(response.into())
     }
 
+    // TODO(EIP7805) fix new payload if needed
+    pub async fn new_payload_v4_eip7805<E: EthSpec>(
+        &self,
+        new_payload_request_eip7805: NewPayloadRequestEip7805<'_, E>,
+    ) -> Result<PayloadStatusV1, Error> {
+        let il_transactions: Vec<String> = new_payload_request_eip7805
+            .il_transactions
+            .into_iter()
+            .map(|tx| {
+                let bytes: Vec<u8> = tx.into();
+                format!("0x{}", hex::encode(bytes))
+            })
+            .collect();
+
+        let params = json!([
+            JsonExecutionPayload::Eip7805(
+                new_payload_request_eip7805
+                    .execution_payload
+                    .clone()
+                    .try_into()?
+            ),
+            new_payload_request_eip7805.versioned_hashes,
+            new_payload_request_eip7805.parent_beacon_block_root,
+            new_payload_request_eip7805
+                .execution_requests
+                .get_execution_requests_list(),
+            il_transactions
+        ]);
+
+        // TODO(eip7805) should be v5 i think
+        let response: JsonPayloadStatusV1 = self
+            .rpc_request(
+                ENGINE_NEW_PAYLOAD_V4,
+                params,
+                ENGINE_NEW_PAYLOAD_TIMEOUT * self.execution_timeout_multiplier,
+            )
+            .await?;
+
+        Ok(response.into())
+    }
+
     pub async fn new_payload_v5_gloas<E: EthSpec>(
         &self,
         new_payload_request_gloas: NewPayloadRequestGloas<'_, E>,
@@ -1042,6 +1103,19 @@ impl HttpJsonRpc {
                     .try_into()
                     .map_err(Error::BadResponse)
             }
+            ForkName::Eip7805 => {
+                let response: JsonGetPayloadResponseEip7805<E> = self
+                    .rpc_request(
+                        ENGINE_GET_PAYLOAD_V4,
+                        params,
+                        ENGINE_GET_PAYLOAD_TIMEOUT * self.execution_timeout_multiplier,
+                    )
+                    .await?;
+
+                JsonGetPayloadResponse::Eip7805(response)
+                    .try_into()
+                    .map_err(Error::BadResponse)
+            }
             _ => Err(Error::UnsupportedForkVariant(format!(
                 "called get_payload_v4 with {}",
                 fork_name
@@ -1066,6 +1140,18 @@ impl HttpJsonRpc {
                     )
                     .await?;
                 JsonGetPayloadResponse::Fulu(response)
+                    .try_into()
+                    .map_err(Error::BadResponse)
+            }
+            ForkName::Eip7805 => {
+                let response: JsonGetPayloadResponseEip7805<E> = self
+                    .rpc_request(
+                        ENGINE_GET_PAYLOAD_V5,
+                        params,
+                        ENGINE_GET_PAYLOAD_TIMEOUT * self.execution_timeout_multiplier,
+                    )
+                    .await?;
+                JsonGetPayloadResponse::Eip7805(response)
                     .try_into()
                     .map_err(Error::BadResponse)
             }
@@ -1273,6 +1359,7 @@ impl HttpJsonRpc {
             get_client_version_v1: capabilities.contains(ENGINE_GET_CLIENT_VERSION_V1),
             get_blobs_v1: capabilities.contains(ENGINE_GET_BLOBS_V1),
             get_blobs_v2: capabilities.contains(ENGINE_GET_BLOBS_V2),
+            get_inclusion_list_v1: capabilities.contains(ENGINE_GET_INCLUSION_LIST_V1),
             get_blobs_v3: capabilities.contains(ENGINE_GET_BLOBS_V3),
         })
     }
@@ -1413,6 +1500,15 @@ impl HttpJsonRpc {
                     Err(Error::RequiredMethodUnsupported("engine_newPayloadV4"))
                 }
             }
+            // TODO(EIP7805) engine capabilties should be v5?
+            NewPayloadRequest::Eip7805(new_payload_request_eip7805) => {
+                if engine_capabilities.new_payload_v4 {
+                    self.new_payload_v4_eip7805(new_payload_request_eip7805)
+                        .await
+                } else {
+                    Err(Error::RequiredMethodUnsupported("engine_newPayloadV4"))
+                }
+            }
             NewPayloadRequest::Gloas(new_payload_request_gloas) => {
                 if engine_capabilities.new_payload_v5 {
                     self.new_payload_v5_gloas(new_payload_request_gloas).await
@@ -1449,6 +1545,13 @@ impl HttpJsonRpc {
                 }
             }
             ForkName::Electra => {
+                if engine_capabilities.get_payload_v4 {
+                    self.get_payload_v4(fork_name, payload_id).await
+                } else {
+                    Err(Error::RequiredMethodUnsupported("engine_getPayloadv4"))
+                }
+            }
+            ForkName::Eip7805 => {
                 if engine_capabilities.get_payload_v4 {
                     self.get_payload_v4(fork_name, payload_id).await
                 } else {

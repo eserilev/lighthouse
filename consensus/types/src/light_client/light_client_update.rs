@@ -156,7 +156,7 @@ impl<'de, E: EthSpec> ContextDeserialize<'de, ForkName> for LightClientUpdate<E>
             ForkName::Deneb => {
                 Self::Deneb(Deserialize::deserialize(deserializer).map_err(convert_err)?)
             }
-            ForkName::Electra => {
+            ForkName::Electra | ForkName::Eip7805 => {
                 Self::Electra(Deserialize::deserialize(deserializer).map_err(convert_err)?)
             }
             ForkName::Fulu => {
@@ -267,7 +267,7 @@ impl<E: EthSpec> LightClientUpdate<E> {
                     signature_slot: block_slot,
                 })
             }
-            fork_name @ ForkName::Electra => {
+            fork_name @ ForkName::Electra | fork_name @ ForkName::Eip7805 => {
                 let attested_header =
                     LightClientHeaderElectra::block_to_light_client_header(attested_block)?;
 
@@ -340,7 +340,9 @@ impl<E: EthSpec> LightClientUpdate<E> {
             }
             ForkName::Capella => Self::Capella(LightClientUpdateCapella::from_ssz_bytes(bytes)?),
             ForkName::Deneb => Self::Deneb(LightClientUpdateDeneb::from_ssz_bytes(bytes)?),
-            ForkName::Electra => Self::Electra(LightClientUpdateElectra::from_ssz_bytes(bytes)?),
+            ForkName::Electra | ForkName::Eip7805 => {
+                Self::Electra(LightClientUpdateElectra::from_ssz_bytes(bytes)?)
+            }
             ForkName::Fulu => Self::Fulu(LightClientUpdateFulu::from_ssz_bytes(bytes)?),
             // TODO(gloas): implement Gloas light client
             ForkName::Base | ForkName::Gloas => {
@@ -497,7 +499,9 @@ impl<E: EthSpec> LightClientUpdate<E> {
             ForkName::Altair => <LightClientUpdateAltair<E> as Encode>::ssz_fixed_len(),
             ForkName::Capella => <LightClientUpdateCapella<E> as Encode>::ssz_fixed_len(),
             ForkName::Deneb => <LightClientUpdateDeneb<E> as Encode>::ssz_fixed_len(),
-            ForkName::Electra => <LightClientUpdateElectra<E> as Encode>::ssz_fixed_len(),
+            ForkName::Electra | ForkName::Eip7805 => {
+                <LightClientUpdateElectra<E> as Encode>::ssz_fixed_len()
+            }
             ForkName::Fulu => <LightClientUpdateFulu<E> as Encode>::ssz_fixed_len(),
             // TODO(gloas): implement Gloas light client
             ForkName::Gloas => 0,

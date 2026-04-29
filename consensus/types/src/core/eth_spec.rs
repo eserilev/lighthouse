@@ -182,6 +182,12 @@ pub trait EthSpec: 'static + Default + Sync + Send + Clone + Debug + PartialEq +
     type BuilderPendingWithdrawalsLimit: Unsigned + Clone + Sync + Send + Debug + PartialEq;
     type MaxBuildersPerWithdrawalsSweep: Unsigned + Clone + Sync + Send + Debug + PartialEq;
 
+    /*
+     * New in Eip7805
+     */
+    type InclusionListCommitteeSize: Unsigned + Clone + Sync + Send + Debug + PartialEq;
+    type MaxTransactionsPerInclusionList: Unsigned + Clone + Sync + Send + Debug + PartialEq;
+
     fn default_spec() -> ChainSpec;
 
     fn spec_name() -> EthSpecId;
@@ -412,6 +418,16 @@ pub trait EthSpec: 'static + Default + Sync + Send + Clone + Debug + PartialEq +
         Self::KzgCommitmentsInclusionProofDepth::to_usize()
     }
 
+    /// Returns the `IL_COMMITTEE_SIZE` constant for this specification.
+    fn inclusion_list_committee_size() -> usize {
+        Self::InclusionListCommitteeSize::to_usize()
+    }
+
+    /// Returns the `MAX_TRANSACTIONS_PER_INCLUSION_LIST` constant for this specification.
+    fn max_transactions_per_inclusion_list() -> usize {
+        Self::MaxTransactionsPerInclusionList::to_usize()
+    }
+
     fn cells_per_ext_blob() -> usize {
         Self::CellsPerExtBlob::to_usize()
     }
@@ -524,10 +540,12 @@ impl EthSpec for MainnetEthSpec {
     type MaxAttesterSlashingsElectra = U1;
     type MaxAttestationsElectra = U8;
     type MaxWithdrawalRequestsPerPayload = U16;
+    type MaxTransactionsPerInclusionList = U16;
     type MaxPendingDepositsPerEpoch = U16;
     type PTCSize = U512;
     type PtcWindowLength = U96; // (2 + MIN_SEED_LOOKAHEAD) * SLOTS_PER_EPOCH
     type MaxPayloadAttestations = U4;
+    type InclusionListCommitteeSize = U16;
     type MaxBuildersPerWithdrawalsSweep = U16384;
 
     fn default_spec() -> ChainSpec {
@@ -572,7 +590,7 @@ impl EthSpec for MinimalEthSpec {
     type NumberOfColumns = U128;
     type ProposerLookaheadSlots = U16; // Derived from (MIN_SEED_LOOKAHEAD + 1) * SLOTS_PER_EPOCH
     type BuilderPendingPaymentsLimit = U16; // 2 * SLOTS_PER_EPOCH = 2 * 8 = 16
-    type PTCSize = U2;
+    type PTCSize = U16;
     type PtcWindowLength = U24; // (2 + MIN_SEED_LOOKAHEAD) * SLOTS_PER_EPOCH
     type MaxBuildersPerWithdrawalsSweep = U16;
 
@@ -606,6 +624,8 @@ impl EthSpec for MinimalEthSpec {
         MaxDepositRequestsPerPayload,
         MaxWithdrawalRequestsPerPayload,
         MaxPayloadAttestations,
+        InclusionListCommitteeSize,
+        MaxTransactionsPerInclusionList,
         BuilderRegistryLimit
     });
 
@@ -683,6 +703,8 @@ impl EthSpec for GnosisEthSpec {
     type PTCSize = U512;
     type PtcWindowLength = U48; // (2 + MIN_SEED_LOOKAHEAD) * SLOTS_PER_EPOCH
     type MaxPayloadAttestations = U2;
+    type InclusionListCommitteeSize = U16;
+    type MaxTransactionsPerInclusionList = U16;
     type MaxBuildersPerWithdrawalsSweep = U16384;
 
     fn default_spec() -> ChainSpec {

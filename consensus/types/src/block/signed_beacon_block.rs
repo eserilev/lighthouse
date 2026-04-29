@@ -18,17 +18,19 @@ use crate::{
     block::{
         BLOB_KZG_COMMITMENTS_INDEX, BeaconBlock, BeaconBlockAltair, BeaconBlockBase,
         BeaconBlockBellatrix, BeaconBlockBodyBellatrix, BeaconBlockBodyCapella,
-        BeaconBlockBodyDeneb, BeaconBlockBodyElectra, BeaconBlockBodyFulu, BeaconBlockCapella,
-        BeaconBlockDeneb, BeaconBlockElectra, BeaconBlockFulu, BeaconBlockGloas, BeaconBlockHeader,
-        BeaconBlockRef, BeaconBlockRefMut, SignedBeaconBlockHeader,
+        BeaconBlockBodyDeneb, BeaconBlockBodyEip7805, BeaconBlockBodyElectra, BeaconBlockBodyFulu,
+        BeaconBlockCapella, BeaconBlockDeneb, BeaconBlockEip7805, BeaconBlockElectra,
+        BeaconBlockFulu, BeaconBlockGloas, BeaconBlockHeader, BeaconBlockRef, BeaconBlockRefMut,
+        SignedBeaconBlockHeader,
     },
     core::{ChainSpec, Domain, Epoch, EthSpec, Hash256, SignedRoot, SigningData, Slot},
     execution::{
         AbstractExecPayload, BlindedPayload, BlindedPayloadBellatrix, BlindedPayloadCapella,
-        BlindedPayloadDeneb, BlindedPayloadElectra, BlindedPayloadFulu, ExecutionPayload,
-        ExecutionPayloadBellatrix, ExecutionPayloadCapella, ExecutionPayloadDeneb,
-        ExecutionPayloadElectra, ExecutionPayloadFulu, FullPayload, FullPayloadBellatrix,
-        FullPayloadCapella, FullPayloadDeneb, FullPayloadElectra, FullPayloadFulu,
+        BlindedPayloadDeneb, BlindedPayloadEip7805, BlindedPayloadElectra, BlindedPayloadFulu,
+        ExecutionPayload, ExecutionPayloadBellatrix, ExecutionPayloadCapella,
+        ExecutionPayloadDeneb, ExecutionPayloadEip7805, ExecutionPayloadElectra,
+        ExecutionPayloadFulu, FullPayload, FullPayloadBellatrix, FullPayloadCapella,
+        FullPayloadDeneb, FullPayloadEip7805, FullPayloadElectra, FullPayloadFulu,
     },
     fork::{Fork, ForkName, ForkVersionDecode, InconsistentFork, map_fork_name},
     kzg_ext::format_kzg_commitments,
@@ -66,7 +68,7 @@ impl From<SignedBeaconBlockHash> for Hash256 {
 
 /// A `BeaconBlock` and a signature from its proposer.
 #[superstruct(
-    variants(Base, Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Gloas),
+    variants(Base, Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Eip7805, Gloas),
     variant_attributes(
         derive(
             Debug,
@@ -115,6 +117,8 @@ pub struct SignedBeaconBlock<E: EthSpec, Payload: AbstractExecPayload<E> = FullP
     pub message: BeaconBlockDeneb<E, Payload>,
     #[superstruct(only(Electra), partial_getter(rename = "message_electra"))]
     pub message: BeaconBlockElectra<E, Payload>,
+    #[superstruct(only(Eip7805), partial_getter(rename = "message_eip7805"))]
+    pub message: BeaconBlockEip7805<E, Payload>,
     #[superstruct(only(Fulu), partial_getter(rename = "message_fulu"))]
     pub message: BeaconBlockFulu<E, Payload>,
     #[superstruct(only(Gloas), partial_getter(rename = "message_gloas"))]
@@ -201,6 +205,9 @@ impl<E: EthSpec, Payload: AbstractExecPayload<E>> SignedBeaconBlock<E, Payload> 
             }
             BeaconBlock::Electra(message) => {
                 SignedBeaconBlock::Electra(SignedBeaconBlockElectra { message, signature })
+            }
+            BeaconBlock::Eip7805(message) => {
+                SignedBeaconBlock::Eip7805(SignedBeaconBlockEip7805 { message, signature })
             }
             BeaconBlock::Fulu(message) => {
                 SignedBeaconBlock::Fulu(SignedBeaconBlockFulu { message, signature })
@@ -394,15 +401,13 @@ impl<E: EthSpec, Payload: AbstractExecPayload<E>> SignedBeaconBlock<E, Payload> 
     /// `block_hash` from the parent beacon block's bid. If the parent beacon state is available
     /// this can alternatively be fetched from `state.latest_payload_bid`.
     ///
-    /// This function returns `false` for all blocks prior to Gloas and for the zero
-    /// `parent_block_hash`.
+    /// This function returns `false` for all blocks prior to Gloas.
     pub fn is_parent_block_full(&self, parent_block_hash: ExecutionBlockHash) -> bool {
         let Ok(signed_payload_bid) = self.message().body().signed_execution_payload_bid() else {
             // Prior to Gloas.
             return false;
         };
-        parent_block_hash != ExecutionBlockHash::zero()
-            && signed_payload_bid.message.parent_block_hash == parent_block_hash
+        signed_payload_bid.message.parent_block_hash == parent_block_hash
     }
 }
 
@@ -654,6 +659,64 @@ impl<E: EthSpec> SignedBeaconBlockElectra<E, BlindedPayload<E>> {
     }
 }
 
+impl<E: EthSpec> SignedBeaconBlockEip7805<E, BlindedPayload<E>> {
+    pub fn into_full_block(
+        self,
+        execution_payload: ExecutionPayloadEip7805<E>,
+    ) -> SignedBeaconBlockEip7805<E, FullPayload<E>> {
+        let SignedBeaconBlockEip7805 {
+            message:
+                BeaconBlockEip7805 {
+                    slot,
+                    proposer_index,
+                    parent_root,
+                    state_root,
+                    body:
+                        BeaconBlockBodyEip7805 {
+                            randao_reveal,
+                            eth1_data,
+                            graffiti,
+                            proposer_slashings,
+                            attester_slashings,
+                            attestations,
+                            deposits,
+                            voluntary_exits,
+                            sync_aggregate,
+                            execution_payload: BlindedPayloadEip7805 { .. },
+                            bls_to_execution_changes,
+                            blob_kzg_commitments,
+                            execution_requests,
+                        },
+                },
+            signature,
+        } = self;
+        SignedBeaconBlockEip7805 {
+            message: BeaconBlockEip7805 {
+                slot,
+                proposer_index,
+                parent_root,
+                state_root,
+                body: BeaconBlockBodyEip7805 {
+                    randao_reveal,
+                    eth1_data,
+                    graffiti,
+                    proposer_slashings,
+                    attester_slashings,
+                    attestations,
+                    deposits,
+                    voluntary_exits,
+                    sync_aggregate,
+                    execution_payload: FullPayloadEip7805 { execution_payload },
+                    bls_to_execution_changes,
+                    blob_kzg_commitments,
+                    execution_requests,
+                },
+            },
+            signature,
+        }
+    }
+}
+
 impl<E: EthSpec> SignedBeaconBlockFulu<E, BlindedPayload<E>> {
     pub fn into_full_block(
         self,
@@ -746,6 +809,9 @@ impl<E: EthSpec> SignedBeaconBlock<E, BlindedPayload<E>> {
             (SignedBeaconBlock::Electra(block), Some(ExecutionPayload::Electra(payload))) => {
                 SignedBeaconBlock::Electra(block.into_full_block(payload))
             }
+            (SignedBeaconBlock::Eip7805(block), Some(ExecutionPayload::Eip7805(payload))) => {
+                SignedBeaconBlock::Eip7805(block.into_full_block(payload))
+            }
             (SignedBeaconBlock::Fulu(block), Some(ExecutionPayload::Fulu(payload))) => {
                 SignedBeaconBlock::Fulu(block.into_full_block(payload))
             }
@@ -756,6 +822,7 @@ impl<E: EthSpec> SignedBeaconBlock<E, BlindedPayload<E>> {
             (SignedBeaconBlock::Capella(_), _) => return None,
             (SignedBeaconBlock::Deneb(_), _) => return None,
             (SignedBeaconBlock::Electra(_), _) => return None,
+            (SignedBeaconBlock::Eip7805(_), _) => return None,
             (SignedBeaconBlock::Fulu(_), _) => return None,
             // TODO(EIP-7732) Determine if need a match arm for gloas here
         };
@@ -900,6 +967,9 @@ pub mod ssz_tagged_signed_beacon_block {
                 ForkName::Electra => Ok(SignedBeaconBlock::Electra(
                     SignedBeaconBlockElectra::from_ssz_bytes(body)?,
                 )),
+                ForkName::Eip7805 => Ok(SignedBeaconBlock::Eip7805(
+                    SignedBeaconBlockEip7805::from_ssz_bytes(body)?,
+                )),
                 ForkName::Fulu => Ok(SignedBeaconBlock::Fulu(
                     SignedBeaconBlockFulu::from_ssz_bytes(body)?,
                 )),
@@ -1026,6 +1096,10 @@ mod test {
             ),
             SignedBeaconBlock::from_block(
                 BeaconBlock::Fulu(BeaconBlockFulu::empty(spec)),
+                sig.clone(),
+            ),
+            SignedBeaconBlock::from_block(
+                BeaconBlock::Eip7805(BeaconBlockEip7805::empty(spec)),
                 sig.clone(),
             ),
             SignedBeaconBlock::from_block(BeaconBlock::Gloas(BeaconBlockGloas::empty(spec)), sig),

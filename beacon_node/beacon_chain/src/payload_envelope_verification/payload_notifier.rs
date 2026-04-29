@@ -8,7 +8,8 @@ use types::{SignedBeaconBlock, SignedExecutionPayloadEnvelope};
 
 use crate::{
     BeaconChain, BeaconChainTypes, BlockError, NotifyExecutionLayer,
-    execution_payload::notify_new_payload, payload_envelope_verification::EnvelopeError,
+    execution_payload::notify_new_payload_with_request,
+    payload_envelope_verification::EnvelopeError,
 };
 
 /// Used to await the result of executing payload with a remote EE.
@@ -63,7 +64,7 @@ impl<T: BeaconChainTypes> PayloadNotifier<T> {
         } else {
             let parent_root = self.block.message().parent_root();
             let request = Self::build_new_payload_request(&self.envelope, &self.block)?;
-            notify_new_payload(&self.chain, self.envelope.slot(), parent_root, request).await
+            notify_new_payload_with_request(&self.chain, self.envelope.slot(), parent_root, request).await
         }
     }
 
@@ -87,8 +88,9 @@ impl<T: BeaconChainTypes> PayloadNotifier<T> {
         Ok(NewPayloadRequest::Gloas(NewPayloadRequestGloas {
             execution_payload: &envelope.message.payload,
             versioned_hashes,
-            parent_beacon_block_root: block.message().parent_root(),
+            parent_beacon_block_root: envelope.message.parent_beacon_block_root,
             execution_requests: &envelope.message.execution_requests,
+            il_transactions: Default::default(),
         }))
     }
 }

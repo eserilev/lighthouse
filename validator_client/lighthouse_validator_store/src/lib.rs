@@ -21,9 +21,9 @@ use tracing::{Instrument, debug, error, info, info_span, instrument, warn};
 use types::{
     AbstractExecPayload, Address, AggregateAndProof, Attestation, BeaconBlock, BlindedPayload,
     ChainSpec, ContributionAndProof, Domain, Epoch, EthSpec, ExecutionPayloadEnvelope, Fork,
-    FullPayload, Graffiti, Hash256, PayloadAttestationData, PayloadAttestationMessage,
+    FullPayload, Graffiti, Hash256, InclusionList, PayloadAttestationData, PayloadAttestationMessage,
     SelectionProof, SignedAggregateAndProof, SignedBeaconBlock, SignedContributionAndProof,
-    SignedExecutionPayloadEnvelope, SignedRoot, SignedValidatorRegistrationData,
+    SignedExecutionPayloadEnvelope, SignedInclusionList, SignedRoot, SignedValidatorRegistrationData,
     SignedVoluntaryExit, Slot, SyncAggregatorSelectionData, SyncCommitteeContribution,
     SyncCommitteeMessage, SyncSelectionProof, SyncSubnetId, ValidatorRegistrationData,
     VoluntaryExit, graffiti::GraffitiString,
@@ -1422,6 +1422,30 @@ impl<T: SlotClock + 'static, E: EthSpec> ValidatorStore for LighthouseValidatorS
                 builder_proposals: self
                     .get_builder_proposals_defaulting(validator.get_builder_proposals()),
             })
+    }
+
+    async fn sign_inclusion_list(
+        &self,
+        pubkey: PublicKeyBytes,
+        inclusion_list: InclusionList<Self::E>,
+    ) -> Result<SignedInclusionList<Self::E>, ValidatorStoreError<Self::Error>> {
+        let signing_epoch = inclusion_list.slot.epoch(E::slots_per_epoch());
+        let signing_context = self.signing_context(Domain::InclusionListCommittee, signing_epoch);
+        let signing_method = self.doppelganger_bypassed_signing_method(pubkey)?;
+
+        let signature = signing_method
+            .get_signature::<E, BlindedPayload<E>>(
+                SignableMessage::InclusionList(&inclusion_list),
+                signing_context,
+                &self.spec,
+                &self.task_executor,
+            )
+            .await?;
+
+        Ok(SignedInclusionList {
+            message: inclusion_list,
+            signature,
+        })
     }
 
     async fn sign_payload_attestation(

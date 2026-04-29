@@ -7018,6 +7018,7 @@ dependencies = [
  "serde",
  "smallvec",
  "superstruct",
+ "tracing",
  "typenum",
  "types",
  "yaml_serde",

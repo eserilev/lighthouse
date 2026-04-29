@@ -18,4 +18,5 @@ smallvec = { workspace = true }
 superstruct = { workspace = true }
 typenum = { workspace = true }
 types = { workspace = true }
+tracing = { workspace = true }
 yaml_serde = { workspace = true }

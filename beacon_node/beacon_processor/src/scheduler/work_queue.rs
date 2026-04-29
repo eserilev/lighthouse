@@ -149,6 +149,8 @@ pub struct BeaconProcessorQueueLengths {
     lc_gossip_finality_update_queue: usize,
     lc_gossip_optimistic_update_queue: usize,
     lc_update_range_queue: usize,
+    // TODO(focil) pick proper values
+    gossip_inclusion_list_queue: usize,
     api_request_p0_queue: usize,
     api_request_p1_queue: usize,
 }
@@ -228,6 +230,7 @@ impl BeaconProcessorQueueLengths {
             lc_rpc_optimistic_update_queue: 512,
             lc_rpc_finality_update_queue: 512,
             lc_update_range_queue: 512,
+            gossip_inclusion_list_queue: 64,
             api_request_p0_queue: 1024,
             api_request_p1_queue: 1024,
         })
@@ -280,6 +283,7 @@ pub struct WorkQueues<E: EthSpec> {
     pub lc_rpc_optimistic_update_queue: FifoQueue<Work<E>>,
     pub lc_rpc_finality_update_queue: FifoQueue<Work<E>>,
     pub lc_update_range_queue: FifoQueue<Work<E>>,
+    pub gossip_inclusion_list_queue: FifoQueue<Work<E>>,
     pub api_request_p0_queue: FifoQueue<Work<E>>,
     pub api_request_p1_queue: FifoQueue<Work<E>>,
 }
@@ -366,6 +370,8 @@ impl<E: EthSpec> WorkQueues<E> {
             FifoQueue::new(queue_lengths.lc_rpc_finality_update_queue);
         let lc_update_range_queue: FifoQueue<Work<E>> =
             FifoQueue::new(queue_lengths.lc_update_range_queue);
+        let gossip_inclusion_list_queue =
+            FifoQueue::new(queue_lengths.gossip_inclusion_list_queue);
 
         let api_request_p0_queue = FifoQueue::new(queue_lengths.api_request_p0_queue);
         let api_request_p1_queue = FifoQueue::new(queue_lengths.api_request_p1_queue);
@@ -416,6 +422,7 @@ impl<E: EthSpec> WorkQueues<E> {
             lc_rpc_optimistic_update_queue,
             lc_rpc_finality_update_queue,
             lc_update_range_queue,
+            gossip_inclusion_list_queue,
             api_request_p0_queue,
             api_request_p1_queue,
         }

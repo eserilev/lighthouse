@@ -30,8 +30,8 @@ pub use execution_block_hash::ExecutionBlockHash;
 pub use graffiti::{GRAFFITI_BYTES_LEN, Graffiti, GraffitiString};
 pub use non_zero_usize::new_non_zero_usize;
 pub use preset::{
-    AltairPreset, BasePreset, BellatrixPreset, CapellaPreset, DenebPreset, ElectraPreset,
-    FuluPreset, GloasPreset,
+    AltairPreset, BasePreset, BellatrixPreset, CapellaPreset, DenebPreset, Eip7805Preset,
+    ElectraPreset, FuluPreset, GloasPreset,
 };
 pub use relative_epoch::{Error as RelativeEpochError, RelativeEpoch};
 pub use signing_data::{SignedRoot, SigningData};

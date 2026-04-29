@@ -136,6 +136,7 @@ pub enum BeaconChainError {
         shuffling_epoch: Epoch,
     },
     SyncDutiesError(BeaconStateError),
+    InclusionListDutiesError(BeaconStateError),
     InconsistentForwardsIter {
         request_slot: Slot,
         slot: Slot,
@@ -152,6 +153,7 @@ pub enum BeaconChainError {
     EngineGetCapabilititesFailed(Box<execution_layer::Error>),
     ExecutionLayerGetBlockByNumberFailed(Box<execution_layer::Error>),
     ExecutionLayerGetBlockByHashFailed(Box<execution_layer::Error>),
+    ExecutionLayerGetInclusionListFailed(Box<execution_layer::Error>),
     BlockHashMissingFromExecutionLayer(ExecutionBlockHash),
     InconsistentPayloadReconstructed {
         slot: Slot,

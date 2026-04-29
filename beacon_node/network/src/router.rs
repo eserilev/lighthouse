@@ -19,7 +19,7 @@ use lighthouse_network::{
 };
 use logging::TimeLatch;
 use logging::crit;
-use slot_clock::SlotClock;
+use slot_clock::{SlotClock, timestamp_now};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -524,6 +524,20 @@ impl<T: BeaconChainTypes> Router<T> {
                             bls_to_execution_change,
                         ),
                 ),
+            PubsubMessage::InclusionList(inclusion_list) => {
+                trace!(
+                    %peer_id,
+                    "Received inclusion list"
+                );
+                self.handle_beacon_processor_send_result(
+                    self.network_beacon_processor.send_gossip_inclusion_list(
+                        message_id,
+                        peer_id,
+                        *inclusion_list,
+                        timestamp_now(),
+                    ),
+                )
+            }
             PubsubMessage::ExecutionPayload(signed_execution_payload_envelope) => {
                 trace!(%peer_id, "Received a signed execution payload envelope");
                 self.handle_beacon_processor_send_result(

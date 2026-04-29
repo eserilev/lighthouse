@@ -452,6 +452,7 @@ where
             *fc_store.finalized_checkpoint(),
             current_epoch_shuffling_id,
             next_epoch_shuffling_id,
+            fc_store.unsatisfied_inclusion_list_blocks().clone(),
             execution_status,
             execution_payload_parent_hash,
             execution_payload_block_hash,
@@ -723,6 +724,12 @@ where
             .map_err(Error::FailedToProcessInvalidExecutionPayload)
     }
 
+    // TODO(focil) add documentation
+    pub fn on_invalid_inclusion_list_payload(&mut self, slot: Slot, block_root: Hash256) {
+        self.fc_store
+            .set_unsatisfied_inclusion_list_block(slot, block_root);
+    }
+
     /// Add `block` to the fork choice DAG.
     ///
     /// - `block_root` is the root of `block.
@@ -756,6 +763,7 @@ where
         block_delay: Duration,
         state: &BeaconState<E>,
         payload_verification_status: PayloadVerificationStatus,
+        canonical_head_proposer_index: u64,
         spec: &ChainSpec,
     ) -> Result<(), Error<T::Error>> {
         let _timer = metrics::start_timer(&metrics::FORK_CHOICE_ON_BLOCK_TIMES);
@@ -820,16 +828,18 @@ where
 
         let attestation_threshold = spec.get_attestation_due::<E>(block.slot());
 
-        // Add proposer score boost if the block is timely.
-        // TODO(gloas): the spec's `update_proposer_boost_root` additionally checks that
-        // `block.proposer_index == get_beacon_proposer_index(head_state)` — i.e. that
-        // the block's proposer matches the expected proposer on the canonical chain.
-        // This requires calling `get_head` and advancing the head state to the current
-        // slot, which is expensive. Implement once we have a cached proposer index.
+        // Add proposer score boost if the block is the first timely block for this slot and its
+        // proposer matches the expected proposer on the canonical chain (per spec
+        // `update_proposer_boost_root`, introduced in v1.7.0-alpha.5).
         let is_before_attesting_interval = block_delay < attestation_threshold;
 
         let is_first_block = self.fc_store.proposer_boost_root().is_zero();
-        if current_slot == block.slot() && is_before_attesting_interval && is_first_block {
+        let is_canonical_proposer = block.proposer_index() == canonical_head_proposer_index;
+        if current_slot == block.slot()
+            && is_before_attesting_interval
+            && is_first_block
+            && is_canonical_proposer
+        {
             self.fc_store.set_proposer_boost_root(block_root);
         }
 

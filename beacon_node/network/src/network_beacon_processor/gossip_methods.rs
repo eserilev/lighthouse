@@ -10,6 +10,9 @@ use beacon_chain::data_column_verification::{
     GossipVerifiedPartialDataColumnHeader, KzgVerifiedPartialDataColumn,
     PartialColumnVerificationResult,
 };
+use beacon_chain::inclusion_list_verification::{
+    GossipInclusionListError, GossipVerifiedInclusionList,
+};
 use beacon_chain::payload_bid_verification::PayloadBidError;
 use beacon_chain::proposer_preferences_verification::ProposerPreferencesError;
 use beacon_chain::store::Error;
@@ -55,9 +58,9 @@ use types::{
     LightClientFinalityUpdate, LightClientOptimisticUpdate, PartialDataColumn,
     PartialDataColumnHeader, PayloadAttestationMessage, ProposerSlashing, SignedAggregateAndProof,
     SignedBeaconBlock, SignedBlsToExecutionChange, SignedContributionAndProof,
-    SignedExecutionPayloadBid, SignedExecutionPayloadEnvelope, SignedProposerPreferences,
-    SignedVoluntaryExit, SingleAttestation, Slot, SubnetId, SyncCommitteeMessage, SyncSubnetId,
-    block::BlockImportSource,
+    SignedExecutionPayloadBid, SignedExecutionPayloadEnvelope, SignedInclusionList,
+    SignedProposerPreferences, SignedVoluntaryExit, SingleAttestation, Slot, SubnetId,
+    SyncCommitteeMessage, SyncSubnetId, block::BlockImportSource,
 };
 
 use beacon_processor::work_reprocessing_queue::QueuedColumnReconstruction;
@@ -138,11 +141,6 @@ impl<T: BeaconChainTypes> VerifiedAttestation<T> for VerifiedAggregate<T> {
 struct RejectedAggregate<E: EthSpec> {
     signed_aggregate: Box<SignedAggregateAndProof<E>>,
     error: AttnError,
-}
-
-struct RejectedPayloadAttestation {
-    payload_attestation_message: Box<PayloadAttestationMessage>,
-    error: PayloadAttestationError,
 }
 
 /// Data for an aggregated or unaggregated attestation that failed verification.
@@ -2635,6 +2633,49 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
         };
     }
 
+    // TODO(focil) unused variables
+    pub fn process_gossip_inclusion_list(
+        self: &Arc<Self>,
+        _message_id: MessageId,
+        _peer_id: PeerId,
+        il: SignedInclusionList<T::EthSpec>,
+        _seen_timestamp: Duration,
+    ) {
+        match GossipVerifiedInclusionList::verify(&il, &self.chain) {
+            Ok(gossip_verified_il) => {
+                debug!("Successfully verified gossip inclusion list");
+                // Store validated inclusion list in the IL cache. This also catches
+                // equivocating IL's and handles them accordingly.
+                self.chain
+                    .on_verified_inclusion_list(gossip_verified_il.signed_il);
+            }
+            Err(err) => match err {
+                GossipInclusionListError::InvalidSlot { .. }
+                | GossipInclusionListError::ValidatorNotInCommittee
+                | GossipInclusionListError::TooManyTransactions
+                | GossipInclusionListError::InvalidSignature
+                | GossipInclusionListError::PriorInclusionListKnown => {
+                    debug!(
+                        error = ?err,
+                        "Could not verify inclusion list for gossip. Rejecting the inclusion list"
+                    );
+                }
+                GossipInclusionListError::InvalidCommitteeRoot => {
+                    debug!(
+                        error=?err,
+                        "Could not verify inclusion list for gossip. Ignoring the inclusion list"
+                    );
+                }
+                GossipInclusionListError::BeaconChainError(_) => {
+                    crit!(
+                        error = ?err,
+                        "Internal error when verifying inclusion list"
+                    );
+                }
+            },
+        }
+    }
+
     /// Handle an error whilst verifying an `Attestation` or `SignedAggregateAndProof` from the
     /// network.
     fn handle_attestation_verification_failure(
@@ -3632,6 +3673,23 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
         self.propagate_if_timely(is_timely, message_id, peer_id)
     }
 
+    /// If a payload envelope is still valid with respect to the current time (i.e., its slot
+    /// matches the current slot), propagate it on gossip. Otherwise, ignore it.
+    fn propagate_envelope_if_timely(
+        &self,
+        envelope_slot: Slot,
+        message_id: MessageId,
+        peer_id: PeerId,
+    ) {
+        let is_timely = self
+            .chain
+            .slot_clock
+            .now()
+            .is_some_and(|current_slot| envelope_slot == current_slot);
+
+        self.propagate_if_timely(is_timely, message_id, peer_id)
+    }
+
     /// If a sync committee signature or sync committee contribution is still valid with respect to
     /// the current time (i.e., timely), propagate it on gossip. Otherwise, ignore it.
     fn propagate_sync_message_if_timely(
@@ -3836,6 +3894,12 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
                         let process_fn = Box::pin(async move {
                             match chain.verify_envelope_for_gossip(envelope).await {
                                 Ok(verified_envelope) => {
+                                    let envelope_slot = verified_envelope.signed_envelope.slot();
+                                    inner_self.propagate_envelope_if_timely(
+                                        envelope_slot,
+                                        message_id,
+                                        peer_id,
+                                    );
                                     inner_self
                                         .process_gossip_verified_execution_payload_envelope(
                                             peer_id,
@@ -4111,25 +4175,20 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
         peer_id: PeerId,
         payload_attestation_message: Box<PayloadAttestationMessage>,
     ) {
-        let result = match self
+        let message_slot = payload_attestation_message.data.slot;
+        let result = self
             .chain
-            .verify_payload_attestation_message_for_gossip(*payload_attestation_message.clone())
-        {
-            Ok(verified) => Ok(verified),
-            Err(error) => Err(RejectedPayloadAttestation {
-                payload_attestation_message: payload_attestation_message.clone(),
-                error,
-            }),
-        };
+            .verify_payload_attestation_message_for_gossip(*payload_attestation_message);
 
-        self.process_gossip_payload_attestation_result(result, message_id, peer_id);
+        self.process_gossip_payload_attestation_result(result, message_id, peer_id, message_slot);
     }
 
     fn process_gossip_payload_attestation_result(
         self: &Arc<Self>,
-        result: Result<VerifiedPayloadAttestationMessage<T>, RejectedPayloadAttestation>,
+        result: Result<VerifiedPayloadAttestationMessage<T>, PayloadAttestationError>,
         message_id: MessageId,
         peer_id: PeerId,
+        message_slot: Slot,
     ) {
         match result {
             Ok(verified) => {
@@ -4156,16 +4215,21 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
                         ),
                     }
                 }
+
+                if let Err(e) = self.chain.add_payload_attestation_to_pool(&verified) {
+                    warn!(
+                        reason = ?e,
+                        %peer_id,
+                        "Failed to add payload attestation to pool"
+                    );
+                }
             }
-            Err(RejectedPayloadAttestation {
-                payload_attestation_message,
-                error,
-            }) => {
+            Err(error) => {
                 self.handle_payload_attestation_verification_failure(
                     peer_id,
                     message_id,
                     error,
-                    payload_attestation_message.data.slot,
+                    message_slot,
                 );
             }
         }

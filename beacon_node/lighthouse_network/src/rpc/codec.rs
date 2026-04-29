@@ -21,8 +21,8 @@ use types::{
     ForkName, Hash256, LightClientBootstrap, LightClientFinalityUpdate,
     LightClientOptimisticUpdate, LightClientUpdate, SignedBeaconBlock, SignedBeaconBlockAltair,
     SignedBeaconBlockBase, SignedBeaconBlockBellatrix, SignedBeaconBlockCapella,
-    SignedBeaconBlockDeneb, SignedBeaconBlockElectra, SignedBeaconBlockFulu,
-    SignedBeaconBlockGloas,
+    SignedBeaconBlockDeneb, SignedBeaconBlockEip7805, SignedBeaconBlockElectra,
+    SignedBeaconBlockFulu, SignedBeaconBlockGloas,
 };
 use unsigned_varint::codec::Uvi;
 
@@ -890,6 +890,11 @@ fn handle_rpc_response<E: EthSpec>(
                     decoded_buffer,
                 )?),
             )))),
+            Some(ForkName::Eip7805) => Ok(Some(RpcSuccessResponse::BlocksByRange(Arc::new(
+                SignedBeaconBlock::Eip7805(SignedBeaconBlockEip7805::from_ssz_bytes(
+                    decoded_buffer,
+                )?),
+            )))),
             Some(ForkName::Fulu) => Ok(Some(RpcSuccessResponse::BlocksByRange(Arc::new(
                 SignedBeaconBlock::Fulu(SignedBeaconBlockFulu::from_ssz_bytes(decoded_buffer)?),
             )))),
@@ -926,6 +931,11 @@ fn handle_rpc_response<E: EthSpec>(
             )))),
             Some(ForkName::Electra) => Ok(Some(RpcSuccessResponse::BlocksByRoot(Arc::new(
                 SignedBeaconBlock::Electra(SignedBeaconBlockElectra::from_ssz_bytes(
+                    decoded_buffer,
+                )?),
+            )))),
+            Some(ForkName::Eip7805) => Ok(Some(RpcSuccessResponse::BlocksByRoot(Arc::new(
+                SignedBeaconBlock::Eip7805(SignedBeaconBlockEip7805::from_ssz_bytes(
                     decoded_buffer,
                 )?),
             )))),
@@ -991,7 +1001,8 @@ mod tests {
         chain_spec.deneb_fork_epoch = Some(Epoch::new(4));
         chain_spec.electra_fork_epoch = Some(Epoch::new(5));
         chain_spec.fulu_fork_epoch = Some(Epoch::new(6));
-        chain_spec.gloas_fork_epoch = Some(Epoch::new(7));
+        chain_spec.eip7805_fork_epoch = Some(Epoch::new(7));
+        chain_spec.gloas_fork_epoch = Some(Epoch::new(8));
 
         // check that we have all forks covered
         assert!(chain_spec.fork_epoch(ForkName::latest()).is_some());
@@ -1007,6 +1018,7 @@ mod tests {
             ForkName::Deneb => spec.deneb_fork_epoch,
             ForkName::Electra => spec.electra_fork_epoch,
             ForkName::Fulu => spec.fulu_fork_epoch,
+            ForkName::Eip7805 => spec.eip7805_fork_epoch,
             ForkName::Gloas => spec.gloas_fork_epoch,
         };
         let current_slot = current_epoch.unwrap().start_slot(Spec::slots_per_epoch());
@@ -1605,6 +1617,20 @@ mod tests {
                 RpcResponse::Success(RpcSuccessResponse::DataColumnsByRange(
                     empty_data_column_sidecar(&chain_spec)
                 )),
+                ForkName::Eip7805,
+                &chain_spec
+            ),
+            Ok(Some(RpcSuccessResponse::DataColumnsByRange(
+                empty_data_column_sidecar(&chain_spec)
+            ))),
+        );
+
+        assert_eq!(
+            encode_then_decode_response(
+                SupportedProtocol::DataColumnsByRangeV1,
+                RpcResponse::Success(RpcSuccessResponse::DataColumnsByRange(
+                    empty_data_column_sidecar(&chain_spec)
+                )),
                 ForkName::Fulu,
                 &chain_spec
             ),
@@ -1634,6 +1660,20 @@ mod tests {
                     empty_data_column_sidecar(&chain_spec)
                 )),
                 ForkName::Electra,
+                &chain_spec
+            ),
+            Ok(Some(RpcSuccessResponse::DataColumnsByRoot(
+                empty_data_column_sidecar(&chain_spec)
+            ))),
+        );
+
+        assert_eq!(
+            encode_then_decode_response(
+                SupportedProtocol::DataColumnsByRootV1,
+                RpcResponse::Success(RpcSuccessResponse::DataColumnsByRoot(
+                    empty_data_column_sidecar(&chain_spec)
+                )),
+                ForkName::Eip7805,
                 &chain_spec
             ),
             Ok(Some(RpcSuccessResponse::DataColumnsByRoot(

@@ -824,6 +824,11 @@ pub struct ValidatorAggregateAttestationQuery {
     pub committee_index: Option<CommitteeIndex>,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ValidatorInclusionListQuery {
+    pub slot: Slot,
+}
+
 #[derive(Clone, Deserialize)]
 pub struct LightClientUpdatesQuery {
     pub start_period: u64,
@@ -1073,6 +1078,13 @@ pub struct SseHead {
     pub execution_optimistic: bool,
 }
 
+#[derive(PartialEq, Debug, Serialize, Deserialize, Clone)]
+#[serde(bound = "E: EthSpec")]
+pub struct SseInclusionList<E: EthSpec> {
+    pub version: ForkName,
+    pub data: SignedInclusionList<E>,
+}
+
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct BlockGossip {
     pub slot: Slot,
@@ -1194,7 +1206,11 @@ impl<'de> ContextDeserialize<'de, ForkName> for SsePayloadAttributes {
             ForkName::Capella => {
                 Self::V2(Deserialize::deserialize(deserializer).map_err(convert_err)?)
             }
-            ForkName::Deneb | ForkName::Electra | ForkName::Fulu | ForkName::Gloas => {
+            ForkName::Deneb
+            | ForkName::Electra
+            | ForkName::Fulu
+            | ForkName::Eip7805
+            | ForkName::Gloas => {
                 Self::V3(Deserialize::deserialize(deserializer).map_err(convert_err)?)
             }
         })
@@ -1245,6 +1261,7 @@ pub enum EventKind<E: EthSpec> {
     AttesterSlashing(Box<AttesterSlashing<E>>),
     BlsToExecutionChange(Box<SignedBlsToExecutionChange>),
     BlockGossip(Box<BlockGossip>),
+    InclusionList(SseInclusionList<E>),
     ExecutionPayload(SseExecutionPayload),
     ExecutionPayloadGossip(SseExecutionPayloadGossip),
     ExecutionPayloadAvailable(SseExecutionPayloadAvailable),
@@ -1273,6 +1290,7 @@ impl<E: EthSpec> EventKind<E> {
             EventKind::AttesterSlashing(_) => "attester_slashing",
             EventKind::BlsToExecutionChange(_) => "bls_to_execution_change",
             EventKind::BlockGossip(_) => "block_gossip",
+            EventKind::InclusionList(_) => "inclusion_list",
             EventKind::ExecutionPayload(_) => "execution_payload",
             EventKind::ExecutionPayloadGossip(_) => "execution_payload_gossip",
             EventKind::ExecutionPayloadAvailable(_) => "execution_payload_available",
@@ -1367,6 +1385,11 @@ impl<E: EthSpec> EventKind<E> {
             "block_gossip" => Ok(EventKind::BlockGossip(serde_json::from_str(data).map_err(
                 |e| ServerError::InvalidServerSentEvent(format!("Block Gossip: {:?}", e)),
             )?)),
+            "inclusion_list" => Ok(EventKind::InclusionList(
+                serde_json::from_str(data).map_err(|e| {
+                    ServerError::InvalidServerSentEvent(format!("Inclusion List {:?}", e))
+                })?,
+            )),
             "execution_payload" => Ok(EventKind::ExecutionPayload(
                 serde_json::from_str(data).map_err(|e| {
                     ServerError::InvalidServerSentEvent(format!("Execution Payload: {:?}", e))
@@ -1436,6 +1459,7 @@ pub enum EventTopic {
     ProposerSlashing,
     BlsToExecutionChange,
     BlockGossip,
+    InclusionList,
     ExecutionPayload,
     ExecutionPayloadGossip,
     ExecutionPayloadAvailable,
@@ -1466,6 +1490,7 @@ impl FromStr for EventTopic {
             "proposer_slashing" => Ok(EventTopic::ProposerSlashing),
             "bls_to_execution_change" => Ok(EventTopic::BlsToExecutionChange),
             "block_gossip" => Ok(EventTopic::BlockGossip),
+            "inclusion_list" => Ok(EventTopic::InclusionList),
             "execution_payload" => Ok(EventTopic::ExecutionPayload),
             "execution_payload_gossip" => Ok(EventTopic::ExecutionPayloadGossip),
             "execution_payload_available" => Ok(EventTopic::ExecutionPayloadAvailable),
@@ -1497,6 +1522,7 @@ impl fmt::Display for EventTopic {
             EventTopic::ProposerSlashing => write!(f, "proposer_slashing"),
             EventTopic::BlsToExecutionChange => write!(f, "bls_to_execution_change"),
             EventTopic::BlockGossip => write!(f, "block_gossip"),
+            EventTopic::InclusionList => write!(f, "inclusion_list"),
             EventTopic::ExecutionPayload => write!(f, "execution_payload"),
             EventTopic::ExecutionPayloadGossip => write!(f, "execution_payload_gossip"),
             EventTopic::ExecutionPayloadAvailable => {
@@ -2561,6 +2587,9 @@ mod test {
             ExecutionPayload::Electra(ExecutionPayloadElectra::<MainnetEthSpec>::random_for_test(
                 rng,
             )),
+            ExecutionPayload::Eip7805(ExecutionPayloadEip7805::<MainnetEthSpec>::random_for_test(
+                rng,
+            )),
             ExecutionPayload::Fulu(ExecutionPayloadFulu::<MainnetEthSpec>::random_for_test(rng)),
             ExecutionPayload::Gloas(ExecutionPayloadGloas::<MainnetEthSpec>::random_for_test(
                 rng,
@@ -2601,6 +2630,17 @@ mod test {
                 let execution_payload =
                     ExecutionPayload::Electra(
                         ExecutionPayloadElectra::<MainnetEthSpec>::random_for_test(rng),
+                    );
+                let blobs_bundle = BlobsBundle::random_for_test(rng);
+                ExecutionPayloadAndBlobs {
+                    execution_payload,
+                    blobs_bundle,
+                }
+            },
+            {
+                let execution_payload =
+                    ExecutionPayload::Eip7805(
+                        ExecutionPayloadEip7805::<MainnetEthSpec>::random_for_test(rng),
                     );
                 let blobs_bundle = BlobsBundle::random_for_test(rng);
                 ExecutionPayloadAndBlobs {

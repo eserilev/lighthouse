@@ -7,9 +7,10 @@ use std::future::Future;
 use std::sync::Arc;
 use types::{
     Address, Attestation, AttestationError, BlindedBeaconBlock, Epoch, EthSpec,
-    ExecutionPayloadEnvelope, Graffiti, Hash256, PayloadAttestationData, PayloadAttestationMessage,
-    SelectionProof, SignedAggregateAndProof, SignedBlindedBeaconBlock, SignedContributionAndProof,
-    SignedExecutionPayloadEnvelope, SignedValidatorRegistrationData, Slot,
+    ExecutionPayloadEnvelope, Graffiti, Hash256, InclusionList, PayloadAttestationData,
+    PayloadAttestationMessage, SelectionProof, SignedAggregateAndProof, SignedBlindedBeaconBlock,
+    SignedContributionAndProof, SignedExecutionPayloadEnvelope, SignedInclusionList,
+    SignedValidatorRegistrationData, Slot,
     SyncCommitteeContribution, SyncCommitteeMessage, SyncSelectionProof, SyncSubnetId,
     ValidatorRegistrationData,
 };
@@ -191,6 +192,12 @@ pub trait ValidatorStore: Send + Sync {
         self: &Arc<Self>,
         contributions: Vec<ContributionToSign<Self::E>>,
     ) -> impl Stream<Item = Result<Vec<SignedContributionAndProof<Self::E>>, Error<Self::Error>>> + Send;
+
+    fn sign_inclusion_list(
+        &self,
+        pubkey: PublicKeyBytes,
+        inclusion_list: InclusionList<Self::E>,
+    ) -> impl Future<Output = Result<SignedInclusionList<Self::E>, Error<Self::Error>>> + Send;
 
     /// Prune the slashing protection database so that it remains performant.
     ///

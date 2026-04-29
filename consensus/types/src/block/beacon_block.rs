@@ -19,9 +19,9 @@ use crate::{
     attestation::{AttestationBase, AttestationData, IndexedAttestationBase},
     block::{
         BeaconBlockBodyAltair, BeaconBlockBodyBase, BeaconBlockBodyBellatrix,
-        BeaconBlockBodyCapella, BeaconBlockBodyDeneb, BeaconBlockBodyElectra, BeaconBlockBodyFulu,
-        BeaconBlockBodyGloas, BeaconBlockBodyRef, BeaconBlockBodyRefMut, BeaconBlockHeader,
-        SignedBeaconBlock, SignedBeaconBlockHeader,
+        BeaconBlockBodyCapella, BeaconBlockBodyDeneb, BeaconBlockBodyEip7805,
+        BeaconBlockBodyElectra, BeaconBlockBodyFulu, BeaconBlockBodyGloas, BeaconBlockBodyRef,
+        BeaconBlockBodyRefMut, BeaconBlockHeader, SignedBeaconBlock, SignedBeaconBlockHeader,
     },
     core::{ChainSpec, Domain, Epoch, EthSpec, Graffiti, Hash256, SignedRoot, Slot},
     deposit::{Deposit, DepositData},
@@ -39,7 +39,7 @@ use crate::{
 
 /// A block of the `BeaconChain`.
 #[superstruct(
-    variants(Base, Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Gloas),
+    variants(Base, Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Eip7805, Gloas),
     variant_attributes(
         derive(
             Debug,
@@ -105,6 +105,8 @@ pub struct BeaconBlock<E: EthSpec, Payload: AbstractExecPayload<E> = FullPayload
     pub body: BeaconBlockBodyElectra<E, Payload>,
     #[superstruct(only(Fulu), partial_getter(rename = "body_fulu"))]
     pub body: BeaconBlockBodyFulu<E, Payload>,
+    #[superstruct(only(Eip7805), partial_getter(rename = "body_eip7805"))]
+    pub body: BeaconBlockBodyEip7805<E, Payload>,
     #[superstruct(only(Gloas), partial_getter(rename = "body_gloas"))]
     pub body: BeaconBlockBodyGloas<E, Payload>,
 }
@@ -161,6 +163,7 @@ impl<E: EthSpec, Payload: AbstractExecPayload<E>> BeaconBlock<E, Payload> {
     pub fn any_from_ssz_bytes(bytes: &[u8]) -> Result<Self, ssz::DecodeError> {
         BeaconBlockGloas::from_ssz_bytes(bytes)
             .map(BeaconBlock::Gloas)
+            .or_else(|_| BeaconBlockEip7805::from_ssz_bytes(bytes).map(BeaconBlock::Eip7805))
             .or_else(|_| BeaconBlockFulu::from_ssz_bytes(bytes).map(BeaconBlock::Fulu))
             .or_else(|_| BeaconBlockElectra::from_ssz_bytes(bytes).map(BeaconBlock::Electra))
             .or_else(|_| BeaconBlockDeneb::from_ssz_bytes(bytes).map(BeaconBlock::Deneb))
@@ -261,6 +264,7 @@ impl<'a, E: EthSpec, Payload: AbstractExecPayload<E>> BeaconBlockRef<'a, E, Payl
             BeaconBlockRef::Deneb { .. } => ForkName::Deneb,
             BeaconBlockRef::Electra { .. } => ForkName::Electra,
             BeaconBlockRef::Fulu { .. } => ForkName::Fulu,
+            BeaconBlockRef::Eip7805 { .. } => ForkName::Eip7805,
             BeaconBlockRef::Gloas { .. } => ForkName::Gloas,
         }
     }
@@ -319,6 +323,7 @@ impl<'a, E: EthSpec, Payload: AbstractExecPayload<E>> BeaconBlockRef<'a, E, Payl
             BeaconBlockRef::Deneb(block) => Some(block.body.blob_kzg_commitments.len()),
             BeaconBlockRef::Electra(block) => Some(block.body.blob_kzg_commitments.len()),
             BeaconBlockRef::Fulu(block) => Some(block.body.blob_kzg_commitments.len()),
+            BeaconBlockRef::Eip7805(block) => Some(block.body.blob_kzg_commitments.len()),
             BeaconBlockRef::Gloas(block) => Some(
                 block
                     .body
@@ -659,6 +664,37 @@ impl<E: EthSpec, Payload: AbstractExecPayload<E>> EmptyBlock for BeaconBlockElec
     }
 }
 
+impl<E: EthSpec, Payload: AbstractExecPayload<E>> EmptyBlock for BeaconBlockEip7805<E, Payload> {
+    /// Returns an empty Electra block to be used during genesis.
+    fn empty(spec: &ChainSpec) -> Self {
+        BeaconBlockEip7805 {
+            slot: spec.genesis_slot,
+            proposer_index: 0,
+            parent_root: Hash256::zero(),
+            state_root: Hash256::zero(),
+            body: BeaconBlockBodyEip7805 {
+                randao_reveal: Signature::empty(),
+                eth1_data: Eth1Data {
+                    deposit_root: Hash256::zero(),
+                    block_hash: Hash256::zero(),
+                    deposit_count: 0,
+                },
+                graffiti: Graffiti::default(),
+                proposer_slashings: VariableList::empty(),
+                attester_slashings: VariableList::empty(),
+                attestations: VariableList::empty(),
+                deposits: VariableList::empty(),
+                voluntary_exits: VariableList::empty(),
+                sync_aggregate: SyncAggregate::empty(),
+                execution_payload: Payload::Eip7805::default(),
+                bls_to_execution_changes: VariableList::empty(),
+                blob_kzg_commitments: VariableList::empty(),
+                execution_requests: ExecutionRequests::default(),
+            },
+        }
+    }
+}
+
 impl<E: EthSpec, Payload: AbstractExecPayload<E>> EmptyBlock for BeaconBlockFulu<E, Payload> {
     /// Returns an empty Fulu block to be used during genesis.
     fn empty(spec: &ChainSpec) -> Self {
@@ -832,6 +868,7 @@ impl_from!(BeaconBlockBellatrix, <E, FullPayload<E>>, <E, BlindedPayload<E>>, |b
 impl_from!(BeaconBlockCapella, <E, FullPayload<E>>, <E, BlindedPayload<E>>, |body: BeaconBlockBodyCapella<_, _>| body.into());
 impl_from!(BeaconBlockDeneb, <E, FullPayload<E>>, <E, BlindedPayload<E>>, |body: BeaconBlockBodyDeneb<_, _>| body.into());
 impl_from!(BeaconBlockElectra, <E, FullPayload<E>>, <E, BlindedPayload<E>>, |body: BeaconBlockBodyElectra<_, _>| body.into());
+impl_from!(BeaconBlockEip7805, <E, FullPayload<E>>, <E, BlindedPayload<E>>, |body: BeaconBlockBodyEip7805<_, _>| body.into());
 impl_from!(BeaconBlockFulu, <E, FullPayload<E>>, <E, BlindedPayload<E>>, |body: BeaconBlockBodyFulu<_, _>| body.into());
 impl_from!(BeaconBlockGloas, <E, FullPayload<E>>, <E, BlindedPayload<E>>, |body: BeaconBlockBodyGloas<_, _>| body.into());
 
@@ -868,6 +905,7 @@ impl_clone_as_blinded!(BeaconBlockCapella, <E, FullPayload<E>>, <E, BlindedPaylo
 impl_clone_as_blinded!(BeaconBlockDeneb, <E, FullPayload<E>>, <E, BlindedPayload<E>>);
 impl_clone_as_blinded!(BeaconBlockElectra, <E, FullPayload<E>>, <E, BlindedPayload<E>>);
 impl_clone_as_blinded!(BeaconBlockFulu, <E, FullPayload<E>>, <E, BlindedPayload<E>>);
+impl_clone_as_blinded!(BeaconBlockEip7805, <E, FullPayload<E>>, <E, BlindedPayload<E>>);
 impl_clone_as_blinded!(BeaconBlockGloas, <E, FullPayload<E>>, <E, BlindedPayload<E>>);
 
 // A reference to a full beacon block can be cloned into a blinded beacon block, without cloning the
@@ -1042,6 +1080,26 @@ mod tests {
     }
 
     #[test]
+    fn roundtrip_eip7805_block() {
+        let rng = &mut XorShiftRng::from_seed([42; 16]);
+        let spec = &ForkName::Eip7805.make_genesis_spec(MainnetEthSpec::default_spec());
+
+        let inner_block = BeaconBlockEip7805 {
+            slot: Slot::random_for_test(rng),
+            proposer_index: u64::random_for_test(rng),
+            parent_root: Hash256::random_for_test(rng),
+            state_root: Hash256::random_for_test(rng),
+            body: BeaconBlockBodyEip7805::random_for_test(rng),
+        };
+
+        let block = BeaconBlock::Eip7805(inner_block.clone());
+
+        test_ssz_tree_hash_pair_with(&block, &inner_block, |bytes| {
+            BeaconBlock::from_ssz_bytes(bytes, spec)
+        });
+    }
+
+    #[test]
     fn roundtrip_fulu_block() {
         let rng = &mut XorShiftRng::from_seed([42; 16]);
         let spec = &ForkName::Fulu.make_genesis_spec(MainnetEthSpec::default_spec());
@@ -1100,7 +1158,9 @@ mod tests {
         let deneb_slot = deneb_epoch.start_slot(E::slots_per_epoch());
         let electra_epoch = deneb_epoch + 1;
         let electra_slot = electra_epoch.start_slot(E::slots_per_epoch());
-        let fulu_epoch = electra_epoch + 1;
+        let eip7805_epoch = electra_epoch + 1;
+        let eip7805_slot = eip7805_epoch.start_slot(E::slots_per_epoch());
+        let fulu_epoch = eip7805_epoch + 1;
         let fulu_slot = fulu_epoch.start_slot(E::slots_per_epoch());
         let gloas_epoch = fulu_epoch + 1;
         let gloas_slot = gloas_epoch.start_slot(E::slots_per_epoch());
@@ -1109,6 +1169,7 @@ mod tests {
         spec.capella_fork_epoch = Some(capella_epoch);
         spec.deneb_fork_epoch = Some(deneb_epoch);
         spec.electra_fork_epoch = Some(electra_epoch);
+        spec.eip7805_fork_epoch = Some(eip7805_epoch);
         spec.fulu_fork_epoch = Some(fulu_epoch);
         spec.gloas_fork_epoch = Some(gloas_epoch);
 
@@ -1220,6 +1281,28 @@ mod tests {
             );
             BeaconBlock::from_ssz_bytes(&bad_block.as_ssz_bytes(), &spec)
                 .expect_err("bad electra block cannot be decoded");
+        }
+
+        // BeaconBlockEip7805
+        {
+            let good_block = BeaconBlock::Eip7805(BeaconBlockEip7805 {
+                slot: eip7805_slot,
+                ..<_>::random_for_test(rng)
+            });
+            // It's invalid to have an Electra block with a epoch lower than the fork epoch.
+            let bad_block = {
+                let mut bad = good_block.clone();
+                *bad.slot_mut() = deneb_slot;
+                bad
+            };
+
+            assert_eq!(
+                BeaconBlock::from_ssz_bytes(&good_block.as_ssz_bytes(), &spec)
+                    .expect("good eip7805 block can be decoded"),
+                good_block
+            );
+            BeaconBlock::from_ssz_bytes(&bad_block.as_ssz_bytes(), &spec)
+                .expect_err("bad eip7805 block cannot be decoded");
         }
 
         // BeaconBlockFulu

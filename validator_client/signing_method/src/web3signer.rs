@@ -19,6 +19,7 @@ pub enum MessageType {
     SyncCommitteeSelectionProof,
     SyncCommitteeContributionAndProof,
     ValidatorRegistration,
+    InclusionList,
     // TODO(gloas) verify w/ web3signer specs
     ExecutionPayloadEnvelope,
     PayloadAttestation,
@@ -33,6 +34,7 @@ pub enum ForkName {
     Capella,
     Deneb,
     Electra,
+    Eip7805,
     Fulu,
     Gloas,
 }
@@ -78,6 +80,7 @@ pub enum Web3SignerObject<'a, E: EthSpec, Payload: AbstractExecPayload<E>> {
     SyncAggregatorSelectionData(&'a SyncAggregatorSelectionData),
     ContributionAndProof(&'a ContributionAndProof<E>),
     ValidatorRegistration(&'a ValidatorRegistrationData),
+    InclusionList(&'a InclusionList<E>),
     ExecutionPayloadEnvelope(&'a ExecutionPayloadEnvelope<E>),
     PayloadAttestationData(&'a PayloadAttestationData),
 }
@@ -115,6 +118,11 @@ impl<'a, E: EthSpec, Payload: AbstractExecPayload<E>> Web3SignerObject<'a, E, Pa
                 block: None,
                 block_header: Some(block.block_header()),
             }),
+            BeaconBlock::Eip7805(_) => Ok(Web3SignerObject::BeaconBlock {
+                version: ForkName::Eip7805,
+                block: None,
+                block_header: Some(block.block_header()),
+            }),
             BeaconBlock::Fulu(_) => Ok(Web3SignerObject::BeaconBlock {
                 version: ForkName::Fulu,
                 block: None,
@@ -145,6 +153,7 @@ impl<'a, E: EthSpec, Payload: AbstractExecPayload<E>> Web3SignerObject<'a, E, Pa
                 MessageType::SyncCommitteeContributionAndProof
             }
             Web3SignerObject::ValidatorRegistration(_) => MessageType::ValidatorRegistration,
+            Web3SignerObject::InclusionList(_) => MessageType::InclusionList,
             Web3SignerObject::ExecutionPayloadEnvelope(_) => MessageType::ExecutionPayloadEnvelope,
             Web3SignerObject::PayloadAttestationData(_) => MessageType::PayloadAttestation,
         }

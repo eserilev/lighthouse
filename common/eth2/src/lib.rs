@@ -97,6 +97,8 @@ pub struct Timeouts {
     pub sync_committee_contribution: Duration,
     pub sync_duties: Duration,
     pub sync_aggregators: Duration,
+    pub inclusion_list: Duration,
+    pub inclusion_list_duties: Duration,
     pub ptc_duties: Duration,
     pub get_beacon_blocks_ssz: Duration,
     pub get_debug_beacon_states: Duration,
@@ -119,6 +121,8 @@ impl Timeouts {
             sync_committee_contribution: timeout,
             sync_duties: timeout,
             sync_aggregators: timeout,
+            inclusion_list: timeout,
+            inclusion_list_duties: timeout,
             ptc_duties: timeout,
             get_beacon_blocks_ssz: timeout,
             get_debug_beacon_states: timeout,
@@ -142,6 +146,9 @@ impl Timeouts {
             sync_committee_contribution: base_timeout
                 / HTTP_SYNC_COMMITTEE_CONTRIBUTION_TIMEOUT_QUOTIENT,
             sync_duties: base_timeout / HTTP_SYNC_DUTIES_TIMEOUT_QUOTIENT,
+            // TODO(EIP7805) check timeouts
+            inclusion_list_duties: base_timeout,
+            inclusion_list: base_timeout,
             sync_aggregators: base_timeout / HTTP_SYNC_AGGREGATOR_TIMEOUT_QUOTIENT,
             ptc_duties: base_timeout / HTTP_PTC_DUTIES_TIMEOUT_QUOTIENT,
             get_beacon_blocks_ssz: base_timeout / HTTP_GET_BEACON_BLOCK_SSZ_TIMEOUT_QUOTIENT,
@@ -1849,6 +1856,25 @@ impl BeaconNodeHttpClient {
         Ok(())
     }
 
+    /// `POST beacon/pool/inclusion_lists`
+    pub async fn post_beacon_pool_inclusion_lists<E: EthSpec>(
+        &self,
+        inclusion_lists: &[SignedInclusionList<E>],
+    ) -> Result<(), Error> {
+        let mut path = self.eth_path(V1)?;
+
+        path.path_segments_mut()
+            .map_err(|()| Error::InvalidUrl(self.server.clone()))?
+            .push("beacon")
+            .push("pool")
+            .push("inclusion_lists");
+
+        self.post_with_timeout(path, &inclusion_lists, self.timeouts.inclusion_list)
+            .await?;
+
+        Ok(())
+    }
+
     /// `POST beacon/rewards/sync_committee`
     pub async fn post_beacon_rewards_sync_committee(
         &self,
@@ -3106,6 +3132,25 @@ impl BeaconNodeHttpClient {
         self.get_opt(path).await
     }
 
+    /// `GET validator/inclusion_list?slot`
+    pub async fn get_validator_inclusion_list<E: EthSpec>(
+        &self,
+        slot: Slot,
+    ) -> Result<Option<GenericResponse<Transactions<E>>>, Error> {
+        let mut path = self.eth_path(V1)?;
+
+        path.path_segments_mut()
+            .map_err(|()| Error::InvalidUrl(self.server.clone()))?
+            .push("validator")
+            .push("inclusion_list");
+
+        path.query_pairs_mut()
+            .append_pair("slot", &slot.to_string());
+
+        self.get_opt_with_timeout(path, self.timeouts.inclusion_list)
+            .await
+    }
+
     /// `POST lighthouse/liveness`
     pub async fn post_lighthouse_liveness(
         &self,
@@ -3171,6 +3216,29 @@ impl BeaconNodeHttpClient {
             path,
             &ValidatorIndexDataRef(indices),
             self.timeouts.attester_duties,
+        )
+        .await
+    }
+
+    /// `POST validator/duties/inclusion_list/{epoch}`
+    pub async fn post_validator_duties_inclusion_list(
+        &self,
+        epoch: Epoch,
+        indices: &[u64],
+    ) -> Result<DutiesResponse<Vec<InclusionListDuty>>, Error> {
+        let mut path = self.eth_path(V1)?;
+
+        path.path_segments_mut()
+            .map_err(|()| Error::InvalidUrl(self.server.clone()))?
+            .push("validator")
+            .push("duties")
+            .push("inclusion_list")
+            .push(&epoch.to_string());
+
+        self.post_with_timeout_and_response(
+            path,
+            &ValidatorIndexDataRef(indices),
+            self.timeouts.inclusion_list_duties,
         )
         .await
     }

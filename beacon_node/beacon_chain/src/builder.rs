@@ -1040,6 +1040,7 @@ where
                 head_shuffling_ids,
             )),
             beacon_proposer_cache,
+            inclusion_list_cache: <_>::default(),
             block_times_cache: <_>::default(),
             envelope_times_cache: <_>::default(),
             pre_finalization_block_cache: <_>::default(),

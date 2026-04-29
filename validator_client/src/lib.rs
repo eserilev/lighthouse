@@ -39,11 +39,13 @@ use tokio::{
 use tracing::{debug, error, info, warn};
 use types::{EthSpec, Hash256};
 use validator_http_api::ApiSecret;
+use validator_services::inclusion_list_service::InclusionListServiceBuilder;
 use validator_services::notifier_service::spawn_notifier;
 use validator_services::{
     attestation_service::{AttestationService, AttestationServiceBuilder},
     block_service::{BlockService, BlockServiceBuilder},
     duties_service::{self, DutiesService, DutiesServiceBuilder},
+    inclusion_list_service::InclusionListService,
     latency_service,
     payload_attestation_service::PayloadAttestationService,
     preparation_service::{PreparationService, PreparationServiceBuilder},
@@ -84,6 +86,7 @@ pub struct ProductionValidatorClient<E: EthSpec> {
     block_service: BlockService<ValidatorStore<E>, SystemTimeSlotClock>,
     attestation_service: AttestationService<ValidatorStore<E>, SystemTimeSlotClock>,
     sync_committee_service: SyncCommitteeService<ValidatorStore<E>, SystemTimeSlotClock>,
+    inclusion_list_service: InclusionListService<ValidatorStore<E>, SystemTimeSlotClock>,
     payload_attestation_service: PayloadAttestationService<ValidatorStore<E>, SystemTimeSlotClock>,
     doppelganger_service: Option<Arc<DoppelgangerService>>,
     preparation_service: PreparationService<ValidatorStore<E>, SystemTimeSlotClock>,
@@ -554,6 +557,17 @@ impl<E: EthSpec> ProductionValidatorClient<E> {
             context.executor.clone(),
         );
 
+        let inclusion_list_service = InclusionListServiceBuilder::new()
+            .duties_service(duties_service.clone())
+            .slot_clock(slot_clock.clone())
+            .validator_store(validator_store.clone())
+            .beacon_nodes(beacon_nodes.clone())
+            .executor(context.executor.clone())
+            .chain_spec(context.eth2_config.spec.clone())
+            // TODO(focil) make config driven
+            .disable(false)
+            .build()?;
+
         let payload_attestation_service = PayloadAttestationService::new(
             duties_service.clone(),
             validator_store.clone(),
@@ -569,6 +583,7 @@ impl<E: EthSpec> ProductionValidatorClient<E> {
             block_service,
             attestation_service,
             sync_committee_service,
+            inclusion_list_service,
             payload_attestation_service,
             doppelganger_service,
             preparation_service,
@@ -640,6 +655,11 @@ impl<E: EthSpec> ProductionValidatorClient<E> {
             .clone()
             .start_update_service(&self.context.eth2_config.spec)
             .map_err(|e| format!("Unable to start sync committee service: {}", e))?;
+
+        self.inclusion_list_service
+            .clone()
+            .start_update_service(&self.context.eth2_config.spec)
+            .map_err(|e| format!("Unable to start inclusion list service: {}", e))?;
 
         if self.context.eth2_config.spec.is_gloas_scheduled() {
             self.payload_attestation_service

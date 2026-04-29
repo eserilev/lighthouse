@@ -303,6 +303,30 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
         })
     }
 
+    /// Create a new `Work` event for some inclusion list.
+    pub fn send_gossip_inclusion_list(
+        self: &Arc<Self>,
+        message_id: MessageId,
+        peer_id: PeerId,
+        signed_inclusion_list: SignedInclusionList<T::EthSpec>,
+        seen_timestamp: Duration,
+    ) -> Result<(), Error<T::EthSpec>> {
+        let processor = self.clone();
+        let process_fn = move || {
+            processor.process_gossip_inclusion_list(
+                message_id,
+                peer_id,
+                signed_inclusion_list,
+                seen_timestamp,
+            )
+        };
+
+        self.try_send(BeaconWorkEvent {
+            drop_during_sync: true,
+            work: Work::GossipInclusionList(Box::new(process_fn)),
+        })
+    }
+
     /// Create a new `Work` event for some sync committee contribution.
     pub fn send_gossip_sync_contribution(
         self: &Arc<Self>,

@@ -263,6 +263,7 @@ impl GossipCache {
             GossipKind::ProposerPreferences => self.proposer_preferences,
             GossipKind::LightClientFinalityUpdate => self.light_client_finality_update,
             GossipKind::LightClientOptimisticUpdate => self.light_client_optimistic_update,
+            GossipKind::InclusionList => None,
         };
         let Some(expire_timeout) = expire_timeout else {
             return;

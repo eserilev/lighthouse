@@ -6,14 +6,14 @@ use superstruct::superstruct;
 
 use crate::core::{
     AltairPreset, BasePreset, BellatrixPreset, CapellaPreset, ChainSpec, Config, DenebPreset,
-    ElectraPreset, EthSpec, FuluPreset, GloasPreset, consts,
+    Eip7805Preset, ElectraPreset, EthSpec, FuluPreset, GloasPreset, consts,
 };
 
 /// Fusion of a runtime-config with the compile-time preset values.
 ///
 /// Mostly useful for the API.
 #[superstruct(
-    variants(Deneb, Electra, Fulu, Gloas),
+    variants(Deneb, Electra, Fulu, Eip7805, Gloas),
     variant_attributes(derive(Serialize, Deserialize, Debug, PartialEq, Clone))
 )]
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -32,12 +32,15 @@ pub struct ConfigAndPreset {
     pub capella_preset: CapellaPreset,
     #[serde(flatten)]
     pub deneb_preset: DenebPreset,
-    #[superstruct(only(Electra, Fulu, Gloas))]
+    #[superstruct(only(Electra, Fulu, Eip7805, Gloas))]
     #[serde(flatten)]
     pub electra_preset: ElectraPreset,
-    #[superstruct(only(Fulu, Gloas))]
+    #[superstruct(only(Fulu, Eip7805, Gloas))]
     #[serde(flatten)]
     pub fulu_preset: FuluPreset,
+    #[superstruct(only(Eip7805, Gloas))]
+    #[serde(flatten)]
+    pub eip7805_preset: Eip7805Preset,
     #[superstruct(only(Gloas))]
     #[serde(flatten)]
     pub gloas_preset: GloasPreset,
@@ -59,6 +62,7 @@ impl ConfigAndPreset {
         if spec.is_gloas_scheduled() {
             let electra_preset = ElectraPreset::from_chain_spec::<E>(spec);
             let fulu_preset = FuluPreset::from_chain_spec::<E>(spec);
+            let eip7805_preset = Eip7805Preset::from_chain_spec(spec);
             let gloas_preset = GloasPreset::from_chain_spec::<E>(spec);
 
             ConfigAndPreset::Gloas(ConfigAndPresetGloas {
@@ -70,7 +74,25 @@ impl ConfigAndPreset {
                 deneb_preset,
                 electra_preset,
                 fulu_preset,
+                eip7805_preset,
                 gloas_preset,
+                extra_fields,
+            })
+        } else if spec.is_focil_scheduled() {
+            let electra_preset = ElectraPreset::from_chain_spec::<E>(spec);
+            let fulu_preset = FuluPreset::from_chain_spec::<E>(spec);
+            let eip7805_preset = Eip7805Preset::from_chain_spec(spec);
+
+            ConfigAndPreset::Eip7805(ConfigAndPresetEip7805 {
+                config,
+                base_preset,
+                altair_preset,
+                bellatrix_preset,
+                capella_preset,
+                deneb_preset,
+                electra_preset,
+                fulu_preset,
+                eip7805_preset,
                 extra_fields,
             })
         } else if spec.is_fulu_scheduled() {

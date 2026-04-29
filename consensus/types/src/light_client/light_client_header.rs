@@ -103,7 +103,7 @@ impl<E: EthSpec> LightClientHeader<E> {
             ForkName::Deneb => LightClientHeader::Deneb(
                 LightClientHeaderDeneb::block_to_light_client_header(block)?,
             ),
-            ForkName::Electra => LightClientHeader::Electra(
+            ForkName::Electra | ForkName::Eip7805 => LightClientHeader::Electra(
                 LightClientHeaderElectra::block_to_light_client_header(block)?,
             ),
             ForkName::Fulu => {
@@ -126,7 +126,7 @@ impl<E: EthSpec> LightClientHeader<E> {
             ForkName::Deneb => {
                 LightClientHeader::Deneb(LightClientHeaderDeneb::from_ssz_bytes(bytes)?)
             }
-            ForkName::Electra => {
+            ForkName::Electra | ForkName::Eip7805 => {
                 LightClientHeader::Electra(LightClientHeaderElectra::from_ssz_bytes(bytes)?)
             }
             ForkName::Fulu => {
@@ -379,7 +379,7 @@ impl<'de, E: EthSpec> ContextDeserialize<'de, ForkName> for LightClientHeader<E>
             ForkName::Deneb => {
                 Self::Deneb(Deserialize::deserialize(deserializer).map_err(convert_err)?)
             }
-            ForkName::Electra => {
+            ForkName::Electra | ForkName::Eip7805 => {
                 Self::Electra(Deserialize::deserialize(deserializer).map_err(convert_err)?)
             }
             ForkName::Fulu => {

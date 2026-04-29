@@ -59,6 +59,7 @@ pub const DEFAULT_ENGINE_CAPABILITIES: EngineCapabilities = EngineCapabilities {
     get_client_version_v1: true,
     get_blobs_v1: true,
     get_blobs_v2: true,
+    get_inclusion_list_v1: true,
     get_blobs_v3: true,
 };
 
@@ -84,6 +85,7 @@ pub struct MockExecutionConfig {
     pub shanghai_time: Option<u64>,
     pub cancun_time: Option<u64>,
     pub prague_time: Option<u64>,
+    pub eip7805_time: Option<u64>,
     pub osaka_time: Option<u64>,
     pub amsterdam_time: Option<u64>,
 }
@@ -96,6 +98,7 @@ impl Default for MockExecutionConfig {
             shanghai_time: None,
             cancun_time: None,
             prague_time: None,
+            eip7805_time: None,
             osaka_time: None,
             amsterdam_time: None,
         }
@@ -117,6 +120,7 @@ impl<E: EthSpec> MockServer<E> {
             None, // FIXME(capella): should this be the default?
             None, // FIXME(deneb): should this be the default?
             None, // FIXME(electra): should this be the default?
+            None,
             None, // FIXME(fulu): should this be the default?
             None, // FIXME(gloas): should this be the default?
             None,
@@ -135,6 +139,7 @@ impl<E: EthSpec> MockServer<E> {
             shanghai_time,
             cancun_time,
             prague_time,
+            eip7805_time,
             osaka_time,
             amsterdam_time,
         } = config;
@@ -144,6 +149,7 @@ impl<E: EthSpec> MockServer<E> {
             shanghai_time,
             cancun_time,
             prague_time,
+            eip7805_time,
             osaka_time,
             amsterdam_time,
             kzg,
@@ -205,6 +211,7 @@ impl<E: EthSpec> MockServer<E> {
         shanghai_time: Option<u64>,
         cancun_time: Option<u64>,
         prague_time: Option<u64>,
+        eip7805_time: Option<u64>,
         osaka_time: Option<u64>,
         amsterdam_time: Option<u64>,
         kzg: Option<Arc<Kzg>>,
@@ -217,6 +224,7 @@ impl<E: EthSpec> MockServer<E> {
                 shanghai_time,
                 cancun_time,
                 prague_time,
+                eip7805_time,
                 osaka_time,
                 amsterdam_time,
             },

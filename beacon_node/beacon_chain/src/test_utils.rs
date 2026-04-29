@@ -86,6 +86,8 @@ pub const FORK_NAME_ENV_VAR: &str = "FORK_NAME";
 // `beacon_node/execution_layer/src/test_utils/fixtures/mainnet/test_blobs_bundle.ssz`
 pub const TEST_DATA_COLUMN_SIDECARS_SSZ: &[u8] =
     include_bytes!("test_utils/fixtures/test_data_column_sidecars.ssz");
+pub const TEST_DATA_COLUMN_SIDECARS_GLOAS_SSZ: &[u8] =
+    include_bytes!("test_utils/fixtures/test_data_column_sidecars_gloas.ssz");
 
 // Default target aggregators to set during testing, this ensures an aggregator at each slot.
 //
@@ -555,6 +557,10 @@ where
                 genesis_time
                     + spec.get_slot_duration().as_secs() * E::slots_per_epoch() * epoch.as_u64()
             });
+        mock.server.execution_block_generator().eip7805_time =
+            spec.eip7805_fork_epoch.map(|epoch| {
+                genesis_time + spec.get_slot_duration().as_secs() * E::slots_per_epoch() * epoch.as_u64()
+            });
         mock.server.execution_block_generator().osaka_time = spec.fulu_fork_epoch.map(|epoch| {
             genesis_time
                 + spec.get_slot_duration().as_secs() * E::slots_per_epoch() * epoch.as_u64()
@@ -689,6 +695,9 @@ pub fn mock_execution_layer_from_parts<E: EthSpec>(
         HARNESS_GENESIS_TIME
             + (spec.get_slot_duration().as_secs()) * E::slots_per_epoch() * epoch.as_u64()
     });
+    let eip7805_time = spec.eip7805_fork_epoch.map(|epoch| {
+        HARNESS_GENESIS_TIME + spec.get_slot_duration().as_secs() * E::slots_per_epoch() * epoch.as_u64()
+    });
     let osaka_time = spec.fulu_fork_epoch.map(|epoch| {
         HARNESS_GENESIS_TIME
             + (spec.get_slot_duration().as_secs()) * E::slots_per_epoch() * epoch.as_u64()
@@ -705,6 +714,7 @@ pub fn mock_execution_layer_from_parts<E: EthSpec>(
         shanghai_time,
         cancun_time,
         prague_time,
+        eip7805_time,
         osaka_time,
         amsterdam_time,
         Some(JwtKey::from_slice(&DEFAULT_JWT_SECRET).unwrap()),
@@ -1110,7 +1120,8 @@ where
                 BlockProductionVersion::FullV2,
             )
             .await
-            .unwrap()
+            .map_err(|e| format!("Failed to produce block at slot {}: {:?}", slot, e))
+            .expect("should produce block successfully")
         else {
             panic!("Should always be a full payload response");
         };
@@ -1184,6 +1195,7 @@ where
                     randao_reveal,
                     graffiti_settings,
                     ProduceBlockVerification::VerifyRandao,
+                    None,
                 )
                 .await
                 .unwrap();
@@ -1266,7 +1278,8 @@ where
                 BlockProductionVersion::FullV2,
             )
             .await
-            .unwrap()
+            .map_err(|e| format!("Failed to produce block at slot {}: {:?}", slot, e))
+            .expect("should produce block successfully")
         else {
             panic!("Should always be a full payload response");
         };
@@ -1506,6 +1519,49 @@ where
         );
         assert_eq!(single_attestation.attester_index, validator_index as u64);
         Ok(single_attestation)
+    }
+
+    pub async fn produce_signed_inclusion_list_for_slot(
+        &self,
+        slot: Slot,
+        validator_index: usize,
+        inclusion_list_committee_root: Hash256,
+        state: Cow<'_, BeaconState<E>>,
+    ) -> Result<SignedInclusionList<E>, BeaconChainError> {
+        let epoch = slot.epoch(E::slots_per_epoch());
+        let fork = self.spec.fork_at_epoch(epoch);
+
+        let inclusion_list_transactions = self
+            .chain
+            .produce_inclusion_list(slot)
+            .await
+            .unwrap()
+            .unwrap();
+
+        let inclusion_list = InclusionList {
+            transactions: inclusion_list_transactions,
+            slot,
+            validator_index: validator_index as u64,
+            inclusion_list_committee_root,
+        };
+
+        let signature = {
+            let domain = self.spec.get_domain(
+                epoch,
+                Domain::InclusionListCommittee,
+                &fork,
+                state.genesis_validators_root(),
+            );
+
+            let message = inclusion_list.signing_root(domain);
+
+            self.validator_keypairs[validator_index].sk.sign(message)
+        };
+
+        Ok(SignedInclusionList {
+            message: inclusion_list,
+            signature,
+        })
     }
 
     /// Produces an "unaggregated" attestation for the given `slot` and `index` that attests to
@@ -1849,7 +1905,6 @@ where
                             .validator_index(pubkey)
                             .expect("should find validator index")
                             .expect("pubkey should exist in the beacon chain");
-
                         let sync_message = SyncCommitteeMessage::new::<E>(
                             message_slot,
                             head_block_root,
@@ -1865,6 +1920,30 @@ where
                     .collect()
             })
             .collect()
+    }
+
+    pub async fn make_signed_inclusion_lists(
+        &self,
+        inclusion_list_committee: InclusionListCommittee<E>,
+        state: &BeaconState<E>,
+        slot: Slot,
+    ) -> Vec<SignedInclusionList<E>> {
+        let mut inclusion_lists = vec![];
+        let il_committee_root = inclusion_list_committee.tree_hash_root();
+        for validator_index in &inclusion_list_committee {
+            inclusion_lists.push(
+                self.produce_signed_inclusion_list_for_slot(
+                    slot,
+                    *validator_index as usize,
+                    il_committee_root,
+                    Cow::Borrowed(state),
+                )
+                .await
+                .unwrap(),
+            );
+        }
+
+        inclusion_lists
     }
 
     /// A list of attestations for each committee for the given slot.
@@ -2782,6 +2861,7 @@ where
             versioned_hashes,
             parent_beacon_block_root: block.message().parent_root(),
             execution_requests: &signed_envelope.message.execution_requests,
+            il_transactions: Default::default(),
         });
 
         self.chain
@@ -3613,6 +3693,7 @@ where
         for (_, contribution_and_proof) in sync_contributions {
             let signed_contribution_and_proof = contribution_and_proof.unwrap();
 
+            println!("1");
             let verified_contribution = self
                 .chain
                 .verify_sync_contribution_for_gossip(signed_contribution_and_proof)?;
@@ -3621,6 +3702,7 @@ where
         }
 
         for verified_contribution in verified_contributions {
+            println!("2");
             self.chain
                 .add_contribution_to_block_inclusion_pool(verified_contribution)?;
         }
@@ -3741,6 +3823,9 @@ pub fn generate_rand_block_and_blobs<E: EthSpec>(
         SignedBeaconBlock::Fulu(SignedBeaconBlockFulu {
             ref mut message, ..
         }) => add_blob_transactions!(message, FullPayloadFulu<E>, num_blobs, rng, fork_name),
+        SignedBeaconBlock::Eip7805(SignedBeaconBlockEip7805 {
+            ref mut message, ..
+        }) => add_blob_transactions!(message, FullPayloadEip7805<E>, num_blobs, rng, fork_name),
         // TODO(EIP-7732) Add `SignedBeaconBlock::Gloas` variant
         _ => return (block, blob_sidecars),
     };
@@ -3789,24 +3874,24 @@ pub fn generate_data_column_sidecars_from_block<E: EthSpec>(
     block: &SignedBeaconBlock<E>,
     spec: &ChainSpec,
 ) -> DataColumnSidecarList<E> {
-    let kzg_commitments = block.message().body().blob_kzg_commitments().unwrap();
-    if kzg_commitments.is_empty() {
-        return vec![];
-    }
-
-    let kzg_commitments_inclusion_proof = block
-        .message()
-        .body()
-        .kzg_commitments_merkle_proof()
-        .unwrap();
-    let signed_block_header = block.signed_block_header();
-
     // Load the precomputed column sidecar to avoid computing them for every block in the tests.
     // Then repeat the cells and proofs for every blob
     if block.fork_name_unchecked().gloas_enabled() {
+        let kzg_commitments = &block
+            .message()
+            .body()
+            .signed_execution_payload_bid()
+            .expect("Gloas block should have a payload bid")
+            .message
+            .blob_kzg_commitments;
+        if kzg_commitments.is_empty() {
+            return vec![];
+        }
+        let num_blobs = kzg_commitments.len();
+        let signed_block_header = block.signed_block_header();
         let template_data_columns =
             RuntimeVariableList::<DataColumnSidecarGloas<E>>::from_ssz_bytes(
-                TEST_DATA_COLUMN_SIDECARS_SSZ,
+                TEST_DATA_COLUMN_SIDECARS_GLOAS_SSZ,
                 E::number_of_columns(),
             )
             .unwrap();
@@ -3826,7 +3911,7 @@ pub fn generate_data_column_sidecars_from_block<E: EthSpec>(
             .collect::<(Vec<_>, Vec<_>)>();
 
         let blob_cells_and_proofs_vec =
-            vec![(cells.try_into().unwrap(), proofs.try_into().unwrap()); kzg_commitments.len()];
+            vec![(cells.try_into().unwrap(), proofs.try_into().unwrap()); num_blobs];
 
         build_data_column_sidecars_gloas(
             signed_block_header.message.tree_hash_root(),
@@ -3836,6 +3921,18 @@ pub fn generate_data_column_sidecars_from_block<E: EthSpec>(
         )
         .unwrap()
     } else {
+        let kzg_commitments = block.message().body().blob_kzg_commitments().unwrap();
+        if kzg_commitments.is_empty() {
+            return vec![];
+        }
+
+        let kzg_commitments_inclusion_proof = block
+            .message()
+            .body()
+            .kzg_commitments_merkle_proof()
+            .unwrap();
+        let signed_block_header = block.signed_block_header();
+
         // load the precomputed column sidecar to avoid computing them for every block in the tests.
         let template_data_columns =
             RuntimeVariableList::<DataColumnSidecarFulu<E>>::from_ssz_bytes(

@@ -13,11 +13,11 @@ use types::{
     PartialDataColumnSidecar, PayloadAttestationMessage, ProposerSlashing, SignedAggregateAndProof,
     SignedAggregateAndProofBase, SignedAggregateAndProofElectra, SignedBeaconBlock,
     SignedBeaconBlockAltair, SignedBeaconBlockBase, SignedBeaconBlockBellatrix,
-    SignedBeaconBlockCapella, SignedBeaconBlockDeneb, SignedBeaconBlockElectra,
-    SignedBeaconBlockFulu, SignedBeaconBlockGloas, SignedBlsToExecutionChange,
-    SignedContributionAndProof, SignedExecutionPayloadBid, SignedExecutionPayloadEnvelope,
-    SignedProposerPreferences, SignedVoluntaryExit, SingleAttestation, SubnetId,
-    SyncCommitteeMessage, SyncSubnetId,
+    SignedBeaconBlockCapella, SignedBeaconBlockDeneb, SignedBeaconBlockEip7805,
+    SignedBeaconBlockElectra, SignedBeaconBlockFulu, SignedBeaconBlockGloas,
+    SignedBlsToExecutionChange, SignedContributionAndProof, SignedExecutionPayloadBid,
+    SignedExecutionPayloadEnvelope, SignedInclusionList, SignedProposerPreferences,
+    SignedVoluntaryExit, SingleAttestation, SubnetId, SyncCommitteeMessage, SyncSubnetId,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -56,6 +56,8 @@ pub enum PubsubMessage<E: EthSpec> {
     LightClientFinalityUpdate(Box<LightClientFinalityUpdate<E>>),
     /// Gossipsub message providing notification of a light client optimistic update.
     LightClientOptimisticUpdate(Box<LightClientOptimisticUpdate<E>>),
+    /// Gossipsub message providing notification of an inclusion list.
+    InclusionList(Box<SignedInclusionList<E>>),
 }
 
 // Implements the `DataTransform` trait of gossipsub to employ snappy compression
@@ -163,6 +165,7 @@ impl<E: EthSpec> PubsubMessage<E> {
             PubsubMessage::LightClientOptimisticUpdate(_) => {
                 GossipKind::LightClientOptimisticUpdate
             }
+            PubsubMessage::InclusionList(_) => GossipKind::InclusionList,
         }
     }
 
@@ -251,6 +254,10 @@ impl<E: EthSpec> PubsubMessage<E> {
                             ),
                             Some(ForkName::Fulu) => SignedBeaconBlock::<E>::Fulu(
                                 SignedBeaconBlockFulu::from_ssz_bytes(data)
+                                    .map_err(|e| format!("{:?}", e))?,
+                            ),
+                            Some(ForkName::Eip7805) => SignedBeaconBlock::<E>::Eip7805(
+                                SignedBeaconBlockEip7805::from_ssz_bytes(data)
                                     .map_err(|e| format!("{:?}", e))?,
                             ),
                             Some(ForkName::Gloas) => SignedBeaconBlock::<E>::Gloas(
@@ -430,6 +437,29 @@ impl<E: EthSpec> PubsubMessage<E> {
                             light_client_optimistic_update,
                         )))
                     }
+                    GossipKind::InclusionList => {
+                        match fork_context.get_fork_from_context_bytes(gossip_topic.fork_digest) {
+                            Some(fork) if fork.electra_enabled() => {
+                                let il = SignedInclusionList::from_ssz_bytes(data)
+                                    .map_err(|e| format!("{:?}", e))?;
+                                let focil_enabled = fork_context.spec.is_focil_enabled_for_epoch(
+                                    il.message.slot.epoch(E::slots_per_epoch()),
+                                );
+                                if focil_enabled {
+                                    Ok(PubsubMessage::InclusionList(Box::new(il)))
+                                } else {
+                                    Err(format!(
+                                        "inclusion_List topic invalid for given fork digest {:?}",
+                                        gossip_topic.fork_digest
+                                    ))
+                                }
+                            }
+                            Some(_) | None => Err(format!(
+                                "inclusion_List topic invalid for given fork digest {:?}",
+                                gossip_topic.fork_digest
+                            )),
+                        }
+                    }
                 }
             }
         }
@@ -460,6 +490,7 @@ impl<E: EthSpec> PubsubMessage<E> {
             PubsubMessage::ProposerPreferences(data) => data.as_ssz_bytes(),
             PubsubMessage::LightClientFinalityUpdate(data) => data.as_ssz_bytes(),
             PubsubMessage::LightClientOptimisticUpdate(data) => data.as_ssz_bytes(),
+            PubsubMessage::InclusionList(data) => data.as_ssz_bytes(),
         }
     }
 }
@@ -579,6 +610,9 @@ impl<E: EthSpec> std::fmt::Display for PubsubMessage<E> {
             }
             PubsubMessage::LightClientOptimisticUpdate(_data) => {
                 write!(f, "Light CLient Optimistic Update")
+            }
+            PubsubMessage::InclusionList(_data) => {
+                write!(f, "Inclusion List")
             }
         }
     }

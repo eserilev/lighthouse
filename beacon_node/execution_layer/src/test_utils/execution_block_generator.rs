@@ -25,9 +25,9 @@ use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 use types::{
     Blob, ChainSpec, EthSpec, ExecutionBlockHash, ExecutionPayload, ExecutionPayloadBellatrix,
-    ExecutionPayloadCapella, ExecutionPayloadDeneb, ExecutionPayloadElectra, ExecutionPayloadFulu,
-    ExecutionPayloadGloas, ExecutionPayloadHeader, ExecutionRequests, ForkName, Hash256, KzgProofs,
-    Transaction, Transactions, Uint256,
+    ExecutionPayloadCapella, ExecutionPayloadDeneb, ExecutionPayloadEip7805,
+    ExecutionPayloadElectra, ExecutionPayloadFulu, ExecutionPayloadGloas, ExecutionPayloadHeader,
+    ExecutionRequests, ForkName, Hash256, KzgProofs, Transaction, Transactions, Uint256,
 };
 
 const TEST_BLOB_BUNDLE: &[u8] = include_bytes!("fixtures/mainnet/test_blobs_bundle.ssz");
@@ -154,6 +154,7 @@ pub struct ExecutionBlockGenerator<E: EthSpec> {
     pub cancun_time: Option<u64>,    // deneb
     pub prague_time: Option<u64>,    // electra
     pub osaka_time: Option<u64>,     // fulu
+    pub eip7805_time: Option<u64>,   // eip7805
     pub amsterdam_time: Option<u64>, // gloas
     /*
      * deneb stuff
@@ -183,6 +184,7 @@ impl<E: EthSpec> ExecutionBlockGenerator<E> {
         shanghai_time: Option<u64>,
         cancun_time: Option<u64>,
         prague_time: Option<u64>,
+        eip7805_time: Option<u64>,
         osaka_time: Option<u64>,
         amsterdam_time: Option<u64>,
         kzg: Option<Arc<Kzg>>,
@@ -202,6 +204,7 @@ impl<E: EthSpec> ExecutionBlockGenerator<E> {
             shanghai_time,
             cancun_time,
             prague_time,
+            eip7805_time,
             osaka_time,
             amsterdam_time,
             blobs_bundles: <_>::default(),
@@ -256,6 +259,7 @@ impl<E: EthSpec> ExecutionBlockGenerator<E> {
     pub fn get_fork_at_timestamp(&self, timestamp: u64) -> ForkName {
         let forks = [
             (self.amsterdam_time, ForkName::Gloas),
+            (self.eip7805_time, ForkName::Eip7805),
             (self.osaka_time, ForkName::Fulu),
             (self.prague_time, ForkName::Electra),
             (self.cancun_time, ForkName::Deneb),
@@ -754,6 +758,25 @@ impl<E: EthSpec> ExecutionBlockGenerator<E> {
                     blob_gas_used: 0,
                     excess_blob_gas: 0,
                 }),
+                ForkName::Eip7805 => ExecutionPayload::Eip7805(ExecutionPayloadEip7805 {
+                    parent_hash: head_block_hash,
+                    fee_recipient: pa.suggested_fee_recipient,
+                    receipts_root: Hash256::repeat_byte(42),
+                    state_root: Hash256::repeat_byte(43),
+                    logs_bloom: vec![0; 256].try_into().unwrap(),
+                    prev_randao: pa.prev_randao,
+                    block_number: parent.block_number() + 1,
+                    gas_limit: DEFAULT_GAS_LIMIT,
+                    gas_used: GAS_USED,
+                    timestamp: pa.timestamp,
+                    extra_data: mock_el_extra_data::<E>(),
+                    base_fee_per_gas: Uint256::from(1u64),
+                    block_hash: ExecutionBlockHash::zero(),
+                    transactions: vec![].try_into().unwrap(),
+                    withdrawals: pa.withdrawals.clone().try_into().unwrap(),
+                    blob_gas_used: 0,
+                    excess_blob_gas: 0,
+                }),
                 _ => unreachable!(),
             },
             PayloadAttributes::V4(pa) => match self.get_fork_at_timestamp(pa.timestamp) {
@@ -955,6 +978,12 @@ pub fn generate_genesis_header<E: EthSpec>(spec: &ChainSpec) -> Option<Execution
             *header.transactions_root_mut() = empty_transactions_root;
             Some(header)
         }
+        ForkName::Eip7805 => {
+            let mut header = ExecutionPayloadHeader::Eip7805(<_>::default());
+            *header.block_hash_mut() = genesis_block_hash.unwrap_or_default();
+            *header.transactions_root_mut() = empty_transactions_root;
+            Some(header)
+        }
         ForkName::Fulu => {
             let mut header = ExecutionPayloadHeader::Fulu(<_>::default());
             *header.block_hash_mut() = genesis_block_hash.unwrap_or_default();
@@ -1026,6 +1055,71 @@ mod test {
     use super::*;
     use kzg::{CellRef, KzgBlobRef, trusted_setup::get_trusted_setup};
     use types::{MainnetEthSpec, MinimalEthSpec};
+
+    #[test]
+    fn pow_chain_only() {
+        const TERMINAL_DIFFICULTY: u64 = 10;
+        const TERMINAL_BLOCK: u64 = 10;
+        const DIFFICULTY_INCREMENT: u64 = 1;
+
+        let mut generator: ExecutionBlockGenerator<MainnetEthSpec> = ExecutionBlockGenerator::new(
+            Uint256::from(TERMINAL_DIFFICULTY),
+            TERMINAL_BLOCK,
+            ExecutionBlockHash::zero(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        for i in 0..=TERMINAL_BLOCK {
+            if i > 0 {
+                generator.insert_pow_block(i).unwrap();
+            }
+
+            /*
+             * Generate a block, inspect it.
+             */
+
+            let block = generator.latest_block().unwrap();
+            assert_eq!(block.block_number(), i);
+
+            let expected_parent = i
+                .checked_sub(1)
+                .map(|i| generator.block_by_number(i).unwrap().block_hash())
+                .unwrap_or_else(ExecutionBlockHash::zero);
+            assert_eq!(block.parent_hash(), expected_parent);
+
+            assert_eq!(
+                block.total_difficulty().unwrap(),
+                Uint256::from(i * DIFFICULTY_INCREMENT)
+            );
+
+            assert_eq!(generator.block_by_hash(block.block_hash()).unwrap(), block);
+            assert_eq!(generator.block_by_number(i).unwrap(), block);
+
+            /*
+             * Check the parent is accessible.
+             */
+
+            if let Some(prev_i) = i.checked_sub(1) {
+                assert_eq!(
+                    generator.block_by_number(prev_i).unwrap(),
+                    generator.block_by_hash(block.parent_hash()).unwrap()
+                );
+            }
+
+            /*
+             * Check the next block is inaccessible.
+             */
+
+            let next_i = i + 1;
+            assert!(generator.block_by_number(next_i).is_none());
+        }
+    }
 
     #[test]
     fn valid_test_blobs_bundle_v1() {

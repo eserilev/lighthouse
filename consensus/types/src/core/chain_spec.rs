@@ -38,6 +38,7 @@ pub enum Domain {
     PTCAttester,
     ProposerPreferences,
     ApplicationMask(ApplicationDomain),
+    InclusionListCommittee,
 }
 
 /// Lighthouse's internal configuration struct.
@@ -230,6 +231,14 @@ pub struct ChainSpec {
     pub max_per_epoch_activation_exit_churn_limit: u64,
 
     /*
+     * FOCIL params
+     */
+    pub domain_inclusion_list_committee: u32,
+    pub inclusion_list_committee_size: u64,
+    pub eip7805_fork_epoch: Option<Epoch>,
+    pub eip7805_fork_version: [u8; 4],
+
+    /*
      * Fulu hard fork params
      */
     pub fulu_fork_version: [u8; 4],
@@ -251,6 +260,9 @@ pub struct ChainSpec {
     pub builder_payment_threshold_numerator: u64,
     pub builder_payment_threshold_denominator: u64,
     pub min_builder_withdrawability_delay: Epoch,
+    pub churn_limit_quotient_gloas: u64,
+    pub consolidation_churn_limit_quotient: u64,
+    pub max_per_epoch_activation_churn_limit_gloas: u64,
 
     /*
      * Networking
@@ -375,6 +387,7 @@ impl ChainSpec {
     pub fn fork_name_at_epoch(&self, epoch: Epoch) -> ForkName {
         let forks = [
             (self.gloas_fork_epoch, ForkName::Gloas),
+            (self.eip7805_fork_epoch, ForkName::Eip7805),
             (self.fulu_fork_epoch, ForkName::Fulu),
             (self.electra_fork_epoch, ForkName::Electra),
             (self.deneb_fork_epoch, ForkName::Deneb),
@@ -404,6 +417,7 @@ impl ChainSpec {
             ForkName::Capella => self.capella_fork_version,
             ForkName::Deneb => self.deneb_fork_version,
             ForkName::Electra => self.electra_fork_version,
+            ForkName::Eip7805 => self.eip7805_fork_version,
             ForkName::Fulu => self.fulu_fork_version,
             ForkName::Gloas => self.gloas_fork_version,
         }
@@ -423,6 +437,7 @@ impl ChainSpec {
             ForkName::Capella => self.capella_fork_epoch,
             ForkName::Deneb => self.deneb_fork_epoch,
             ForkName::Electra => self.electra_fork_epoch,
+            ForkName::Eip7805 => self.eip7805_fork_epoch,
             ForkName::Fulu => self.fulu_fork_epoch,
             ForkName::Gloas => self.gloas_fork_epoch,
         }
@@ -461,6 +476,18 @@ impl ChainSpec {
     pub fn is_fulu_scheduled(&self) -> bool {
         self.fulu_fork_epoch
             .is_some_and(|fulu_fork_epoch| fulu_fork_epoch != self.far_future_epoch)
+    }
+
+    /// Returns true if the given epoch is greater than or equal to the `EIP7805_FORK_EPOCH`.
+    pub fn is_focil_enabled_for_epoch(&self, block_epoch: Epoch) -> bool {
+        self.eip7805_fork_epoch
+            .is_some_and(|eip7805_fork_epoch| block_epoch >= eip7805_fork_epoch)
+    }
+
+    /// Returns true if `EIP7805_FORK_EPOCH` is set and is not set to `FAR_FUTURE_EPOCH`.
+    pub fn is_focil_scheduled(&self) -> bool {
+        self.eip7805_fork_epoch
+            .is_some_and(|eip7805_fork_epoch| eip7805_fork_epoch != self.far_future_epoch)
     }
 
     /// Returns true if `GLOAS_FORK_EPOCH` is set and is not set to `FAR_FUTURE_EPOCH`.
@@ -525,6 +552,7 @@ impl ChainSpec {
             Domain::SyncCommitteeSelectionProof => self.domain_sync_committee_selection_proof,
             Domain::ApplicationMask(application_domain) => application_domain.get_domain_constant(),
             Domain::BlsToExecutionChange => self.domain_bls_to_execution_change,
+            Domain::InclusionListCommittee => self.domain_inclusion_list_committee,
         }
     }
 
@@ -1249,6 +1277,14 @@ impl ChainSpec {
             .expect("calculation does not overflow"),
 
             /*
+             * FOCIL params
+             */
+            domain_inclusion_list_committee: 12,
+            inclusion_list_committee_size: 16,
+            eip7805_fork_epoch: None,
+            eip7805_fork_version: [0x06, 0x00, 0x00, 0x00],
+
+            /*
              * Fulu hard fork params
              */
             fulu_fork_version: [0x06, 0x00, 0x00, 0x00],
@@ -1268,6 +1304,14 @@ impl ChainSpec {
             builder_payment_threshold_numerator: 6,
             builder_payment_threshold_denominator: 10,
             min_builder_withdrawability_delay: Epoch::new(64),
+            churn_limit_quotient_gloas: option_wrapper(|| u64::checked_pow(2, 15))
+                .expect("calculation does not overflow"),
+            consolidation_churn_limit_quotient: option_wrapper(|| u64::checked_pow(2, 16))
+                .expect("calculation does not overflow"),
+            max_per_epoch_activation_churn_limit_gloas: option_wrapper(|| {
+                u64::checked_pow(2, 8)?.checked_mul(u64::checked_pow(10, 9)?)
+            })
+            .expect("calculation does not overflow"),
             max_request_payloads: 128,
 
             /*
@@ -1407,13 +1451,24 @@ impl ChainSpec {
                 u64::checked_pow(2, 7)?.checked_mul(u64::checked_pow(10, 9)?)
             })
             .expect("calculation does not overflow"),
+            // FOCIL
+            eip7805_fork_epoch: None,
+            eip7805_fork_version: [0x06, 0x00, 0x00, 0x00],
             // Fulu
-            fulu_fork_version: [0x06, 0x00, 0x00, 0x01],
+            fulu_fork_version: [0x07, 0x00, 0x00, 0x00],
             fulu_fork_epoch: None,
             // Gloas
             gloas_fork_version: [0x07, 0x00, 0x00, 0x01],
             gloas_fork_epoch: None,
             min_builder_withdrawability_delay: Epoch::new(2),
+            churn_limit_quotient_gloas: option_wrapper(|| u64::checked_pow(2, 4))
+                .expect("calculation does not overflow"),
+            consolidation_churn_limit_quotient: option_wrapper(|| u64::checked_pow(2, 5))
+                .expect("calculation does not overflow"),
+            max_per_epoch_activation_churn_limit_gloas: option_wrapper(|| {
+                u64::checked_pow(2, 7)?.checked_mul(u64::checked_pow(10, 9)?)
+            })
+            .expect("calculation does not overflow"),
 
             /*
              * Derived time values (set by `compute_derived_values()`)
@@ -1656,6 +1711,14 @@ impl ChainSpec {
             .expect("calculation does not overflow"),
 
             /*
+             * FOCIL params
+             */
+            domain_inclusion_list_committee: 12,
+            inclusion_list_committee_size: 16,
+            eip7805_fork_epoch: None,
+            eip7805_fork_version: [0x06, 0x00, 0x00, 0x00],
+
+            /*
              * Fulu hard fork params
              */
             fulu_fork_version: [0x06, 0x00, 0x00, 0x64],
@@ -1675,6 +1738,14 @@ impl ChainSpec {
             builder_payment_threshold_numerator: 6,
             builder_payment_threshold_denominator: 10,
             min_builder_withdrawability_delay: Epoch::new(64),
+            churn_limit_quotient_gloas: option_wrapper(|| u64::checked_pow(2, 15))
+                .expect("calculation does not overflow"),
+            consolidation_churn_limit_quotient: option_wrapper(|| u64::checked_pow(2, 16))
+                .expect("calculation does not overflow"),
+            max_per_epoch_activation_churn_limit_gloas: option_wrapper(|| {
+                u64::checked_pow(2, 8)?.checked_mul(u64::checked_pow(10, 9)?)
+            })
+            .expect("calculation does not overflow"),
             max_request_payloads: 128,
 
             /*
@@ -1943,6 +2014,14 @@ pub struct Config {
     #[serde(deserialize_with = "deserialize_fork_epoch")]
     pub fulu_fork_epoch: Option<MaybeQuoted<Epoch>>,
 
+    #[serde(default = "default_eip7805_fork_version")]
+    #[serde(with = "serde_utils::bytes_4_hex")]
+    eip7805_fork_version: [u8; 4],
+    #[serde(default)]
+    #[serde(serialize_with = "serialize_fork_epoch")]
+    #[serde(deserialize_with = "deserialize_fork_epoch")]
+    pub eip7805_fork_epoch: Option<MaybeQuoted<Epoch>>,
+
     #[serde(default = "default_gloas_fork_version")]
     #[serde(with = "serde_utils::bytes_4_hex")]
     gloas_fork_version: [u8; 4],
@@ -2125,6 +2204,16 @@ pub struct Config {
     #[serde(default = "default_min_builder_withdrawability_delay")]
     #[serde(with = "serde_utils::quoted_u64")]
     min_builder_withdrawability_delay: u64,
+
+    #[serde(default = "default_churn_limit_quotient_gloas")]
+    #[serde(with = "serde_utils::quoted_u64")]
+    churn_limit_quotient_gloas: u64,
+    #[serde(default = "default_consolidation_churn_limit_quotient")]
+    #[serde(with = "serde_utils::quoted_u64")]
+    consolidation_churn_limit_quotient: u64,
+    #[serde(default = "default_max_per_epoch_activation_churn_limit_gloas")]
+    #[serde(with = "serde_utils::quoted_u64")]
+    max_per_epoch_activation_churn_limit_gloas: u64,
 }
 
 fn default_bellatrix_fork_version() -> [u8; 4] {
@@ -2142,6 +2231,11 @@ fn default_deneb_fork_version() -> [u8; 4] {
 }
 
 fn default_electra_fork_version() -> [u8; 4] {
+    // This value shouldn't be used.
+    [0xff, 0xff, 0xff, 0xff]
+}
+
+fn default_eip7805_fork_version() -> [u8; 4] {
     // This value shouldn't be used.
     [0xff, 0xff, 0xff, 0xff]
 }
@@ -2362,6 +2456,18 @@ const fn default_min_builder_withdrawability_delay() -> u64 {
     64
 }
 
+const fn default_churn_limit_quotient_gloas() -> u64 {
+    32_768
+}
+
+const fn default_consolidation_churn_limit_quotient() -> u64 {
+    65_536
+}
+
+const fn default_max_per_epoch_activation_churn_limit_gloas() -> u64 {
+    256_000_000_000
+}
+
 fn max_blocks_by_root_request_common(max_request_blocks: u64) -> usize {
     let max_request_blocks = max_request_blocks as usize;
     RuntimeVariableList::<Hash256>::new(
@@ -2527,6 +2633,11 @@ impl Config {
                 .fulu_fork_epoch
                 .map(|epoch| MaybeQuoted { value: epoch }),
 
+            eip7805_fork_version: spec.eip7805_fork_version,
+            eip7805_fork_epoch: spec
+                .eip7805_fork_epoch
+                .map(|epoch| MaybeQuoted { value: epoch }),
+
             gloas_fork_version: spec.gloas_fork_version,
             gloas_fork_epoch: spec
                 .gloas_fork_epoch
@@ -2613,6 +2724,11 @@ impl Config {
             contribution_due_bps: spec.contribution_due_bps,
 
             min_builder_withdrawability_delay: spec.min_builder_withdrawability_delay.as_u64(),
+
+            churn_limit_quotient_gloas: spec.churn_limit_quotient_gloas,
+            consolidation_churn_limit_quotient: spec.consolidation_churn_limit_quotient,
+            max_per_epoch_activation_churn_limit_gloas: spec
+                .max_per_epoch_activation_churn_limit_gloas,
         }
     }
 
@@ -2645,6 +2761,8 @@ impl Config {
             deneb_fork_version,
             electra_fork_epoch,
             electra_fork_version,
+            eip7805_fork_version,
+            eip7805_fork_epoch,
             fulu_fork_epoch,
             fulu_fork_version,
             gloas_fork_version,
@@ -2710,6 +2828,9 @@ impl Config {
             sync_message_due_bps,
             contribution_due_bps,
             min_builder_withdrawability_delay,
+            churn_limit_quotient_gloas,
+            consolidation_churn_limit_quotient,
+            max_per_epoch_activation_churn_limit_gloas,
         } = self;
 
         if preset_base != E::spec_name().to_string().as_str() {
@@ -2740,6 +2861,8 @@ impl Config {
             deneb_fork_version,
             electra_fork_epoch: electra_fork_epoch.map(|q| q.value),
             electra_fork_version,
+            eip7805_fork_version,
+            eip7805_fork_epoch: eip7805_fork_epoch.map(|q| q.value),
             fulu_fork_epoch: fulu_fork_epoch.map(|q| q.value),
             fulu_fork_version,
             gloas_fork_version,
@@ -2816,6 +2939,10 @@ impl Config {
             contribution_due_bps,
 
             min_builder_withdrawability_delay: Epoch::new(min_builder_withdrawability_delay),
+
+            churn_limit_quotient_gloas,
+            consolidation_churn_limit_quotient,
+            max_per_epoch_activation_churn_limit_gloas,
 
             ..chain_spec.clone()
         };
@@ -2896,6 +3023,12 @@ mod tests {
         test_domain(
             Domain::BlsToExecutionChange,
             spec.domain_bls_to_execution_change,
+            &spec,
+        );
+
+        test_domain(
+            Domain::InclusionListCommittee,
+            spec.domain_inclusion_list_committee,
             &spec,
         );
     }
@@ -3719,9 +3852,7 @@ mod yaml_tests {
         "CONTRIBUTION_DUE_BPS_GLOAS",
         "MAX_REQUEST_PAYLOADS",
         // Heze networking
-        "VIEW_FREEZE_CUTOFF_BPS",
-        "INCLUSION_LIST_SUBMISSION_DUE_BPS",
-        "PROPOSER_INCLUSION_LIST_CUTOFF_BPS",
+        "INCLUSION_LIST_DUE_BPS",
         "MAX_REQUEST_INCLUSION_LIST",
         "MAX_BYTES_PER_INCLUSION_LIST",
     ];
