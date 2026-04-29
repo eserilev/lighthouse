@@ -1862,15 +1862,8 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
                 return None;
             }
             // BlobNotRequired is unreachable. Only constructed in `process_gossip_blob`
-            Err(e @ BlockError::InternalError(_))
-            | Err(e @ BlockError::BlobNotRequired(_))
-            | Err(e @ BlockError::PayloadEnvelopeError { .. }) => {
+            Err(e @ BlockError::InternalError(_)) | Err(e @ BlockError::BlobNotRequired(_)) => {
                 error!(error = %e, "Internal block gossip validation error");
-                return None;
-            }
-            Err(BlockError::ParentEnvelopeUnknown { .. }) => {
-                // Gossip validation does not check envelope availability; this should not occur.
-                self.propagate_validation_result(message_id, peer_id, MessageAcceptance::Ignore);
                 return None;
             }
             Err(e @ BlockError::EnvelopeError(_)) => {

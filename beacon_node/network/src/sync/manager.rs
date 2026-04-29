@@ -1478,18 +1478,6 @@ impl<T: BeaconChainTypes> SyncManager<T> {
         }
     }
 
-    fn on_single_envelope_response(
-        &mut self,
-        id: SingleLookupReqId,
-        peer_id: PeerId,
-        rpc_event: RpcEvent<Arc<SignedExecutionPayloadEnvelope<T::EthSpec>>>,
-    ) {
-        // Placeholder: by-root envelope lookup not yet implemented for range sync.
-        // This is called on error injection for disconnected peers. Log and ignore.
-        let _ = (id, peer_id, rpc_event);
-        debug!("on_single_envelope_response: not yet implemented");
-    }
-
     fn on_payload_envelopes_by_range_response(
         &mut self,
         id: PayloadEnvelopesByRangeRequestId,

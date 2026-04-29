@@ -20,6 +20,8 @@ pub use payload_envelopes_by_root::{
     PayloadEnvelopesByRootRequestItems, PayloadEnvelopesByRootSingleRequest,
 };
 
+pub use payload_envelopes_by_range::PayloadEnvelopesByRangeRequestItems;
+
 use crate::metrics;
 
 use super::{RpcEvent, RpcResponseError, RpcResponseResult};
