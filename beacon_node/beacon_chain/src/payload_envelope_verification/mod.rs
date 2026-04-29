@@ -48,7 +48,8 @@ pub struct EnvelopeImportData<E: EthSpec> {
     _phantom: PhantomData<E>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct AvailableEnvelope<E: EthSpec> {
     #[expect(dead_code)]
     execution_block_hash: ExecutionBlockHash,

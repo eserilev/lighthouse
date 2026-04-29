@@ -30,6 +30,7 @@ mod blocks_by_range;
 mod blocks_by_root;
 mod data_columns_by_range;
 mod data_columns_by_root;
+mod payload_envelopes_by_range;
 mod payload_envelopes_by_root;
 
 #[derive(Debug, PartialEq, Eq, IntoStaticStr)]
