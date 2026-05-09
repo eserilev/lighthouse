@@ -605,7 +605,7 @@ impl ProtoArray {
                 execution_payload_parent_hash,
                 payload_timeliness_votes: BitVector::default(),
                 payload_data_availability_votes: BitVector::default(),
-                payload_received: false,
+                payload_received: is_anchor,
                 proposer_index,
                 // Spec: `record_block_timeliness` + `get_forkchoice_store`.
                 // Anchor gets [True, True]. Others computed from time_into_slot.
