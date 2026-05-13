@@ -11,6 +11,7 @@ use crate::per_block_processing::errors::{BlockProcessingError, ExitInvalid, Int
 use crate::per_block_processing::signature_sets::{exit_signature_set, get_pubkey_from_state};
 use crate::per_block_processing::verify_payload_attestation::verify_payload_attestation;
 use bls::{PublicKeyBytes, SignatureBytes};
+use tracing::instrument;
 use ssz_types::FixedVector;
 use typenum::U33;
 use types::consts::altair::{PARTICIPATION_FLAG_WEIGHTS, PROPOSER_WEIGHT, WEIGHT_DENOMINATOR};
@@ -901,6 +902,7 @@ pub fn process_deposit_requests_pre_gloas<E: EthSpec>(
     Ok(())
 }
 
+#[instrument(name = "lh_process_deposit_requests_post_gloas", skip_all, level = "debug")]
 pub fn process_deposit_requests_post_gloas<E: EthSpec>(
     state: &mut BeaconState<E>,
     deposit_requests: &[DepositRequest],
@@ -916,6 +918,7 @@ pub fn process_deposit_requests_post_gloas<E: EthSpec>(
 /// Check if there is a pending deposit for a new validator with the given pubkey.
 // TODO(gloas): cache the deposit signature validation or remove this loop entirely if possible,
 // it is `O(n * m)` where `n` is max 8192 and `m` is max 128M.
+#[instrument(name = "lh_is_pending_validator", skip_all, level = "debug")]
 fn is_pending_validator<E: EthSpec>(
     state: &BeaconState<E>,
     pubkey: &PublicKeyBytes,
@@ -937,6 +940,7 @@ fn is_pending_validator<E: EthSpec>(
     Ok(false)
 }
 
+#[instrument(name = "lh_process_deposit_request_post_gloas", skip_all, level = "debug")]
 pub fn process_deposit_request_post_gloas<E: EthSpec>(
     state: &mut BeaconState<E>,
     deposit_request: &DepositRequest,
@@ -994,6 +998,7 @@ pub fn process_deposit_request_post_gloas<E: EthSpec>(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[instrument(name = "lh_apply_deposit_for_builder", skip_all, level = "debug")]
 pub fn apply_deposit_for_builder<E: EthSpec>(
     state: &mut BeaconState<E>,
     builder_index_opt: Option<BuilderIndex>,
