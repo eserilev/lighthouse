@@ -82,14 +82,50 @@ struct EnvelopeContentsJson<E: EthSpec> {
 /// builders (buildoor) may omit. This works around `context_deserialize` not
 /// respecting `#[serde(default)]` attributes.
 fn sanitize_envelope_json(body: &[u8]) -> Vec<u8> {
-    let s = String::from_utf8_lossy(body);
-    let sanitized = s
-        .replace("\"execution_requests\":null", "\"execution_requests\":{\"deposits\":[],\"withdrawals\":[],\"consolidations\":[]}")
-        .replace("\"withdrawals\":null", "\"withdrawals\":[]")
-        .replace("\"block_access_list\":null", "\"block_access_list\":\"0x\"")
-        .replace("\"blobs\":null", "\"blobs\":[]")
-        .replace("\"kzg_proofs\":null", "\"kzg_proofs\":[]");
-    sanitized.into_bytes()
+    // Use serde_json::Value to replace null fields that should be empty arrays/objects.
+    // This handles any whitespace variations.
+    let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return body.to_vec();
+    };
+
+    sanitize_nulls(&mut value);
+    serde_json::to_vec(&value).unwrap_or_else(|_| body.to_vec())
+}
+
+/// Recursively replace null values with empty arrays where the field name
+/// suggests a collection type.
+fn sanitize_nulls(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, val) in map.iter_mut() {
+                if val.is_null() {
+                    match key.as_str() {
+                        "execution_requests" => {
+                            *val = serde_json::json!({
+                                "deposits": [],
+                                "withdrawals": [],
+                                "consolidations": []
+                            });
+                        }
+                        "block_access_list" | "extra_data" => {
+                            *val = serde_json::Value::String("0x".to_string());
+                        }
+                        _ => {
+                            *val = serde_json::Value::Array(vec![]);
+                        }
+                    }
+                } else {
+                    sanitize_nulls(val);
+                }
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for item in arr.iter_mut() {
+                sanitize_nulls(item);
+            }
+        }
+        _ => {}
+    }
 }
 
 // POST beacon/execution_payload_envelope
