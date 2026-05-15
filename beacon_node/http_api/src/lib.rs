@@ -35,6 +35,9 @@ mod validator_inclusion;
 mod validators;
 mod version;
 
+use crate::beacon::execution_payload_bid::{
+    post_beacon_execution_payload_bid, post_beacon_execution_payload_bid_ssz,
+};
 use crate::beacon::execution_payload_envelope::{
     get_beacon_execution_payload_envelope, post_beacon_execution_payload_envelope,
     post_beacon_execution_payload_envelope_ssz,
@@ -1548,6 +1551,22 @@ pub fn serve<T: BeaconChainTypes>(
         block_id_or_err,
         task_spawner_filter.clone(),
         chain_filter.clone(),
+    );
+
+    // POST beacon/execution_payload_bid
+    let post_beacon_execution_payload_bid = post_beacon_execution_payload_bid(
+        eth_v1.clone(),
+        task_spawner_filter.clone(),
+        chain_filter.clone(),
+        network_tx_filter.clone(),
+    );
+
+    // POST beacon/execution_payload_bid (SSZ)
+    let post_beacon_execution_payload_bid_ssz = post_beacon_execution_payload_bid_ssz(
+        eth_v1.clone(),
+        task_spawner_filter.clone(),
+        chain_filter.clone(),
+        network_tx_filter.clone(),
     );
 
     let beacon_rewards_path = eth_v1
@@ -3435,6 +3454,7 @@ pub fn serve<T: BeaconChainTypes>(
                             .uor(post_beacon_blinded_blocks_ssz)
                             .uor(post_beacon_blinded_blocks_v2_ssz)
                             .uor(post_beacon_execution_payload_envelope_ssz)
+                            .uor(post_beacon_execution_payload_bid_ssz)
                             .uor(post_beacon_pool_payload_attestations_ssz)
                             .uor(post_validator_proposer_preferences_ssz),
                     )
@@ -3451,6 +3471,7 @@ pub fn serve<T: BeaconChainTypes>(
                     .uor(post_beacon_pool_bls_to_execution_changes)
                     .uor(post_validator_proposer_preferences)
                     .uor(post_beacon_execution_payload_envelope)
+                    .uor(post_beacon_execution_payload_bid)
                     .uor(post_beacon_state_validators)
                     .uor(post_beacon_state_validator_balances)
                     .uor(post_beacon_state_validator_identities)
