@@ -104,12 +104,27 @@ impl<S: ValidatorStore + 'static, T: SlotClock + 'static> ProposerPreferencesSer
     }
 
     async fn publish_proposer_preferences(&self, current_epoch: Epoch, fork_name: ForkName) {
-        let (dependent_root, duties) = {
-            let proposers = self.duties_service.proposers.read();
-            match proposers.get(&current_epoch) {
-                Some((root, duties)) => (*root, duties.clone()),
-                None => return,
+        // Retry briefly if duties aren't available yet (race with duties service at epoch boundary)
+        let mut attempts = 0;
+        let (dependent_root, duties) = loop {
+            let result = self
+                .duties_service
+                .proposers
+                .read()
+                .get(&current_epoch)
+                .map(|(root, duties)| (*root, duties.clone()));
+            if let Some(pair) = result {
+                break pair;
             }
+            attempts += 1;
+            if attempts >= 5 {
+                debug!(
+                    %current_epoch,
+                    "No proposer duties available for epoch, skipping preferences"
+                );
+                return;
+            }
+            sleep(self.chain_spec.get_slot_duration() / 2).await;
         };
 
         let preferences_to_sign: Vec<_> = {
