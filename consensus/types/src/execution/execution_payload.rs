@@ -99,6 +99,7 @@ pub struct ExecutionPayload<E: EthSpec> {
     #[serde(with = "ssz_types::serde_utils::list_of_hex_var_list")]
     pub transactions: Transactions<E>,
     #[superstruct(only(Capella, Deneb, Electra, Fulu, Gloas))]
+    #[serde(default)]
     pub withdrawals: Withdrawals<E>,
     #[superstruct(only(Deneb, Electra, Fulu, Gloas), partial_getter(copy))]
     #[serde(with = "serde_utils::quoted_u64")]

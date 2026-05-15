@@ -19,6 +19,7 @@ use tree_hash_derive::TreeHash;
 #[serde(bound = "E: EthSpec")]
 pub struct ExecutionPayloadEnvelope<E: EthSpec> {
     pub payload: ExecutionPayloadGloas<E>,
+    #[serde(default)]
     pub execution_requests: ExecutionRequests<E>,
     #[serde(with = "serde_utils::quoted_u64")]
     pub builder_index: u64,
