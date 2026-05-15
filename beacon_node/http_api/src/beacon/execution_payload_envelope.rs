@@ -14,6 +14,7 @@ use eth2::types as api_types;
 use eth2::{CONTENT_TYPE_HEADER, SSZ_CONTENT_TYPE_HEADER};
 use lighthouse_network::PubsubMessage;
 use network::NetworkMessage;
+use serde::Deserialize;
 use ssz::{Decode, Encode};
 use std::future::Future;
 use std::sync::Arc;
@@ -62,6 +63,21 @@ pub(crate) fn post_beacon_execution_payload_envelope_ssz<T: BeaconChainTypes>(
         .boxed()
 }
 
+/// Wrapper type for JSON deserialization that accepts both:
+/// - Bare `SignedExecutionPayloadEnvelope`
+/// - Wrapped `{"signed_execution_payload_envelope": ..., "blobs": ..., "kzg_proofs": ...}`
+#[derive(Deserialize)]
+#[serde(bound = "E: EthSpec")]
+struct EnvelopeContentsJson<E: EthSpec> {
+    signed_execution_payload_envelope: SignedExecutionPayloadEnvelope<E>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    blobs: Option<Vec<String>>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    kzg_proofs: Option<Vec<String>>,
+}
+
 // POST beacon/execution_payload_envelope
 pub(crate) fn post_beacon_execution_payload_envelope<T: BeaconChainTypes>(
     eth_v1: EthV1Filter,
@@ -73,16 +89,31 @@ pub(crate) fn post_beacon_execution_payload_envelope<T: BeaconChainTypes>(
         .and(warp::path("beacon"))
         .and(warp::path("execution_payload_envelope"))
         .and(warp::path::end())
-        .and(warp::body::json())
+        .and(warp::body::bytes())
         .and(task_spawner_filter.clone())
         .and(chain_filter.clone())
         .and(network_tx_filter.clone())
         .then(
-            |envelope: SignedExecutionPayloadEnvelope<T::EthSpec>,
+            |body_bytes: Bytes,
              task_spawner: TaskSpawner<T::EthSpec>,
              chain: Arc<BeaconChain<T>>,
              network_tx: UnboundedSender<NetworkMessage<T::EthSpec>>| {
                 task_spawner.spawn_async_with_rejection(Priority::P0, async move {
+                    // Try wrapped format first, then bare envelope
+                    let envelope = if let Ok(contents) =
+                        serde_json::from_slice::<EnvelopeContentsJson<T::EthSpec>>(&body_bytes)
+                    {
+                        contents.signed_execution_payload_envelope
+                    } else {
+                        serde_json::from_slice::<SignedExecutionPayloadEnvelope<T::EthSpec>>(
+                            &body_bytes,
+                        )
+                        .map_err(|e| {
+                            warp_utils::reject::custom_bad_request(format!(
+                                "Request body deserialize error: {e}"
+                            ))
+                        })?
+                    };
                     publish_execution_payload_envelope(envelope, chain, &network_tx).await
                 })
             },
