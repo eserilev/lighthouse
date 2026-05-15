@@ -5054,7 +5054,12 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             .fork_name_at_slot::<T::EthSpec>(proposal_slot)
             .gloas_enabled()
         {
-            (cached_head.head_random()?, None)
+            // In Gloas, the execution payload is decoupled from the beacon block
+            // (ePBS envelope). Use head block number if available, otherwise 0.
+            // The parent_block_number is used for the payload_attributes SSE event
+            // which external builders rely on to trigger payload building.
+            let block_number = cached_head.head_block_number().unwrap_or(0);
+            (cached_head.head_random()?, Some(block_number))
         } else {
             // Get the `prev_randao` and parent block number.
             let head_block_number = cached_head.head_block_number()?;
