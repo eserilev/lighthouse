@@ -108,6 +108,7 @@ pub struct ExecutionPayload<E: EthSpec> {
     pub excess_blob_gas: u64,
     /// EIP-7928: Block access list
     #[superstruct(only(Gloas))]
+    #[serde(default)]
     #[serde(with = "ssz_types::serde_utils::hex_var_list")]
     pub block_access_list: VariableList<u8, E::MaxBytesPerTransaction>,
     #[superstruct(only(Gloas), partial_getter(copy))]

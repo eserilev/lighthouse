@@ -33,8 +33,11 @@ pub type ConsolidationRequests<E> =
 #[educe(PartialEq, Eq, Hash(bound(E: EthSpec)))]
 #[context_deserialize(ForkName)]
 pub struct ExecutionRequests<E: EthSpec> {
+    #[serde(default)]
     pub deposits: DepositRequests<E>,
+    #[serde(default)]
     pub withdrawals: WithdrawalRequests<E>,
+    #[serde(default)]
     pub consolidations: ConsolidationRequests<E>,
 }
 
