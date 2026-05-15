@@ -78,6 +78,20 @@ struct EnvelopeContentsJson<E: EthSpec> {
     kzg_proofs: Option<Vec<String>>,
 }
 
+/// Replace JSON null values with empty arrays/objects for fields that external
+/// builders (buildoor) may omit. This works around `context_deserialize` not
+/// respecting `#[serde(default)]` attributes.
+fn sanitize_envelope_json(body: &[u8]) -> Vec<u8> {
+    let s = String::from_utf8_lossy(body);
+    let sanitized = s
+        .replace("\"execution_requests\":null", "\"execution_requests\":{\"deposits\":[],\"withdrawals\":[],\"consolidations\":[]}")
+        .replace("\"withdrawals\":null", "\"withdrawals\":[]")
+        .replace("\"block_access_list\":null", "\"block_access_list\":\"0x\"")
+        .replace("\"blobs\":null", "\"blobs\":[]")
+        .replace("\"kzg_proofs\":null", "\"kzg_proofs\":[]");
+    sanitized.into_bytes()
+}
+
 // POST beacon/execution_payload_envelope
 pub(crate) fn post_beacon_execution_payload_envelope<T: BeaconChainTypes>(
     eth_v1: EthV1Filter,
@@ -99,14 +113,15 @@ pub(crate) fn post_beacon_execution_payload_envelope<T: BeaconChainTypes>(
              chain: Arc<BeaconChain<T>>,
              network_tx: UnboundedSender<NetworkMessage<T::EthSpec>>| {
                 task_spawner.spawn_async_with_rejection(Priority::P0, async move {
+                    let sanitized = sanitize_envelope_json(&body_bytes);
                     // Try wrapped format first, then bare envelope
                     let envelope = if let Ok(contents) =
-                        serde_json::from_slice::<EnvelopeContentsJson<T::EthSpec>>(&body_bytes)
+                        serde_json::from_slice::<EnvelopeContentsJson<T::EthSpec>>(&sanitized)
                     {
                         contents.signed_execution_payload_envelope
                     } else {
                         serde_json::from_slice::<SignedExecutionPayloadEnvelope<T::EthSpec>>(
-                            &body_bytes,
+                            &sanitized,
                         )
                         .map_err(|e| {
                             warp_utils::reject::custom_bad_request(format!(
