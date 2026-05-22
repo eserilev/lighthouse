@@ -310,9 +310,11 @@ impl<T: BeaconChainTypes> ActiveCustodyRequest<T> {
                     // have the block but not yet have received/processed the envelope containing
                     // the blob data for columns. Don't enforce max_responses in this case.
                     lookup_peers.contains(&peer_id)
-                        && !cx.chain.spec.fork_name_at_epoch(
-                            cx.chain.epoch().unwrap_or_default(),
-                        ).gloas_enabled(),
+                        && !cx
+                            .chain
+                            .spec
+                            .fork_name_at_epoch(cx.chain.epoch().unwrap_or_default())
+                            .gloas_enabled(),
                 )
                 .map_err(Error::SendFailed)?;
 

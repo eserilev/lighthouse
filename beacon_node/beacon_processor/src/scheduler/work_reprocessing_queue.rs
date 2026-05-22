@@ -713,9 +713,10 @@ impl<S: SlotClock> ReprocessQueue<S> {
                 let col_id = self.next_data_column;
 
                 // Register the delay (reuse attestation delay queue with offset IDs).
-                let delay_key = self
-                    .attestations_delay_queue
-                    .insert(QueuedAttestationId::Unaggregate(col_id.wrapping_add(10_000_000)), QUEUED_ATTESTATION_DELAY);
+                let delay_key = self.attestations_delay_queue.insert(
+                    QueuedAttestationId::Unaggregate(col_id.wrapping_add(10_000_000)),
+                    QUEUED_ATTESTATION_DELAY,
+                );
 
                 // Register this column for the corresponding block root.
                 self.awaiting_data_columns_per_root
@@ -843,9 +844,7 @@ impl<S: SlotClock> ReprocessQueue<S> {
                 }
 
                 // Unqueue the data columns we have for this root, if any.
-                if let Some(queued_ids) =
-                    self.awaiting_data_columns_per_root.remove(&block_root)
-                {
+                if let Some(queued_ids) = self.awaiting_data_columns_per_root.remove(&block_root) {
                     for col_id in queued_ids {
                         if let Some((data_column, delay_key)) =
                             self.queued_gossip_data_columns.remove(&col_id)
@@ -856,10 +855,7 @@ impl<S: SlotClock> ReprocessQueue<S> {
                                 .try_send(ReadyWork::DataColumn(data_column))
                                 .is_err()
                             {
-                                error!(
-                                    ?block_root,
-                                    "Failed to send data column for reprocessing"
-                                );
+                                error!(?block_root, "Failed to send data column for reprocessing");
                             }
                         }
                     }

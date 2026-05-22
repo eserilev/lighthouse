@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use crate::{
-    BeaconChain, BeaconChainTypes, CanonicalHead,
+    BeaconChain, BeaconChainTypes, BeaconStore, CanonicalHead,
     proposer_preferences_verification::{
         ProposerPreferencesError, proposer_preference_cache::GossipVerifiedProposerPreferenceCache,
     },
 };
 use slot_clock::SlotClock;
 use state_processing::signature_sets::{get_pubkey_from_state, proposer_preferences_signature_set};
+use state_processing::state_advance::partial_state_advance;
 use tracing::debug;
 use types::{ChainSpec, EthSpec, ProposerPreferences, SignedProposerPreferences, Slot};
 
@@ -42,6 +43,7 @@ pub struct GossipVerificationContext<'a, T: BeaconChainTypes> {
     pub gossip_verified_proposer_preferences_cache: &'a GossipVerifiedProposerPreferenceCache,
     pub slot_clock: &'a T::SlotClock,
     pub spec: &'a ChainSpec,
+    pub store: &'a BeaconStore<T>,
 }
 
 /// A wrapper around `SignedProposerPreferences` that has been verified for gossip propagation.
@@ -63,7 +65,6 @@ impl GossipVerifiedProposerPreferences {
             .slot_clock
             .now()
             .ok_or(ProposerPreferencesError::UnableToReadSlot)?;
-        let head_state = &cached_head.snapshot.beacon_state;
 
         if ctx
             .gossip_verified_proposer_preferences_cache
@@ -81,27 +82,59 @@ impl GossipVerifiedProposerPreferences {
             ctx.spec,
         )?;
 
+        // Get the block at dependent_root from fork choice to verify canonicity and get state_root
         let fork_choice = ctx.canonical_head.fork_choice_read_lock();
-        if !fork_choice.contains_block(&dependent_root) {
-            return Err(ProposerPreferencesError::DependentRootUnknown { dependent_root });
-        }
+        let dependent_block = fork_choice
+            .get_block(&dependent_root)
+            .ok_or(ProposerPreferencesError::DependentRootUnknown { dependent_root })?;
         let head_root = cached_head.head_block_root();
         if !fork_choice.is_descendant(dependent_root, head_root) {
             return Err(ProposerPreferencesError::DependentRootNotCanonical { dependent_root });
         }
+        let dependent_state_root = dependent_block.state_root;
+        let dependent_block_slot = dependent_block.slot;
         drop(fork_choice);
 
-        if !head_state.is_valid_proposal_slot(&signed_preferences.message, ctx.spec)? {
+        // Fetch the state at the dependent_root block.
+        // Per spec, this should be the checkpoint state at epoch (proposal_epoch - MIN_SEED_LOOKAHEAD).
+        // The dependent_root is the block root at the proposer shuffling decision slot for the proposal epoch.
+        //
+        // get_advanced_hot_state checks the state cache before hitting the store.
+        let (state_root, mut dependent_state) = ctx
+            .store
+            .get_advanced_hot_state(dependent_root, dependent_block_slot, dependent_state_root)
+            .map_err(crate::BeaconChainError::DBError)?
+            .ok_or(ProposerPreferencesError::DependentRootUnknown { dependent_root })?;
+
+        // The dependent_root is at the end of epoch (proposal_epoch - MIN_SEED_LOOKAHEAD - 1).
+        // We need to advance the state to at least the start of epoch (proposal_epoch - MIN_SEED_LOOKAHEAD)
+        // so that the epoch transition runs and `process_proposer_lookahead` populates the lookahead
+        // for the proposal epoch.
+        let proposal_epoch = proposal_slot.epoch(T::EthSpec::slots_per_epoch());
+        let target_epoch = proposal_epoch.saturating_sub(ctx.spec.min_seed_lookahead);
+        let target_slot = target_epoch.start_slot(T::EthSpec::slots_per_epoch());
+
+        if dependent_state.current_epoch() < target_epoch {
+            partial_state_advance(
+                &mut dependent_state,
+                Some(state_root),
+                target_slot,
+                ctx.spec,
+            )
+            .map_err(crate::BeaconChainError::StateAdvanceError)?;
+        }
+
+        if !dependent_state.is_valid_proposal_slot(&signed_preferences.message, ctx.spec)? {
             return Err(ProposerPreferencesError::InvalidProposalSlot {
                 validator_index,
                 proposal_slot,
             });
         }
 
-        // Verify signature
+        // Verify signature using the dependent state (which has the validator pubkeys)
         proposer_preferences_signature_set(
-            head_state,
-            |i| get_pubkey_from_state(head_state, i),
+            &dependent_state,
+            |i| get_pubkey_from_state(&dependent_state, i),
             &signed_preferences,
             ctx.spec,
         )
@@ -132,6 +165,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 .gossip_verified_proposer_preferences_cache,
             slot_clock: &self.slot_clock,
             spec: &self.spec,
+            store: &self.store,
         }
     }
 
