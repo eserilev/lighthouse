@@ -2,10 +2,11 @@ use crate::data_availability_checker::{AvailabilityCheckError, DataAvailabilityC
 pub use crate::data_availability_checker::{
     AvailableBlock, AvailableBlockData, MaybeAvailableBlock,
 };
+use crate::payload_envelope_verification::AvailableEnvelope;
 use crate::{BeaconChainTypes, PayloadVerificationOutcome};
-use educe::Educe;
 use state_processing::ConsensusContext;
 use std::fmt::{Debug, Formatter};
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use types::data::BlobIdentifier;
 use types::{
@@ -40,15 +41,27 @@ impl<E: EthSpec> LookupBlock<E> {
     }
 }
 
-/// A fully available block that has been constructed by range sync.
-/// The block contains all the data required to import into fork choice.
-/// This includes any and all blobs/columns required, including zero if
-/// none are required. This can happen if the block is pre-deneb or if
-/// it's simply past the DA boundary.
-#[derive(Clone, Educe)]
-#[educe(Hash(bound(E: EthSpec)))]
-pub struct RangeSyncBlock<E: EthSpec> {
-    block: AvailableBlock<E>,
+/// A block that has been constructed by range sync, ready for import.
+/// Pre-Gloas: wraps an `AvailableBlock` with all data.
+/// Gloas: carries the block and an optional envelope which contains the sidecar data.
+///
+/// Note: In the gloas case, we only ensure that the block is consistent with the envelope
+/// if the envelope is `Some` when constructing a `RangeSyncBlock` type.
+/// If `envelope` is None, then there is no guarantee that the canonical chain also contains
+/// an empty payload. The only way to ensure that is to process the next block.
+#[derive(Clone)]
+pub enum RangeSyncBlock<E: EthSpec> {
+    Base(AvailableBlock<E>),
+    Gloas {
+        block: Arc<SignedBeaconBlock<E>>,
+        envelope: Option<Box<AvailableEnvelope<E>>>,
+    },
+}
+
+impl<E: EthSpec> Hash for RangeSyncBlock<E> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.block_root().hash(state);
+    }
 }
 
 impl<E: EthSpec> Debug for RangeSyncBlock<E> {
@@ -59,31 +72,36 @@ impl<E: EthSpec> Debug for RangeSyncBlock<E> {
 
 impl<E: EthSpec> RangeSyncBlock<E> {
     pub fn block_root(&self) -> Hash256 {
-        self.block.block_root()
+        match self {
+            Self::Base(block) => block.block_root(),
+            Self::Gloas { block, .. } => block.canonical_root(),
+        }
     }
 
     pub fn as_block(&self) -> &SignedBeaconBlock<E> {
-        self.block.block()
+        match self {
+            Self::Base(block) => block.block(),
+            Self::Gloas { block, .. } => block,
+        }
     }
 
     pub fn block_cloned(&self) -> Arc<SignedBeaconBlock<E>> {
-        self.block.block_cloned()
+        match self {
+            Self::Base(block) => block.block_cloned(),
+            Self::Gloas { block, .. } => block.clone(),
+        }
     }
 
     pub fn block_data(&self) -> &AvailableBlockData<E> {
-        self.block.data()
+        match self {
+            Self::Base(block) => block.data(),
+            Self::Gloas { .. } => &AvailableBlockData::NoData,
+        }
     }
 }
 
 impl<E: EthSpec> RangeSyncBlock<E> {
-    /// Constructs an `RangeSyncBlock` from a block and availability data.
-    ///
-    /// # Errors
-    ///
-    /// Returns `AvailabilityCheckError` if:
-    /// - `InvalidAvailableBlockData`: Block data is provided but not required.
-    /// - `MissingBlobs`: Block requires blobs but they are missing or incomplete.
-    /// - `MissingCustodyColumns`: Block requires custody columns but they are incomplete.
+    /// Constructs a `RangeSyncBlock` from a block and availability data (pre-Gloas).
     pub fn new<T>(
         block: Arc<SignedBeaconBlock<E>>,
         block_data: AvailableBlockData<E>,
@@ -93,33 +111,112 @@ impl<E: EthSpec> RangeSyncBlock<E> {
     where
         T: BeaconChainTypes<EthSpec = E>,
     {
+        if block.fork_name_unchecked().gloas_enabled() {
+            return Err(AvailabilityCheckError::InvalidVariant);
+        }
         let available_block = AvailableBlock::new(block, block_data, da_checker, spec)?;
-        Ok(Self {
-            block: available_block,
-        })
+        Ok(Self::Base(available_block))
+    }
+
+    /// Constructs a Gloas `RangeSyncBlock` with block and optional `AvailableEnvelope`
+    /// which wraps the payload envelope with its data columns.
+    ///
+    /// This function only checks for consistency between the block and the envelope
+    /// if envelope.is_some() == true .
+    /// In the `None` case, we cannot guarantee that the payload is empty until we
+    /// process the block that builds on top of this block.
+    pub fn new_gloas(
+        block: Arc<SignedBeaconBlock<E>>,
+        envelope: Option<Box<AvailableEnvelope<E>>>,
+    ) -> Result<Self, String> {
+        if let Some(envelope) = envelope.as_ref() {
+            let execution_bid = &block
+                .message()
+                .body()
+                .signed_execution_payload_bid()
+                .map_err(|e| format!("missing signed_execution_payload_bid: {e:?}"))?
+                .message;
+            let envelope = envelope.message();
+
+            let block_root = block.canonical_root();
+            if envelope.beacon_block_root != block_root {
+                return Err(format!(
+                    "envelope block root mismatch: block {block_root:?}, envelope {:?}",
+                    envelope.beacon_block_root
+                ));
+            }
+
+            if envelope.slot() != block.slot() {
+                return Err(format!(
+                    "envelope slot mismatch: block {}, envelope {}",
+                    block.slot(),
+                    envelope.slot()
+                ));
+            }
+
+            if envelope.builder_index != execution_bid.builder_index {
+                return Err(format!(
+                    "envelope builder index mismatch: committed {}, envelope {}",
+                    execution_bid.builder_index, envelope.builder_index
+                ));
+            }
+
+            if envelope.payload.block_hash != execution_bid.block_hash {
+                return Err(format!(
+                    "envelope block hash mismatch: committed {:?}, envelope {:?}",
+                    execution_bid.block_hash, envelope.payload.block_hash
+                ));
+            }
+        }
+
+        Ok(Self::Gloas { block, envelope })
     }
 
     #[allow(clippy::type_complexity)]
     pub fn deconstruct(self) -> (Hash256, Arc<SignedBeaconBlock<E>>, AvailableBlockData<E>) {
-        self.block.deconstruct()
+        match self {
+            Self::Base(block) => block.deconstruct(),
+            Self::Gloas { block, .. } => {
+                (block.canonical_root(), block, AvailableBlockData::NoData)
+            }
+        }
     }
 
     pub fn n_blobs(&self) -> usize {
-        match self.block_data() {
-            AvailableBlockData::NoData | AvailableBlockData::DataColumns(_) => 0,
-            AvailableBlockData::Blobs(blobs) => blobs.len(),
+        match self {
+            Self::Base(block) => match block.data() {
+                AvailableBlockData::NoData | AvailableBlockData::DataColumns(_) => 0,
+                AvailableBlockData::Blobs(blobs) => blobs.len(),
+            },
+            Self::Gloas { .. } => 0,
         }
     }
 
     pub fn n_data_columns(&self) -> usize {
-        match self.block_data() {
-            AvailableBlockData::NoData | AvailableBlockData::Blobs(_) => 0,
-            AvailableBlockData::DataColumns(columns) => columns.len(),
+        match self {
+            Self::Base(block) => match block.data() {
+                AvailableBlockData::NoData | AvailableBlockData::Blobs(_) => 0,
+                AvailableBlockData::DataColumns(columns) => columns.len(),
+            },
+            Self::Gloas { .. } => 0,
         }
     }
 
-    pub fn into_available_block(self) -> AvailableBlock<E> {
-        self.block
+    /// Converts into an `AvailableBlock` for import, returning any associated envelope
+    /// separately. Callers processing Gloas blocks must handle the envelope themselves.
+    #[allow(clippy::type_complexity)]
+    pub fn into_available_block(
+        self,
+    ) -> Result<(AvailableBlock<E>, Option<Box<AvailableEnvelope<E>>>), AvailabilityCheckError>
+    {
+        match self {
+            Self::Base(block) => Ok((block, None)),
+            Self::Gloas { block, envelope } => {
+                let available =
+                    AvailableBlock::new_gloas(block).map_err(AvailabilityCheckError::Unexpected)?;
+                Ok((available, envelope))
+            }
+        }
     }
 }
 
@@ -405,13 +502,13 @@ impl<E: EthSpec> AsBlock<E> for RangeSyncBlock<E> {
         self.as_block().message()
     }
     fn as_block(&self) -> &SignedBeaconBlock<E> {
-        self.block.as_block()
+        RangeSyncBlock::as_block(self)
     }
     fn block_cloned(&self) -> Arc<SignedBeaconBlock<E>> {
-        self.block.block_cloned()
+        RangeSyncBlock::block_cloned(self)
     }
     fn canonical_root(&self) -> Hash256 {
-        self.block.block_root()
+        self.block_root()
     }
 }
 
