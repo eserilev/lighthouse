@@ -57,7 +57,8 @@ use lighthouse_network::service::api_types::{
     BlobsByRangeRequestId, BlocksByRangeRequestId, ComponentsByRangeRequestId,
     CustodyBackFillBatchRequestId, CustodyBackfillBatchId, CustodyRequester,
     DataColumnsByRangeRequestId, DataColumnsByRangeRequester, DataColumnsByRootRequestId,
-    DataColumnsByRootRequester, Id, SingleLookupReqId, SyncRequestId,
+    DataColumnsByRootRequester, Id, PayloadEnvelopesByRangeRequestId, SingleLookupReqId,
+    SyncRequestId,
 };
 use lighthouse_network::types::{NetworkGlobals, SyncState};
 use lighthouse_network::{PeerAction, PeerId};
@@ -182,11 +183,6 @@ pub enum SyncMessage<E: EthSpec> {
         process_type: BlockProcessType,
         result: BlockProcessingResult,
     },
-
-    /// A gossip-received component has completed processing and the block may now be imported.
-    /// In Fulu this is sent after block or blob processing. In Gloas this is also sent after
-    /// data column or payload envelope processing triggers availability.
-    GossipBlockProcessResult { block_root: Hash256, imported: bool },
 }
 
 /// The type of processing specified for a received block.
@@ -509,6 +505,8 @@ impl<T: BeaconChainTypes> SyncManager<T> {
             SyncRequestId::DataColumnsByRange(req_id) => {
                 self.on_data_columns_by_range_response(req_id, peer_id, RpcEvent::RPCError(error))
             }
+            SyncRequestId::PayloadEnvelopesByRange(req_id) => self
+                .on_payload_envelopes_by_range_response(req_id, peer_id, RpcEvent::RPCError(error)),
         }
     }
 
@@ -907,14 +905,6 @@ impl<T: BeaconChainTypes> SyncManager<T> {
             } => self
                 .block_lookups
                 .on_processing_result(process_type, result, &mut self.network),
-            SyncMessage::GossipBlockProcessResult {
-                block_root,
-                imported,
-            } => self.block_lookups.on_external_processing_result(
-                block_root,
-                imported,
-                &mut self.network,
-            ),
             SyncMessage::BatchProcessed { sync_type, result } => match sync_type {
                 ChainSegmentProcessId::RangeBatchId(chain_id, epoch) => {
                     self.range_sync.handle_block_process_result(
@@ -1167,6 +1157,13 @@ impl<T: BeaconChainTypes> SyncManager<T> {
                     peer_id,
                     RpcEvent::from_chunk(envelope, seen_timestamp),
                 ),
+            SyncRequestId::PayloadEnvelopesByRange(req_id) => {
+                self.on_payload_envelopes_by_range_response(
+                    req_id,
+                    peer_id,
+                    RpcEvent::from_chunk(envelope, seen_timestamp),
+                );
+            }
             _ => {
                 crit!(%peer_id, "bad request id for payload envelope");
             }
@@ -1214,6 +1211,24 @@ impl<T: BeaconChainTypes> SyncManager<T> {
             // TODO(gloas): dispatch into
             // `block_lookups.on_download_response::<PayloadEnvelopeRequestState<_>>(...)` once
             // the envelope lookup state machine lands.
+        }
+    }
+
+    fn on_payload_envelopes_by_range_response(
+        &mut self,
+        id: PayloadEnvelopesByRangeRequestId,
+        peer_id: PeerId,
+        envelope: RpcEvent<Arc<SignedExecutionPayloadEnvelope<T::EthSpec>>>,
+    ) {
+        if let Some(resp) = self
+            .network
+            .on_payload_envelopes_by_range_response(id, peer_id, envelope)
+        {
+            self.on_range_components_response(
+                id.parent_request_id,
+                peer_id,
+                RangeBlockComponent::PayloadEnvelope(id, resp),
+            );
         }
     }
 

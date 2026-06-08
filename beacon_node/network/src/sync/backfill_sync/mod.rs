@@ -351,6 +351,9 @@ impl<T: BeaconChainTypes> BackFillSync<T> {
                     CouplingError::BlobPeerFailure(msg) => {
                         debug!(?batch_id, msg, "Blob peer failure");
                     }
+                    CouplingError::EnvelopePeerFailure(msg) => {
+                        debug!(?batch_id, msg, "Envelope peer failure");
+                    }
                     CouplingError::InternalError(msg) => {
                         error!(?batch_id, msg, "Block components coupling internal error");
                     }
@@ -1247,7 +1250,7 @@ mod tests {
             let peer_id = network_globals
                 .peers
                 .write()
-                .__add_connected_peer_testing_only(
+                .__add_connected_peer_with_custody_subnets(
                     true,
                     &beacon_chain.spec,
                     k256::ecdsa::SigningKey::random(&mut rng).into(),
