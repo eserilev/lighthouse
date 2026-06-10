@@ -731,7 +731,9 @@ pub fn rpc_data_column_limits<E: EthSpec>(
     if fork_name.gloas_enabled() {
         RpcLimits::new(
             DataColumnSidecarGloas::<E>::min_size(),
-            DataColumnSidecarFulu::<E>::max_size(max_blobs),
+            DataColumnSidecarFulu::<E>::max_size(
+                spec.max_blobs_per_block(current_digest_epoch) as usize
+            ),
         )
     } else {
         RpcLimits::new(
