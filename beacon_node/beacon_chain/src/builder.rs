@@ -796,7 +796,7 @@ where
                     .map_err(|e| format!("Error loading latest execution envelope: {:?}", e))?
                     .map(Arc::new)
             } else {
-                // TODO(gloas) handle the case where the non-finalized portion of the chain has no canonical payload envelopes.
+                // No payload revealed since finalization.
                 None
             }
         } else {

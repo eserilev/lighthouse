@@ -9,7 +9,8 @@ use crate::metadata::{
     ANCHOR_INFO_KEY, ANCHOR_UNINITIALIZED, AnchorInfo, BLOB_INFO_KEY, BlobInfo,
     COMPACTION_TIMESTAMP_KEY, CONFIG_KEY, CURRENT_SCHEMA_VERSION, CompactionTimestamp,
     DATA_COLUMN_CUSTODY_INFO_KEY, DATA_COLUMN_INFO_KEY, DataColumnCustodyInfo, DataColumnInfo,
-    SCHEMA_VERSION_KEY, SPLIT_KEY, STATE_UPPER_LIMIT_NO_RETAIN, SchemaVersion,
+    PAYLOAD_INFO_KEY, PayloadInfo, SCHEMA_VERSION_KEY, SPLIT_KEY, STATE_UPPER_LIMIT_NO_RETAIN,
+    SchemaVersion,
 };
 use crate::state_cache::{PutStateOutcome, StateCache};
 use crate::{
@@ -60,6 +61,8 @@ pub struct HotColdDB<E: EthSpec, Hot: ItemStore, Cold: ItemStore> {
     blob_info: RwLock<BlobInfo>,
     /// The starting slots for the range of data columns stored in the database.
     data_column_info: RwLock<DataColumnInfo>,
+    /// Metadata about the latest finalized execution payload (Gloas only).
+    payload_info: RwLock<PayloadInfo>,
     pub(crate) config: StoreConfig,
     pub hierarchy: HierarchyModuli,
     /// Cold database containing compact historical data.
@@ -233,6 +236,7 @@ impl<E: EthSpec> HotColdDB<E, MemoryStore, MemoryStore> {
             anchor_info: RwLock::new(ANCHOR_UNINITIALIZED),
             blob_info: RwLock::new(BlobInfo::default()),
             data_column_info: RwLock::new(DataColumnInfo::default()),
+            payload_info: RwLock::new(PayloadInfo::default()),
             cold_db: MemoryStore::open(),
             blobs_db: MemoryStore::open(),
             hot_db: MemoryStore::open(),
@@ -286,6 +290,7 @@ impl<E: EthSpec> HotColdDB<E, BeaconNodeBackend, BeaconNodeBackend> {
             anchor_info,
             blob_info: RwLock::new(BlobInfo::default()),
             data_column_info: RwLock::new(DataColumnInfo::default()),
+            payload_info: RwLock::new(PayloadInfo::default()),
             blobs_db: BeaconNodeBackend::open(&config, blobs_db_path)?,
             cold_db: BeaconNodeBackend::open(&config, cold_path)?,
             hot_db,
@@ -393,6 +398,12 @@ impl<E: EthSpec> HotColdDB<E, BeaconNodeBackend, BeaconNodeBackend> {
             <_>::default(),
             new_data_column_info.clone(),
         )?;
+
+        // Load the latest finalized payload info into the in-memory cache (Gloas only). Absent on
+        // first start or pre-Gloas, in which case the default is retained.
+        if let Some(payload_info) = db.load_payload_info()? {
+            db.compare_and_set_payload_info_with_write(<_>::default(), payload_info)?;
+        }
 
         info!(
             path = ?blobs_db_path,
@@ -2886,6 +2897,13 @@ impl<E: EthSpec, Hot: ItemStore, Cold: ItemStore> HotColdDB<E, Hot, Cold> {
         self.data_column_info.read_recursive().clone()
     }
 
+    /// Get a clone of the store's payload info.
+    ///
+    /// To do mutations, use `compare_and_set_payload_info`. Only populated post-Gloas.
+    pub fn get_payload_info(&self) -> PayloadInfo {
+        self.payload_info.read_recursive().clone()
+    }
+
     /// Atomically update the blob info from `prev_value` to `new_value`.
     ///
     /// Return a `KeyValueStoreOp` which should be written to disk, possibly atomically with other
@@ -2981,6 +2999,53 @@ impl<E: EthSpec, Hot: ItemStore, Cold: ItemStore> HotColdDB<E, Hot, Cold> {
         data_column_info: &DataColumnInfo,
     ) -> KeyValueStoreOp {
         data_column_info.as_kv_store_op(DATA_COLUMN_INFO_KEY)
+    }
+
+    /// Atomically update the payload info from `prev_value` to `new_value`.
+    ///
+    /// Return a `KeyValueStoreOp` which should be written to disk, possibly atomically with other
+    /// values.
+    ///
+    /// Return a `PayloadInfoConcurrentMutation` error if the `prev_value` provided
+    /// is not correct.
+    pub fn compare_and_set_payload_info(
+        &self,
+        prev_value: PayloadInfo,
+        new_value: PayloadInfo,
+    ) -> Result<KeyValueStoreOp, Error> {
+        let mut payload_info = self.payload_info.write();
+        if *payload_info == prev_value {
+            let kv_op = self.store_payload_info_in_batch(&new_value);
+            *payload_info = new_value;
+            Ok(kv_op)
+        } else {
+            Err(Error::PayloadInfoConcurrentMutation)
+        }
+    }
+
+    /// As for `compare_and_set_payload_info`, but also writes the payload info to disk immediately.
+    pub fn compare_and_set_payload_info_with_write(
+        &self,
+        prev_value: PayloadInfo,
+        new_value: PayloadInfo,
+    ) -> Result<(), Error> {
+        let kv_store_op = self.compare_and_set_payload_info(prev_value, new_value)?;
+        self.hot_db.do_atomically(vec![kv_store_op])
+    }
+
+    /// Load the payload info from disk, but do not set `self.payload_info`.
+    fn load_payload_info(&self) -> Result<Option<PayloadInfo>, Error> {
+        self.hot_db
+            .get(&PAYLOAD_INFO_KEY)
+            .map_err(|e| Error::LoadPayloadInfo(e.into()))
+    }
+
+    /// Store the given `payload_info` to disk.
+    ///
+    /// The argument is intended to be `self.payload_info`, but is passed manually to avoid issues
+    /// with recursive locking.
+    fn store_payload_info_in_batch(&self, payload_info: &PayloadInfo) -> KeyValueStoreOp {
+        payload_info.as_kv_store_op(PAYLOAD_INFO_KEY)
     }
 
     /// Return the slot-window describing the available historic states.

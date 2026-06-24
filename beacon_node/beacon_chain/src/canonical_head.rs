@@ -56,6 +56,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use store::{
     Error as StoreError, KeyValueStore, KeyValueStoreOp, StoreConfig, iter::StateRootsIterator,
+    metadata::PayloadInfo,
 };
 use task_executor::{JoinHandle, ShutdownReason};
 use tracing::{debug, error, info, instrument, warn};
@@ -356,7 +357,7 @@ impl<T: BeaconChainTypes> CanonicalHead<T> {
                     .get_payload_envelope(&latest_full_block_root)?
                     .map(Arc::new)
             } else {
-                // TODO(gloas) handle the case where the non-finalized portion of the chain has no canonical payload envelopes.
+                // No payload revealed since finalization.
                 None
             }
         } else {
@@ -778,7 +779,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                             ))?;
                         Some(envelope)
                     } else {
-                        // TODO(gloas) handle the case where the non-finalized portion of the chain has no canonical payload envelopes.
+                        // No payload revealed since finalization.
                         None
                     }
                 } else {
@@ -1057,6 +1058,14 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                     error!(error = ?e, "Failed to prune pending payload cache on finalization");
                 }
             }
+
+            if let Some(gloas_fork_epoch) = self.spec.gloas_fork_epoch
+                && new_view.finalized_checkpoint.epoch >= gloas_fork_epoch
+                && let Err(e) =
+                    self.update_finalized_payload_info(new_view.finalized_checkpoint.root)
+            {
+                error!(error = ?e, "Failed to update finalized payload info");
+            }
         }
 
         if let Some(event_handler) = self.event_handler.as_ref()
@@ -1133,6 +1142,86 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         self.canonical_head.fork_choice_write_lock().prune()?;
 
         Ok(())
+    }
+
+    /// Record the block number of the latest finalized execution payload.
+    ///
+    /// The payload of the finalized block isn't finalized, so we fetch the payload
+    /// that the finalized block builds upon.
+    fn update_finalized_payload_info(
+        self: &Arc<Self>,
+        finalized_block_root: Hash256,
+    ) -> Result<(), Error> {
+        let latest_full_block_root = {
+            let fork_choice = self.canonical_head.fork_choice_read_lock();
+            fork_choice.latest_parent_full_block(finalized_block_root, &self.spec)?
+        };
+
+        let Some(latest_full_block_root) = latest_full_block_root else {
+            // A gloas payload envelope has never been revealed AND we have finalized a gloas epoch.
+            // The latest execution payload is from the last pre-gloas block. At this point that
+            // pre-gloas block is finalized so we set `PayloadInfo.latest_finalized_block_number`
+            // with its block number.
+            let payload_info = self.store.get_payload_info();
+            if payload_info.latest_finalized_block_number.is_none()
+                && let Some(block_number) =
+                    self.latest_pre_gloas_block_number(finalized_block_root)?
+            {
+                let new_payload_info = PayloadInfo {
+                    latest_finalized_block_number: Some(block_number),
+                };
+                self.store
+                    .compare_and_set_payload_info_with_write(payload_info, new_payload_info)?;
+            }
+            return Ok(());
+        };
+        let Some(envelope) = self.store.get_payload_envelope(&latest_full_block_root)? else {
+            return Ok(());
+        };
+
+        let payload_info = PayloadInfo {
+            latest_finalized_block_number: Some(envelope.message.payload.block_number),
+        };
+        self.store
+            .compare_and_set_payload_info_with_write(self.store.get_payload_info(), payload_info)?;
+
+        Ok(())
+    }
+
+    /// Walk back from `block_root` to the most recent pre-Gloas block and return its execution
+    /// block number.
+    ///
+    /// Note: This function is only relevant between the gloas fork boundary and before a
+    /// gloas epoch finalized.
+    pub(crate) fn latest_pre_gloas_block_number(
+        &self,
+        block_root: Hash256,
+    ) -> Result<Option<u64>, Error> {
+        let latest_pre_gloas_root = {
+            let fork_choice = self.canonical_head.fork_choice_read_lock();
+            fork_choice
+                .proto_array()
+                .iter_block_roots(&block_root)
+                .find(|(_, slot)| {
+                    !self
+                        .spec
+                        .fork_name_at_slot::<T::EthSpec>(*slot)
+                        .gloas_enabled()
+                })
+                .map(|(root, _)| root)
+        };
+
+        let Some(latest_pre_gloas_root) = latest_pre_gloas_root else {
+            return Ok(None);
+        };
+        let Some(block) = self.get_blinded_block(&latest_pre_gloas_root)? else {
+            return Ok(None);
+        };
+        Ok(block
+            .message()
+            .execution_payload()
+            .ok()
+            .map(|payload| payload.block_number()))
     }
 
     /// Persist fork choice to disk, writing immediately.

@@ -19,6 +19,7 @@ pub const ANCHOR_INFO_KEY: Hash256 = Hash256::repeat_byte(5);
 pub const BLOB_INFO_KEY: Hash256 = Hash256::repeat_byte(6);
 pub const DATA_COLUMN_INFO_KEY: Hash256 = Hash256::repeat_byte(7);
 pub const DATA_COLUMN_CUSTODY_INFO_KEY: Hash256 = Hash256::repeat_byte(8);
+pub const PAYLOAD_INFO_KEY: Hash256 = Hash256::repeat_byte(9);
 
 /// State upper limit value used to indicate that a node is not storing historic states.
 pub const STATE_UPPER_LIMIT_NO_RETAIN: Slot = Slot::new(u64::MAX);
@@ -243,6 +244,29 @@ pub struct DataColumnInfo {
 }
 
 impl StoreItem for DataColumnInfo {
+    fn db_column() -> DBColumn {
+        DBColumn::BeaconMeta
+    }
+
+    fn as_store_bytes(&self) -> Vec<u8> {
+        self.as_ssz_bytes()
+    }
+
+    fn from_store_bytes(bytes: &[u8]) -> Result<Self, Error> {
+        Ok(Self::from_ssz_bytes(bytes)?)
+    }
+}
+
+/// Tracks the latest finalized execution payload. Gloas only.
+#[derive(Debug, PartialEq, Eq, Clone, Encode, Decode, Serialize, Deserialize, Default)]
+pub struct PayloadInfo {
+    // The block number of the latest finalized execution payload.
+    // Pre-gloas: This is the payload from the latest finalized block.
+    // Post-Gloas: This is the envelope that the finalized block builds on top of.
+    pub latest_finalized_block_number: Option<u64>,
+}
+
+impl StoreItem for PayloadInfo {
     fn db_column() -> DBColumn {
         DBColumn::BeaconMeta
     }

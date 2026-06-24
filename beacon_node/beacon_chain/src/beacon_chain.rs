@@ -5003,9 +5003,16 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             .fork_name_at_slot::<T::EthSpec>(proposal_slot)
             .gloas_enabled()
         {
+            // If the non-finalized portion of chain has no canonical payload, the latest payload is
+            // the finalized one. Fork choice has pruned the block root associated with the finalized
+            // payload, so we fetch the relevant data from `PayloadInfo`. If a gloas payload envelope
+            // has ever been revealed, fall back to walking to the last pre-Gloas block on the head's chain.
             (
                 cached_head.head_random()?,
-                cached_head.head_block_number_gloas(),
+                cached_head
+                    .head_block_number_gloas()
+                    .or(self.store.get_payload_info().latest_finalized_block_number)
+                    .or(self.latest_pre_gloas_block_number(cached_head.head_block_root())?),
             )
         } else {
             let head_block_number = cached_head.head_block_number()?;
