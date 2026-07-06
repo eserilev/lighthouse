@@ -72,15 +72,9 @@ pub fn produce_unaggregated_attestation<T: BeaconChainTypes>(
         return;
     }
 
-    // Since attestations for different committees are practically identical (apart from the committee index field)
-    // Committee 0 is guaranteed to exist. That means there's no need to load the committee.
-    let beacon_committee_index = 0;
-
-    // Store the unaggregated attestation in the validator monitor for later processing
-    match chain.produce_unaggregated_attestation(current_slot, beacon_committee_index) {
-        Ok(unaggregated_attestation) => {
-            let data = unaggregated_attestation.data();
-
+    // Store the attestation data in the validator monitor for later processing
+    match chain.produce_attestation_data(current_slot) {
+        Ok(data) => {
             debug!(
                 attestation_source = data.source.root.to_string(),
                 attestation_target = data.target.root.to_string(),
@@ -90,7 +84,7 @@ pub fn produce_unaggregated_attestation<T: BeaconChainTypes>(
             chain
                 .validator_monitor
                 .write()
-                .set_unaggregated_attestation(unaggregated_attestation);
+                .set_unaggregated_attestation(data);
         }
         Err(e) => {
             debug!(

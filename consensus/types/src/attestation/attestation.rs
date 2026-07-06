@@ -14,8 +14,7 @@ use tree_hash_derive::TreeHash;
 
 use crate::{
     attestation::{
-        AttestationData, Checkpoint, IndexedAttestation, IndexedAttestationBase,
-        IndexedAttestationElectra,
+        AttestationData, IndexedAttestation, IndexedAttestationBase, IndexedAttestationElectra,
     },
     core::{ChainSpec, Domain, EthSpec, Hash256, SignedRoot, Slot, SlotData},
     fork::{Fork, ForkName},
@@ -98,59 +97,6 @@ impl<E: EthSpec> Hash for Attestation<E> {
 }
 
 impl<E: EthSpec> Attestation<E> {
-    /// Produces an attestation with empty signature.
-    #[allow(clippy::too_many_arguments)]
-    pub fn empty_for_signing(
-        committee_index: u64,
-        committee_length: usize,
-        slot: Slot,
-        beacon_block_root: Hash256,
-        source: Checkpoint,
-        target: Checkpoint,
-        payload_present: bool,
-        spec: &ChainSpec,
-    ) -> Result<Self, Error> {
-        if spec.fork_name_at_slot::<E>(slot).electra_enabled() {
-            let mut committee_bits: BitVector<E::MaxCommitteesPerSlot> = BitVector::default();
-            committee_bits
-                .set(committee_index as usize, true)
-                .map_err(|_| Error::InvalidCommitteeIndex)?;
-            // Gloas attestation data index now indicates payload presence.
-            // Pre-gloas index is always 0.
-            let index = if spec.fork_name_at_slot::<E>(slot).gloas_enabled() && payload_present {
-                1u64
-            } else {
-                0u64
-            };
-            Ok(Attestation::Electra(AttestationElectra {
-                aggregation_bits: BitList::with_capacity(committee_length)
-                    .map_err(|_| Error::InvalidCommitteeLength)?,
-                data: AttestationData {
-                    slot,
-                    index,
-                    beacon_block_root,
-                    source,
-                    target,
-                },
-                committee_bits,
-                signature: AggregateSignature::infinity(),
-            }))
-        } else {
-            Ok(Attestation::Base(AttestationBase {
-                aggregation_bits: BitList::with_capacity(committee_length)
-                    .map_err(|_| Error::InvalidCommitteeLength)?,
-                data: AttestationData {
-                    slot,
-                    index: committee_index,
-                    beacon_block_root,
-                    source,
-                    target,
-                },
-                signature: AggregateSignature::infinity(),
-            }))
-        }
-    }
-
     /// Aggregate another Attestation into this one.
     ///
     /// The aggregation bitfields must be disjoint, and the data must be the same.

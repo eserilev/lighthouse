@@ -4854,12 +4854,7 @@ impl ApiTester {
                 .unwrap()
                 .data;
 
-            let expected = self
-                .chain
-                .produce_unaggregated_attestation(slot, index)
-                .unwrap()
-                .data()
-                .clone();
+            let expected = self.chain.produce_attestation_data(slot).unwrap();
 
             assert_eq!(result, expected);
         }

@@ -51,7 +51,7 @@ use rand::seq::SliceRandom;
 use rayon::prelude::*;
 use sensitive_url::SensitiveUrl;
 use slot_clock::{SlotClock, TestingSlotClock};
-use ssz_types::{RuntimeVariableList, VariableList};
+use ssz_types::{BitList, BitVector, RuntimeVariableList, VariableList};
 use state_processing::ConsensusContext;
 use state_processing::per_block_processing::compute_timestamp_at_slot;
 use state_processing::per_block_processing::{
@@ -1509,6 +1509,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub fn produce_single_attestation_for_block(
         &self,
         slot: Slot,
@@ -1534,7 +1535,12 @@ where
             mut_state.build_committee_cache(RelativeEpoch::Current, &self.spec)?;
         }
 
-        let committee_len = state.get_beacon_committee(slot, index)?.committee.len();
+        let committee = state.get_beacon_committee(slot, index)?;
+        let attester_index = *committee
+            .committee
+            .get(aggregation_bit_index)
+            .expect("aggregation bit index should be within the committee");
+        assert_eq!(attester_index, validator_index);
 
         let target_slot = epoch.start_slot(E::slots_per_epoch());
         let target_root = if state.slot() <= target_slot {
@@ -1543,71 +1549,28 @@ where
             *state.get_block_root(target_slot)?
         };
 
-        let attestation: Attestation<E> = Attestation::empty_for_signing(
-            index,
-            committee_len,
-            slot,
-            beacon_block_root,
-            state.current_justified_checkpoint(),
-            Checkpoint {
-                epoch,
-                root: target_root,
-            },
-            false,
-            &self.spec,
-        )?;
-
-        let attestation = match attestation {
-            Attestation::Electra(mut attn) => {
-                attn.aggregation_bits
-                    .set(aggregation_bit_index, true)
-                    .unwrap();
-                Attestation::Electra(attn)
-            }
-            Attestation::Base(mut attn) => {
-                attn.aggregation_bits
-                    .set(aggregation_bit_index, true)
-                    .unwrap();
-                Attestation::Base(attn)
-            }
+        // Pre-electra the attestation data index carries the committee index.
+        let data_index = if self.spec.fork_name_at_slot::<E>(slot).electra_enabled() {
+            0
+        } else {
+            index
         };
 
-        let aggregation_bits = attestation.get_aggregation_bits();
-
-        if aggregation_bits.len() != 1 {
-            panic!("Must be an unaggregated attestation")
-        }
-
-        let aggregation_bit = *aggregation_bits.first().unwrap();
-
-        let committee = state.get_beacon_committee(slot, index).unwrap();
-
-        let attester_index = committee
-            .committee
-            .iter()
-            .enumerate()
-            .find_map(|(i, &index)| {
-                if aggregation_bit as usize == i {
-                    return Some(index);
-                }
-                None
-            })
-            .unwrap();
-
-        let single_attestation =
-            attestation.to_single_attestation_with_attester_index(attester_index as u64)?;
-
-        let fork_name = self.spec.fork_name_at_slot::<E>(attestation.data().slot);
-        let attestation: Attestation<E> =
-            single_attestation_to_attestation(&single_attestation, committee.committee, fork_name)
-                .unwrap();
-
-        assert_eq!(
-            single_attestation.committee_index,
-            attestation.committee_index().unwrap()
-        );
-        assert_eq!(single_attestation.attester_index, validator_index as u64);
-        Ok(single_attestation)
+        Ok(SingleAttestation {
+            committee_index: index,
+            attester_index: attester_index as u64,
+            data: AttestationData {
+                slot,
+                index: data_index,
+                beacon_block_root,
+                source: state.current_justified_checkpoint(),
+                target: Checkpoint {
+                    epoch,
+                    root: target_root,
+                },
+            },
+            signature: AggregateSignature::infinity(),
+        })
     }
 
     /// Produces an "unaggregated" attestation for the given `slot` and `index` that attests to
@@ -1675,19 +1638,45 @@ where
             }
         };
 
-        Ok(Attestation::empty_for_signing(
-            index,
-            committee_len,
+        let data = AttestationData {
             slot,
+            index: 0,
             beacon_block_root,
-            state.current_justified_checkpoint(),
-            Checkpoint {
+            source: state.current_justified_checkpoint(),
+            target: Checkpoint {
                 epoch,
                 root: target_root,
             },
-            payload_present,
-            &self.spec,
-        )?)
+        };
+
+        if self.spec.fork_name_at_slot::<E>(slot).electra_enabled() {
+            let mut committee_bits: BitVector<E::MaxCommitteesPerSlot> = BitVector::default();
+            committee_bits
+                .set(index as usize, true)
+                .map_err(|_| AttestationError::InvalidCommitteeIndex)?;
+            let mut data = data;
+            // Gloas attestation data index indicates payload presence.
+            if self.spec.fork_name_at_slot::<E>(slot).gloas_enabled() && payload_present {
+                data.index = 1;
+            }
+            Ok(Attestation::Electra(AttestationElectra {
+                aggregation_bits: BitList::with_capacity(committee_len)
+                    .map_err(|_| AttestationError::InvalidCommitteeLength)?,
+                data,
+                committee_bits,
+                signature: AggregateSignature::infinity(),
+            }))
+        } else {
+            let mut data = data;
+            // Pre-electra the attestation data index carries the committee index.
+            data.index = index;
+            Ok(Attestation::Base(AttestationBase {
+                aggregation_bits: BitList::with_capacity(committee_len)
+                    .map_err(|_| AttestationError::InvalidCommitteeLength)?,
+                data,
+                signature: AggregateSignature::infinity(),
+            }))
+        }
     }
 
     /// A list of attestations for each committee for the given slot.

@@ -20,9 +20,10 @@ use std::time::Duration;
 use store::MemoryStore;
 use types::SingleAttestation;
 use types::{
-    BeaconBlockRef, BeaconState, ChainSpec, Checkpoint, Epoch, EthSpec, ForkName, Hash256,
+    BeaconBlockRef, BeaconState, ChainSpec, Checkpoint, Domain, Epoch, EthSpec, ForkName, Hash256,
     IndexedAttestation, IndexedPayloadAttestation, MainnetEthSpec, PayloadAttestationData,
-    RelativeEpoch, SignedBeaconBlock, Slot, SubnetId, test_utils::generate_deterministic_keypair,
+    RelativeEpoch, SignedBeaconBlock, SignedRoot, Slot, SubnetId,
+    test_utils::generate_deterministic_keypair,
 };
 
 pub type E = MainnetEthSpec;
@@ -447,10 +448,10 @@ impl ForkChoiceTest {
         let head = self.harness.chain.head_snapshot();
         let current_slot = self.harness.chain.slot().expect("should get slot");
 
-        let mut attestation = self
+        let attestation_data = self
             .harness
             .chain
-            .produce_unaggregated_attestation(current_slot, 0)
+            .produce_attestation_data(current_slot)
             .expect("should not error while producing attestation");
 
         // For these tests we always use committee index 0, which also matches the "dummy" committee
@@ -480,21 +481,20 @@ impl ForkChoiceTest {
 
         let validator_sk = generate_deterministic_keypair(validator_index).sk;
 
-        attestation
-            .sign(
-                &validator_sk,
-                committee_index as usize,
-                &head.beacon_state.fork(),
-                self.harness.chain.genesis_validators_root,
-                &self.harness.chain.spec,
-            )
-            .expect("should sign attestation");
+        let domain = self.harness.chain.spec.get_domain(
+            attestation_data.target.epoch,
+            Domain::BeaconAttester,
+            &head.beacon_state.fork(),
+            self.harness.chain.genesis_validators_root,
+        );
+        let mut signature = AggregateSignature::infinity();
+        signature.add_assign(&validator_sk.sign(attestation_data.signing_root(domain)));
 
         let single_attestation = SingleAttestation {
             attester_index: validator_index as u64,
             committee_index,
-            data: attestation.data().clone(),
-            signature: attestation.signature().clone(),
+            data: attestation_data,
+            signature,
         };
 
         let mut verified_attestation = self

@@ -26,9 +26,10 @@ use tempfile::tempdir;
 use tree_hash::TreeHash;
 use typenum::Unsigned;
 use types::{
-    Address, Attestation, AttestationRef, ChainSpec, Epoch, EthSpec, ForkName, Hash256,
-    MainnetEthSpec, SelectionProof, SignedAggregateAndProof, SingleAttestation, Slot, SubnetId,
-    attestation::SignedAggregateAndProofRefMut, test_utils::generate_deterministic_keypair,
+    Address, Attestation, AttestationRef, ChainSpec, Domain, Epoch, EthSpec, ForkName, Hash256,
+    MainnetEthSpec, SelectionProof, SignedAggregateAndProof, SignedRoot, SingleAttestation, Slot,
+    SubnetId, attestation::SignedAggregateAndProofRefMut,
+    test_utils::generate_deterministic_keypair,
 };
 
 pub type E = MainnetEthSpec;
@@ -126,19 +127,15 @@ fn get_valid_unaggregated_attestation<T: BeaconChainTypes>(
     let head = chain.head_snapshot();
     let current_slot = chain.slot().expect("should get slot");
 
-    let mut valid_attestation = chain
-        .produce_unaggregated_attestation(current_slot, 0)
+    let attestation_data = chain
+        .produce_attestation_data(current_slot)
         .expect("should not error while producing attestation");
 
+    let committee_index = 0;
     let validator_committee_index = 0;
     let validator_index = *head
         .beacon_state
-        .get_beacon_committee(
-            current_slot,
-            valid_attestation
-                .committee_index()
-                .expect("should get committee index"),
-        )
+        .get_beacon_committee(current_slot, committee_index)
         .expect("should get committees")
         .committee
         .get(validator_committee_index)
@@ -146,21 +143,20 @@ fn get_valid_unaggregated_attestation<T: BeaconChainTypes>(
 
     let validator_sk = generate_deterministic_keypair(validator_index).sk;
 
-    valid_attestation
-        .sign(
-            &validator_sk,
-            validator_committee_index,
-            &head.beacon_state.fork(),
-            chain.genesis_validators_root,
-            &chain.spec,
-        )
-        .expect("should sign attestation");
+    let domain = chain.spec.get_domain(
+        attestation_data.target.epoch,
+        Domain::BeaconAttester,
+        &head.beacon_state.fork(),
+        chain.genesis_validators_root,
+    );
+    let mut signature = AggregateSignature::infinity();
+    signature.add_assign(&validator_sk.sign(attestation_data.signing_root(domain)));
 
     let single_attestation = SingleAttestation {
-        committee_index: valid_attestation.committee_index().unwrap(),
+        committee_index,
         attester_index: validator_index as u64,
-        data: valid_attestation.data().clone(),
-        signature: valid_attestation.signature().clone(),
+        data: attestation_data,
+        signature,
     };
 
     let subnet_id = SubnetId::compute_subnet_for_single_attestation::<T::EthSpec>(

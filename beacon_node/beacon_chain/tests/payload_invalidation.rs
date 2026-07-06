@@ -9,6 +9,7 @@ use beacon_chain::{
     canonical_head::CachedHead,
     test_utils::{BeaconChainHarness, EphemeralHarnessType, fork_name_from_env, test_spec},
 };
+use bls::AggregateSignature;
 use execution_layer::{
     ExecutionLayer, ForkchoiceState, PayloadAttributes,
     json_structures::{JsonForkchoiceStateV1, JsonPayloadAttributes, JsonPayloadAttributesV1},
@@ -16,6 +17,7 @@ use execution_layer::{
 use fork_choice::{Error as ForkChoiceError, InvalidationOperation, PayloadVerificationStatus};
 use proto_array::{Error as ProtoArrayError, ExecutionStatus};
 use slot_clock::SlotClock;
+use ssz_types::{BitList, BitVector};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -1117,11 +1119,36 @@ async fn attesting_to_optimistic_head() {
      */
 
     let attestation = {
-        let mut attestation = rig
+        let mut data = rig
             .harness
             .chain
-            .produce_unaggregated_attestation(Slot::new(0), 0)
+            .produce_attestation_data(Slot::new(0))
             .unwrap();
+
+        data.slot = slot;
+        data.beacon_block_root = root;
+
+        let mut attestation = if rig
+            .harness
+            .spec
+            .fork_name_at_slot::<E>(slot)
+            .electra_enabled()
+        {
+            let mut committee_bits = BitVector::default();
+            committee_bits.set(0, true).unwrap();
+            Attestation::Electra(AttestationElectra {
+                aggregation_bits: BitList::with_capacity(1).unwrap(),
+                data,
+                committee_bits,
+                signature: AggregateSignature::infinity(),
+            })
+        } else {
+            Attestation::Base(AttestationBase {
+                aggregation_bits: BitList::with_capacity(1).unwrap(),
+                data,
+                signature: AggregateSignature::infinity(),
+            })
+        };
 
         match &mut attestation {
             Attestation::Base(att) => {
@@ -1131,9 +1158,6 @@ async fn attesting_to_optimistic_head() {
                 att.aggregation_bits.set(0, true).unwrap();
             }
         }
-
-        attestation.data_mut().slot = slot;
-        attestation.data_mut().beacon_block_root = root;
 
         rig.harness
             .chain
@@ -1149,7 +1173,7 @@ async fn attesting_to_optimistic_head() {
      * Define some closures to produce attestations.
      */
 
-    let produce_unaggregated = || rig.harness.chain.produce_unaggregated_attestation(slot, 0);
+    let produce_unaggregated = || rig.harness.chain.produce_attestation_data(slot);
 
     let get_aggregated = || {
         rig.harness

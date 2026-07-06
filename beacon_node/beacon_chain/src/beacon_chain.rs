@@ -1934,36 +1934,23 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
     /// ## Errors
     ///
     /// May return an error if the `request_slot` is too far behind the head state.
-    #[instrument(name = "lh_produce_unaggregated_attestation", skip_all, fields(%request_slot, %request_index), level = "debug")]
-    pub fn produce_unaggregated_attestation(
-        &self,
-        request_slot: Slot,
-        request_index: CommitteeIndex,
-    ) -> Result<Attestation<T::EthSpec>, Error> {
+    #[instrument(name = "lh_produce_attestation_data", skip_all, fields(%request_slot), level = "debug")]
+    pub fn produce_attestation_data(&self, request_slot: Slot) -> Result<AttestationData, Error> {
         let _total_timer = metrics::start_timer(&metrics::ATTESTATION_PRODUCTION_SECONDS);
 
-        // The early attester cache will return `Some(attestation)` in the scenario where there is a
-        // block being imported that will become the head block, but that block has not yet been
-        // inserted into the database and set as `self.canonical_head`.
+        // The early attester cache will return `Some(attestation_data)` in the scenario where
+        // there is a block being imported that will become the head block, but that block has not
+        // yet been inserted into the database and set as `self.canonical_head`.
         //
         // In effect, the early attester cache prevents slow database IO from causing missed
         // head/target votes.
         //
         // The early attester cache should never contain an optimistically imported block.
-        match self
+        if let Some(attestation_data) = self
             .early_attester_cache
-            .try_attest(request_slot, request_index, &self.spec)
+            .try_attest(request_slot, &self.spec)
         {
-            // The cache matched this request, return the value.
-            Ok(Some(attestation)) => return Ok(attestation),
-            // The cache did not match this request, proceed with the rest of this function.
-            Ok(None) => (),
-            // The cache returned an error. Log the error and proceed with the rest of this
-            // function.
-            Err(e) => warn!(
-                error = ?e,
-                "Early attester cache failed"
-            ),
+            return Ok(attestation_data);
         }
 
         let slots_per_epoch = T::EthSpec::slots_per_epoch();
@@ -1982,7 +1969,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         let beacon_state_root;
         let target;
         let is_same_slot_attestation;
-        let current_epoch_attesting_info: Option<(Checkpoint, usize)>;
+        let current_epoch_attesting_info: Option<Checkpoint>;
         let head_timer = metrics::start_timer(&metrics::ATTESTATION_PRODUCTION_HEAD_SCRAPE_SECONDS);
         let head_span = debug_span!("attestation_production_head_scrape").entered();
         // The following braces are to prevent the `cached_head` Arc from being held for longer than
@@ -2054,16 +2041,10 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             current_epoch_attesting_info = if head_state.current_epoch() == request_epoch {
                 // When the head state is in the same epoch as the request, all the information
                 // required to attest is available on the head state.
-                Some((
-                    head_state.current_justified_checkpoint(),
-                    head_state
-                        .get_beacon_committee(request_slot, request_index)?
-                        .committee
-                        .len(),
-                ))
+                Some(head_state.current_justified_checkpoint())
             } else {
                 // If the head state is in a *different* epoch to the request, more work is required
-                // to determine the justified checkpoint and committee length.
+                // to determine the justified checkpoint.
                 None
             };
         }
@@ -2089,41 +2070,33 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         /*
          *  Phase 2/2:
          *
-         *  If the justified checkpoint and committee length from the head are suitable for this
-         *  attestation, use them. If not, use the database, which will hit the state cache.
+         *  If the justified checkpoint from the head is suitable for this attestation, use it.
+         *  If not, use the database, which will hit the state cache.
          */
-        let (justified_checkpoint, committee_len) =
-            if let Some((justified_checkpoint, committee_len)) = current_epoch_attesting_info {
-                // The head state is in the same epoch as the attestation, so there is no more
-                // required information.
-                (justified_checkpoint, committee_len)
-            } else {
-                // We assume that the `Pending` state has the same shufflings as a `Full` state
-                // for the same block. Analysis: https://hackmd.io/@dapplion/gloas_dependant_root
-                let (advanced_state_root, mut state) = self
-                    .store
-                    .get_advanced_hot_state(beacon_block_root, request_slot, beacon_state_root)?
-                    .ok_or(Error::MissingBeaconState(beacon_state_root))?;
-                if state.current_epoch() < request_epoch {
-                    partial_state_advance(
-                        &mut state,
-                        Some(advanced_state_root),
-                        request_epoch.start_slot(T::EthSpec::slots_per_epoch()),
-                        &self.spec,
-                    )
-                    .map_err(Error::StateAdvanceError)?;
-
-                    state.build_committee_cache(RelativeEpoch::Current, &self.spec)?;
-                }
-
-                (
-                    state.current_justified_checkpoint(),
-                    state
-                        .get_beacon_committee(request_slot, request_index)?
-                        .committee
-                        .len(),
+        let justified_checkpoint = if let Some(justified_checkpoint) = current_epoch_attesting_info
+        {
+            // The head state is in the same epoch as the attestation, so there is no more
+            // required information.
+            justified_checkpoint
+        } else {
+            // We assume that the `Pending` state has the same shufflings as a `Full` state
+            // for the same block. Analysis: https://hackmd.io/@dapplion/gloas_dependant_root
+            let (advanced_state_root, mut state) = self
+                .store
+                .get_advanced_hot_state(beacon_block_root, request_slot, beacon_state_root)?
+                .ok_or(Error::MissingBeaconState(beacon_state_root))?;
+            if state.current_epoch() < request_epoch {
+                partial_state_advance(
+                    &mut state,
+                    Some(advanced_state_root),
+                    request_epoch.start_slot(T::EthSpec::slots_per_epoch()),
+                    &self.spec,
                 )
-            };
+                .map_err(Error::StateAdvanceError)?;
+            }
+
+            state.current_justified_checkpoint()
+        };
 
         // For gloas the attestation data index indicates payload presence:
         // `payload_present=false` for same-slot attestations or when payload not received.
@@ -2140,16 +2113,16 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             false
         };
 
-        Ok(Attestation::<T::EthSpec>::empty_for_signing(
-            request_index,
-            committee_len,
-            request_slot,
+        // Gloas attestation data index indicates payload presence. Pre-gloas it is always 0.
+        let index = if payload_present { 1 } else { 0 };
+
+        Ok(AttestationData {
+            slot: request_slot,
+            index,
             beacon_block_root,
-            justified_checkpoint,
+            source: justified_checkpoint,
             target,
-            payload_present,
-            &self.spec,
-        )?)
+        })
     }
 
     /// Produce a `PayloadAttestationData` for a PTC validator to sign.
