@@ -9,7 +9,8 @@ use types::{
 };
 use types::{
     ExecutionPayloadBellatrix, ExecutionPayloadCapella, ExecutionPayloadDeneb,
-    ExecutionPayloadElectra, ExecutionPayloadFulu, ExecutionPayloadGloas, ExecutionRequests,
+    ExecutionPayloadElectra, ExecutionPayloadFulu, ExecutionPayloadGloas, ExecutionRequestsElectra,
+    ExecutionRequestsGloas, ExecutionRequestsRef,
 };
 
 #[superstruct(
@@ -47,8 +48,13 @@ pub struct NewPayloadRequest<'block, E: EthSpec> {
     pub versioned_hashes: Vec<VersionedHash>,
     #[superstruct(only(Deneb, Electra, Fulu, Gloas))]
     pub parent_beacon_block_root: Hash256,
-    #[superstruct(only(Electra, Fulu, Gloas))]
-    pub execution_requests: &'block ExecutionRequests<E>,
+    #[superstruct(
+        only(Electra, Fulu),
+        partial_getter(rename = "execution_requests_electra")
+    )]
+    pub execution_requests: &'block ExecutionRequestsElectra<E>,
+    #[superstruct(only(Gloas), partial_getter(rename = "execution_requests_gloas"))]
+    pub execution_requests: &'block ExecutionRequestsGloas<E>,
 }
 
 impl<'block, E: EthSpec> NewPayloadRequest<'block, E> {
@@ -123,6 +129,15 @@ impl<'block, E: EthSpec> NewPayloadRequest<'block, E> {
         Ok(())
     }
 
+    pub fn execution_requests_ref(&self) -> Option<ExecutionRequestsRef<'block, E>> {
+        match self {
+            Self::Bellatrix(_) | Self::Capella(_) | Self::Deneb(_) => None,
+            Self::Electra(r) => Some(ExecutionRequestsRef::Electra(r.execution_requests)),
+            Self::Fulu(r) => Some(ExecutionRequestsRef::Electra(r.execution_requests)),
+            Self::Gloas(r) => Some(ExecutionRequestsRef::Gloas(r.execution_requests)),
+        }
+    }
+
     /// Verify the block hash is consistent locally within Lighthouse.
     ///
     /// ## Specification
@@ -143,7 +158,7 @@ impl<'block, E: EthSpec> NewPayloadRequest<'block, E> {
         let (header_hash, rlp_transactions_root) = calculate_execution_block_hash(
             payload,
             parent_beacon_block_root,
-            self.execution_requests().ok().copied(),
+            self.execution_requests_ref(),
         );
 
         if header_hash != self.block_hash() {
@@ -172,6 +187,7 @@ impl<'block, E: EthSpec> NewPayloadRequest<'block, E> {
     }
 }
 
+//TODO(EIP7732): Consider implementing these as methods on the NewPayloadRequest struct
 impl<'a, E: EthSpec> TryFrom<BeaconBlockRef<'a, E>> for NewPayloadRequest<'a, E> {
     type Error = BeaconStateError;
 
@@ -220,17 +236,7 @@ impl<'a, E: EthSpec> TryFrom<BeaconBlockRef<'a, E>> for NewPayloadRequest<'a, E>
                 parent_beacon_block_root: block_ref.parent_root,
                 execution_requests: &block_ref.body.execution_requests,
             })),
-            BeaconBlockRef::Gloas(block_ref) => Ok(Self::Gloas(NewPayloadRequestGloas {
-                execution_payload: &block_ref.body.execution_payload.execution_payload,
-                versioned_hashes: block_ref
-                    .body
-                    .blob_kzg_commitments
-                    .iter()
-                    .map(kzg_commitment_to_versioned_hash)
-                    .collect(),
-                parent_beacon_block_root: block_ref.parent_root,
-                execution_requests: &block_ref.body.execution_requests,
-            })),
+            BeaconBlockRef::Gloas(_) => Err(Self::Error::IncorrectStateVariant),
         }
     }
 }
@@ -251,10 +257,14 @@ impl<'a, E: EthSpec> TryFrom<ExecutionPayloadRef<'a, E>> for NewPayloadRequest<'
             ExecutionPayloadRef::Deneb(_) => Err(Self::Error::IncorrectStateVariant),
             ExecutionPayloadRef::Electra(_) => Err(Self::Error::IncorrectStateVariant),
             ExecutionPayloadRef::Fulu(_) => Err(Self::Error::IncorrectStateVariant),
+            //TODO(EIP7732): Probably time to just get rid of this
             ExecutionPayloadRef::Gloas(_) => Err(Self::Error::IncorrectStateVariant),
         }
     }
 }
+
+// TODO(EIP-7732) build out the following when it's needed like in Mark's branch
+// impl<'a, E: EthSpec> TryFrom<ExecutionEnvelopeRef<'a, E>> for NewPayloadRequest<E> {
 
 #[cfg(test)]
 mod test {

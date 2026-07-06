@@ -11,6 +11,7 @@ use state_processing::SigVerifiedOp;
 use std::collections::HashSet;
 use std::mem;
 use store::{DBColumn, Error as StoreError, StoreItem};
+use superstruct::superstruct;
 use types::attestation::AttestationOnDisk;
 use types::*;
 
@@ -208,6 +209,7 @@ impl<E: EthSpec> PersistedOperationPool<E> {
             proposer_slashings,
             voluntary_exits,
             bls_to_execution_changes: RwLock::new(bls_to_execution_changes),
+            payload_attestation_messages: Default::default(),
             reward_cache: Default::default(),
             _phantom: Default::default(),
         };

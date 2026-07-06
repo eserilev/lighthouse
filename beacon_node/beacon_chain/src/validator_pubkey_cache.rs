@@ -1,6 +1,8 @@
 use crate::errors::BeaconChainError;
 use crate::{BeaconChainTypes, BeaconStore};
 use bls::PUBLIC_KEY_UNCOMPRESSED_BYTES_LEN;
+use bls::{PublicKey, PublicKeyBytes};
+use fixed_bytes::FixedBytesExtended;
 use rayon::prelude::*;
 use smallvec::SmallVec;
 use ssz::{Decode, Encode};
@@ -9,7 +11,7 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use store::{DBColumn, Error as StoreError, StoreItem, StoreOp};
 use tracing::instrument;
-use types::{BeaconState, FixedBytesExtended, Hash256, PublicKey, PublicKeyBytes};
+use types::{BeaconState, Hash256};
 
 /// Provides a mapping of `validator_index -> validator_publickey`.
 ///
@@ -244,10 +246,11 @@ impl DatabasePubkey {
 mod test {
     use super::*;
     use crate::test_utils::{BeaconChainHarness, EphemeralHarnessType};
+    use bls::Keypair;
     use logging::create_test_tracing_subscriber;
     use std::sync::Arc;
     use store::HotColdDB;
-    use types::{EthSpec, Keypair, MainnetEthSpec};
+    use types::{EthSpec, MainnetEthSpec};
 
     type E = MainnetEthSpec;
     type T = EphemeralHarnessType<E>;
@@ -299,7 +302,8 @@ mod test {
 
     #[test]
     fn basic_operation() {
-        let (state, keypairs) = get_state(8);
+        // >= 32 validators required for Gloas genesis with MainnetEthSpec (32 slots/epoch).
+        let (state, keypairs) = get_state(32);
 
         let store = get_store();
 
@@ -308,21 +312,14 @@ mod test {
         check_cache_get(&cache, &keypairs[..]);
 
         // Try adding a state with the same number of keypairs.
-        let (state, keypairs) = get_state(8);
-        cache
-            .import_new_pubkeys(&state)
-            .expect("should import pubkeys");
-        check_cache_get(&cache, &keypairs[..]);
-
-        // Try adding a state with less keypairs.
-        let (state, _) = get_state(1);
+        let (state, keypairs) = get_state(32);
         cache
             .import_new_pubkeys(&state)
             .expect("should import pubkeys");
         check_cache_get(&cache, &keypairs[..]);
 
         // Try adding a state with more keypairs.
-        let (state, keypairs) = get_state(12);
+        let (state, keypairs) = get_state(48);
         cache
             .import_new_pubkeys(&state)
             .expect("should import pubkeys");
@@ -331,7 +328,7 @@ mod test {
 
     #[test]
     fn persistence() {
-        let (state, keypairs) = get_state(8);
+        let (state, keypairs) = get_state(32);
 
         let store = get_store();
 
@@ -346,7 +343,7 @@ mod test {
         check_cache_get(&cache, &keypairs[..]);
 
         // Add some more keypairs.
-        let (state, keypairs) = get_state(12);
+        let (state, keypairs) = get_state(48);
         let ops = cache
             .import_new_pubkeys(&state)
             .expect("should import pubkeys");

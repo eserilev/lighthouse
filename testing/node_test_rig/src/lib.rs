@@ -4,7 +4,8 @@
 
 use beacon_node::ProductionBeaconNode;
 use environment::RuntimeContext;
-use eth2::{BeaconNodeHttpClient, Timeouts, reqwest::ClientBuilder};
+use eth2::{BeaconNodeHttpClient, Timeouts};
+use reqwest::ClientBuilder;
 use sensitive_url::SensitiveUrl;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -89,7 +90,6 @@ impl<E: EthSpec> LocalBeaconNode<E> {
             beacon_node_url,
             beacon_node_http_client,
             Timeouts::set_all(HTTP_TIMEOUT),
-            0,
         ))
     }
 }
@@ -116,7 +116,7 @@ pub fn testing_client_config() -> ClientConfig {
     };
 
     // Simulator tests expect historic states to be available for post-run checks.
-    client_config.chain.reconstruct_historic_states = true;
+    client_config.chain.archive = true;
 
     // Specify a constant count of beacon processor workers. Having this number
     // too low can cause annoying HTTP timeouts, especially on Github runners

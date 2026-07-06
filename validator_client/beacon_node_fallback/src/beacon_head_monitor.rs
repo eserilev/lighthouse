@@ -1,20 +1,22 @@
 use crate::BeaconNodeFallback;
-use eth2::types::{EventKind, EventTopic, SseHead};
+use eth2::types::{EventKind, EventTopic, Hash256, SseHead};
 use futures::StreamExt;
 use slot_clock::SlotClock;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use types::EthSpec;
 
 type CacheHashMap = HashMap<usize, SseHead>;
 
-// This is used send the index derived from `CandidateBeaconNode` to the
+// This is used to send the index derived from `CandidateBeaconNode` to the
 // `AttestationService` for further processing
 #[derive(Debug)]
 pub struct HeadEvent {
     pub beacon_node_index: usize,
+    pub slot: types::Slot,
+    pub beacon_block_root: Hash256,
 }
 
 /// Cache to maintain the latest head received from each of the beacon nodes
@@ -25,20 +27,27 @@ pub struct BeaconHeadCache {
 }
 
 impl BeaconHeadCache {
+    /// Creates a new empty beacon head cache.
     pub fn new() -> Self {
         Self {
             cache: RwLock::new(HashMap::new()),
         }
     }
 
+    /// Retrieves the cached head for a specific beacon node.
+    /// Returns `None` if no head has been cached for that node yet.
     pub async fn get(&self, beacon_node_index: usize) -> Option<SseHead> {
         self.cache.read().await.get(&beacon_node_index).cloned()
     }
 
+    /// Stores or updates the head event for a specific beacon node.
+    /// Replaces any previously cached head for the given node.
     pub async fn insert(&self, beacon_node_index: usize, head: SseHead) {
         self.cache.write().await.insert(beacon_node_index, head);
     }
 
+    /// Checks if the given head is the latest among all cached heads.
+    /// Returns `true` if the head's slot is >= all cached heads' slots.
     pub async fn is_latest(&self, head: &SseHead) -> bool {
         let cache = self.cache.read().await;
         cache
@@ -46,6 +55,8 @@ impl BeaconHeadCache {
             .all(|cache_head| head.slot >= cache_head.slot)
     }
 
+    /// Clears all cached heads, removing entries for all beacon nodes.
+    /// Useful when beacon node candidates are refreshed to avoid stale references.
     pub async fn purge_cache(&self) {
         self.cache.write().await.clear();
     }
@@ -59,7 +70,7 @@ impl Default for BeaconHeadCache {
 
 // Runs a non-terminating loop to update the `BeaconHeadCache` with the latest head received
 // from the candidate beacon_nodes. This is an attempt to stream events to beacon nodes and
-// potential start attestion duties earlier as soon as latest head is receive from any of the
+// potential start attestation duties earlier as soon as latest head is receive from any of the
 // beacon node in contrast to attest at the 1/3rd mark in the slot.
 //
 //
@@ -73,82 +84,118 @@ pub async fn poll_head_event_from_beacon_nodes<E: EthSpec, T: SlotClock + 'stati
     let head_cache = beacon_nodes
         .beacon_head_cache
         .clone()
-        .expect("Unable to start head monitor without beacon_head_cache");
+        .ok_or("Unable to start head monitor without beacon_head_cache")?;
     let head_monitor_send = beacon_nodes
         .head_monitor_send
         .clone()
-        .expect("Unable to start head monitor without head_monitor_send");
+        .ok_or("Unable to start head monitor without head_monitor_send")?;
 
     info!("Starting head monitoring service");
     let candidates = {
         let candidates_guard = beacon_nodes.candidates.read().await;
         candidates_guard.clone()
     };
-    let mut tasks = vec![];
 
-    for candidate in candidates.iter() {
+    // Clear the cache in case it contains stale data from a previous run. This function gets
+    // restarted if it fails (see monitoring in `start_fallback_updater_service`).
+    head_cache.purge_cache().await;
+
+    // Create Vec of streams, which we will select over.
+    let mut streams = vec![];
+
+    for candidate in &candidates {
         let head_event_stream = candidate
             .beacon_node
             .get_events::<E>(&[EventTopic::Head])
             .await;
 
-        let mut head_event_stream = match head_event_stream {
+        let head_event_stream = match head_event_stream {
             Ok(stream) => stream,
             Err(e) => {
-                warn!("failed to get head event stream: {:?}", e);
+                warn!(error = ?e, node_index = candidate.index, "Failed to get head event stream");
                 continue;
             }
         };
 
-        let sender_tx = head_monitor_send.clone();
-        let head_cache_ref = head_cache.clone();
+        streams.push(head_event_stream.map(|event| (candidate.index, event)));
+    }
 
-        let stream_fut = async move {
-            while let Some(event_result) = head_event_stream.next().await {
-                if let Ok(EventKind::Head(head)) = event_result {
-                    head_cache_ref
-                        .insert(candidate.beacon_node.index(), head.clone())
-                        .await;
+    if streams.is_empty() {
+        return Err("No beacon nodes available for head event streaming".to_string());
+    }
 
-                    if !head_cache_ref.is_latest(&head).await {
-                        continue;
-                    }
+    // Combine streams into a single stream and poll events from any of them.
+    let mut combined_stream = futures::stream::select_all(streams);
 
-                    if sender_tx
-                        .send(HeadEvent {
-                            beacon_node_index: candidate.beacon_node.index(),
-                        })
-                        .await
-                        .is_err()
-                    {
-                        warn!("Head monitoring service channel closed");
-                    }
+    while let Some((candidate_index, event_result)) = combined_stream.next().await {
+        match event_result {
+            Ok(EventKind::Head(head)) => {
+                debug!(
+                    candidate_index,
+                    block_root = ?head.block,
+                    slot = %head.slot,
+                    "New head from beacon node"
+                );
+
+                // Skip optimistic heads - the beacon node can't produce valid
+                // attestation data when its execution layer is not verified
+                if head.execution_optimistic {
+                    debug!(
+                        candidate_index,
+                        block_root = ?head.block,
+                        slot = %head.slot,
+                        "Skipping optimistic head"
+                    );
+                    continue;
+                }
+
+                head_cache.insert(candidate_index, head.clone()).await;
+
+                if !head_cache.is_latest(&head).await {
+                    debug!(
+                        candidate_index,
+                        block_root = ?head.block,
+                        slot = %head.slot,
+                        "Skipping stale head"
+                    );
+                    continue;
+                }
+
+                if head_monitor_send
+                    .send(HeadEvent {
+                        beacon_node_index: candidate_index,
+                        slot: head.slot,
+                        beacon_block_root: head.block,
+                    })
+                    .await
+                    .is_err()
+                {
+                    return Err("Head monitoring service channel closed".into());
                 }
             }
-        };
-
-        tasks.push(stream_fut);
+            Ok(event) => {
+                warn!(
+                    event_kind = event.topic_name(),
+                    candidate_index, "Received unexpected event from BN"
+                );
+                continue;
+            }
+            Err(e) => {
+                return Err(format!(
+                    "Head monitoring stream error, node: {candidate_index}, error: {e:?}"
+                ));
+            }
+        }
     }
 
-    if tasks.is_empty() {
-        head_cache.purge_cache().await;
-        return Err(
-            "No beacon nodes available for head event streaming, retry in sometime".to_string(),
-        );
-    }
-
-    futures::future::join_all(tasks).await;
-
-    drop(candidates);
-    head_cache.purge_cache().await;
-
-    Ok(())
+    Err("Stream ended unexpectedly".into())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use types::{FixedBytesExtended, Hash256};
+    use bls::FixedBytesExtended;
+    use types::{Hash256, Slot};
 
     fn create_sse_head(slot: u64, block_root: u8) -> SseHead {
         SseHead {
@@ -255,10 +302,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_head_event_creation() {
+        let block_root = Hash256::from_low_u64_be(99);
         let event = HeadEvent {
             beacon_node_index: 42,
+            slot: Slot::new(123),
+            beacon_block_root: block_root,
         };
         assert_eq!(event.beacon_node_index, 42);
+        assert_eq!(event.slot, Slot::new(123));
+        assert_eq!(event.beacon_block_root, block_root);
     }
 
     #[tokio::test]
