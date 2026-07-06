@@ -30,6 +30,8 @@ eth2_keystore = { workspace = true }
 initialized_validators = { workspace = true }
 lighthouse_validator_store = { workspace = true }
 mockito = { workspace = true }
+regex = { workspace = true }
+serde_json = { workspace = true }
 slashing_protection = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = [

@@ -1,3 +1,4 @@
+use crate::attestation_data_service::AttestationDataService;
 use crate::duties_service::{DutiesService, DutyAndProof};
 use beacon_node_fallback::{ApiTopic, BeaconNodeFallback, beacon_head_monitor::HeadEvent};
 use futures::StreamExt;
@@ -25,6 +26,7 @@ pub struct AttestationServiceBuilder<S: ValidatorStore, T: SlotClock + 'static> 
     executor: Option<TaskExecutor>,
     chain_spec: Option<Arc<ChainSpec>>,
     head_monitor_rx: Option<Mutex<mpsc::Receiver<HeadEvent>>>,
+    attestation_data_service: Option<Arc<AttestationDataService<T>>>,
     disable: bool,
 }
 
@@ -38,6 +40,7 @@ impl<S: ValidatorStore + 'static, T: SlotClock + 'static> AttestationServiceBuil
             executor: None,
             chain_spec: None,
             head_monitor_rx: None,
+            attestation_data_service: None,
             disable: false,
         }
     }
@@ -58,7 +61,8 @@ impl<S: ValidatorStore + 'static, T: SlotClock + 'static> AttestationServiceBuil
     }
 
     pub fn beacon_nodes(mut self, beacon_nodes: Arc<BeaconNodeFallback<T>>) -> Self {
-        self.beacon_nodes = Some(beacon_nodes);
+        self.beacon_nodes = Some(beacon_nodes.clone());
+        self.attestation_data_service = Some(Arc::new(AttestationDataService::new(beacon_nodes)));
         self
     }
 
@@ -105,6 +109,9 @@ impl<S: ValidatorStore + 'static, T: SlotClock + 'static> AttestationServiceBuil
                 chain_spec: self
                     .chain_spec
                     .ok_or("Cannot build AttestationService without chain_spec")?,
+                attestation_data_service: self
+                    .attestation_data_service
+                    .ok_or("Cannot build AttestationService without attestation_data_service")?,
                 head_monitor_rx: self.head_monitor_rx,
                 disable: self.disable,
                 latest_attested_slot: Mutex::new(Slot::default()),
@@ -122,6 +129,7 @@ pub struct Inner<S, T> {
     executor: TaskExecutor,
     chain_spec: Arc<ChainSpec>,
     head_monitor_rx: Option<Mutex<mpsc::Receiver<HeadEvent>>>,
+    attestation_data_service: Arc<AttestationDataService<T>>,
     disable: bool,
     latest_attested_slot: Mutex<Slot>,
 }
@@ -322,22 +330,11 @@ impl<S: ValidatorStore + 'static, T: SlotClock + 'static> AttestationService<S, 
                 .unwrap_or(Duration::from_secs(0));
             sleep(duration_to_deadline).await;
 
-            attestation_service
-                .beacon_nodes
-                .first_success(|beacon_node| async move {
-                    let _timer = validator_metrics::start_timer_vec(
-                        &validator_metrics::ATTESTATION_SERVICE_TIMES,
-                        &[validator_metrics::ATTESTATIONS_HTTP_GET],
-                    );
-                    let data = beacon_node
-                        .get_validator_attestation_data(slot, 0)
-                        .await
-                        .map_err(|e| format!("Failed to produce attestation data: {:?}", e))?
-                        .data;
-                    Ok::<AttestationData, String>(data)
-                })
-                .await
-                .map_err(|e| e.to_string())?
+            let (attestation_data, _node_index) = attestation_service
+                .attestation_data_service
+                .download_data(&slot, None)
+                .await?;
+            attestation_data
         };
 
         // Sign and publish attestations.
