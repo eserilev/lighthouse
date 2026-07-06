@@ -226,11 +226,11 @@ mod tests {
     use std::{sync::Arc, time::Duration};
 
     use beacon_node_fallback::{BeaconNodeFallback, CandidateBeaconNode, Config as FallbackConfig};
+    use bls::FixedBytesExtended;
     use eth2::{SensitiveUrl, Timeouts};
     use slot_clock::{SlotClock, TestingSlotClock};
     use types::{
-        AttestationData, Checkpoint, Epoch, EthSpec, FixedBytesExtended, Hash256, MainnetEthSpec,
-        MinimalEthSpec, Slot,
+        AttestationData, Checkpoint, Epoch, EthSpec, Hash256, MainnetEthSpec, MinimalEthSpec, Slot,
     };
 
     use crate::attestation_data_service::{AttestationDataService, AttestationDataStrategy};
@@ -281,12 +281,9 @@ mod tests {
             .create();
 
         let url = SensitiveUrl::parse(&server.url()).unwrap();
-        let client = eth2::BeaconNodeHttpClient::new_with_index(
-            url,
-            Timeouts::set_all(Duration::from_secs(1)),
-            index,
-        );
-        let candidate = CandidateBeaconNode::new(client);
+        let client =
+            eth2::BeaconNodeHttpClient::new(url, Timeouts::set_all(Duration::from_secs(1)));
+        let candidate = CandidateBeaconNode::new(client, index);
 
         (server, candidate)
     }
@@ -306,12 +303,9 @@ mod tests {
             .create();
 
         let url = SensitiveUrl::parse(&server.url()).unwrap();
-        let client = eth2::BeaconNodeHttpClient::new_with_index(
-            url,
-            Timeouts::set_all(Duration::from_secs(1)),
-            index,
-        );
-        let candidate = CandidateBeaconNode::new(client);
+        let client =
+            eth2::BeaconNodeHttpClient::new(url, Timeouts::set_all(Duration::from_secs(1)));
+        let candidate = CandidateBeaconNode::new(client, index);
 
         (server, candidate)
     }
