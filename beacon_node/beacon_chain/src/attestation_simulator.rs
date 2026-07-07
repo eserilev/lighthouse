@@ -23,7 +23,7 @@ pub fn start_attestation_simulator_service<T: BeaconChainTypes>(
     );
 }
 
-/// Loop indefinitely, calling `BeaconChain::produce_unaggregated_attestation` every 4s into each slot.
+/// Loop indefinitely, calling `BeaconChain::produce_attestation_data` every 4s into each slot.
 async fn attestation_simulator_service<T: BeaconChainTypes>(
     executor: TaskExecutor,
     chain: Arc<BeaconChain<T>>,

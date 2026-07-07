@@ -2,6 +2,7 @@
 
 use beacon_chain::test_utils::{
     AttestationStrategy, BeaconChainHarness, BlockStrategy, EphemeralHarnessType,
+    attester_signature,
 };
 use beacon_chain::{
     BeaconChain, BeaconChainError, BeaconForkChoiceStore, ChainConfig, ForkChoiceError,
@@ -20,10 +21,9 @@ use std::time::Duration;
 use store::MemoryStore;
 use types::SingleAttestation;
 use types::{
-    BeaconBlockRef, BeaconState, ChainSpec, Checkpoint, Domain, Epoch, EthSpec, ForkName, Hash256,
+    BeaconBlockRef, BeaconState, ChainSpec, Checkpoint, Epoch, EthSpec, ForkName, Hash256,
     IndexedAttestation, IndexedPayloadAttestation, MainnetEthSpec, PayloadAttestationData,
-    RelativeEpoch, SignedBeaconBlock, SignedRoot, Slot, SubnetId,
-    test_utils::generate_deterministic_keypair,
+    RelativeEpoch, SignedBeaconBlock, Slot, SubnetId, test_utils::generate_deterministic_keypair,
 };
 
 pub type E = MainnetEthSpec;
@@ -481,14 +481,14 @@ impl ForkChoiceTest {
 
         let validator_sk = generate_deterministic_keypair(validator_index).sk;
 
-        let domain = self.harness.chain.spec.get_domain(
-            attestation_data.target.epoch,
-            Domain::BeaconAttester,
+        let mut signature = AggregateSignature::infinity();
+        signature.add_assign(&attester_signature(
+            &attestation_data,
+            &validator_sk,
             &head.beacon_state.fork(),
             self.harness.chain.genesis_validators_root,
-        );
-        let mut signature = AggregateSignature::infinity();
-        signature.add_assign(&validator_sk.sign(attestation_data.signing_root(domain)));
+            &self.harness.chain.spec,
+        ));
 
         let single_attestation = SingleAttestation {
             attester_index: validator_index as u64,

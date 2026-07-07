@@ -5,7 +5,7 @@ use beacon_chain::attestation_verification::{
     Error, batch_verify_aggregated_attestations, batch_verify_unaggregated_attestations,
 };
 use beacon_chain::observed_aggregates::ObservedAttestationKey;
-use beacon_chain::test_utils::{HARNESS_GENESIS_TIME, MakeAttestationOptions};
+use beacon_chain::test_utils::{HARNESS_GENESIS_TIME, MakeAttestationOptions, attester_signature};
 use beacon_chain::{
     BeaconChain, BeaconChainError, BeaconChainTypes, ChainConfig, WhenSlotSkipped,
     attestation_verification::Error as AttnError,
@@ -26,10 +26,9 @@ use tempfile::tempdir;
 use tree_hash::TreeHash;
 use typenum::Unsigned;
 use types::{
-    Address, Attestation, AttestationRef, ChainSpec, Domain, Epoch, EthSpec, ForkName, Hash256,
-    MainnetEthSpec, SelectionProof, SignedAggregateAndProof, SignedRoot, SingleAttestation, Slot,
-    SubnetId, attestation::SignedAggregateAndProofRefMut,
-    test_utils::generate_deterministic_keypair,
+    Address, Attestation, AttestationRef, ChainSpec, Epoch, EthSpec, ForkName, Hash256,
+    MainnetEthSpec, SelectionProof, SignedAggregateAndProof, SingleAttestation, Slot, SubnetId,
+    attestation::SignedAggregateAndProofRefMut, test_utils::generate_deterministic_keypair,
 };
 
 pub type E = MainnetEthSpec;
@@ -143,14 +142,14 @@ fn get_valid_unaggregated_attestation<T: BeaconChainTypes>(
 
     let validator_sk = generate_deterministic_keypair(validator_index).sk;
 
-    let domain = chain.spec.get_domain(
-        attestation_data.target.epoch,
-        Domain::BeaconAttester,
+    let mut signature = AggregateSignature::infinity();
+    signature.add_assign(&attester_signature(
+        &attestation_data,
+        &validator_sk,
         &head.beacon_state.fork(),
         chain.genesis_validators_root,
-    );
-    let mut signature = AggregateSignature::infinity();
-    signature.add_assign(&validator_sk.sign(attestation_data.signing_root(domain)));
+        &chain.spec,
+    ));
 
     let single_attestation = SingleAttestation {
         committee_index,

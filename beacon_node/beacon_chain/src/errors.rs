@@ -102,7 +102,6 @@ pub enum BeaconChainError {
     ObservedAttestersError(ObservedAttestersError),
     ObservedBlockProducersError(ObservedBlockProducersError),
     ObservedDataSidecarsError(ObservedDataSidecarsError),
-    EarlyAttesterCacheError,
     PruningError(PruningError),
     ArithError(ArithError),
     InvalidShufflingId {

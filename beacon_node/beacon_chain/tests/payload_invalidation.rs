@@ -7,9 +7,11 @@ use beacon_chain::{
     INVALID_JUSTIFIED_PAYLOAD_SHUTDOWN_REASON, NotifyExecutionLayer, StateSkipConfig,
     WhenSlotSkipped,
     canonical_head::CachedHead,
-    test_utils::{BeaconChainHarness, EphemeralHarnessType, fork_name_from_env, test_spec},
+    test_utils::{
+        BeaconChainHarness, EphemeralHarnessType, empty_attestation_from_data, fork_name_from_env,
+        test_spec,
+    },
 };
-use bls::AggregateSignature;
 use execution_layer::{
     ExecutionLayer, ForkchoiceState, PayloadAttributes,
     json_structures::{JsonForkchoiceStateV1, JsonPayloadAttributes, JsonPayloadAttributesV1},
@@ -17,7 +19,6 @@ use execution_layer::{
 use fork_choice::{Error as ForkChoiceError, InvalidationOperation, PayloadVerificationStatus};
 use proto_array::{Error as ProtoArrayError, ExecutionStatus};
 use slot_clock::SlotClock;
-use ssz_types::{BitList, BitVector};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -1128,27 +1129,8 @@ async fn attesting_to_optimistic_head() {
         data.slot = slot;
         data.beacon_block_root = root;
 
-        let mut attestation = if rig
-            .harness
-            .spec
-            .fork_name_at_slot::<E>(slot)
-            .electra_enabled()
-        {
-            let mut committee_bits = BitVector::default();
-            committee_bits.set(0, true).unwrap();
-            Attestation::Electra(AttestationElectra {
-                aggregation_bits: BitList::with_capacity(1).unwrap(),
-                data,
-                committee_bits,
-                signature: AggregateSignature::infinity(),
-            })
-        } else {
-            Attestation::Base(AttestationBase {
-                aggregation_bits: BitList::with_capacity(1).unwrap(),
-                data,
-                signature: AggregateSignature::infinity(),
-            })
-        };
+        let mut attestation =
+            empty_attestation_from_data::<E>(data, 0, 1, &rig.harness.spec).unwrap();
 
         match &mut attestation {
             Attestation::Base(att) => {

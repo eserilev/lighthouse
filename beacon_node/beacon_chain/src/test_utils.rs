@@ -272,6 +272,55 @@ pub struct Builder<T: BeaconChainTypes> {
     runtime: TestRuntime,
 }
 
+/// Compute an attester's signature over `data`.
+pub fn attester_signature(
+    data: &AttestationData,
+    secret_key: &SecretKey,
+    fork: &Fork,
+    genesis_validators_root: Hash256,
+    spec: &ChainSpec,
+) -> Signature {
+    let domain = spec.get_domain(
+        data.target.epoch,
+        Domain::BeaconAttester,
+        fork,
+        genesis_validators_root,
+    );
+    secret_key.sign(data.signing_root(domain))
+}
+
+/// Build an `Attestation` with empty aggregation bits in the fork-appropriate variant for
+/// `data.slot`.
+pub fn empty_attestation_from_data<E: EthSpec>(
+    mut data: AttestationData,
+    committee_index: u64,
+    committee_length: usize,
+    spec: &ChainSpec,
+) -> Result<Attestation<E>, AttestationError> {
+    if spec.fork_name_at_slot::<E>(data.slot).electra_enabled() {
+        let mut committee_bits: BitVector<E::MaxCommitteesPerSlot> = BitVector::default();
+        committee_bits
+            .set(committee_index as usize, true)
+            .map_err(|_| AttestationError::InvalidCommitteeIndex)?;
+        Ok(Attestation::Electra(AttestationElectra {
+            aggregation_bits: BitList::with_capacity(committee_length)
+                .map_err(|_| AttestationError::InvalidCommitteeLength)?,
+            data,
+            committee_bits,
+            signature: AggregateSignature::infinity(),
+        }))
+    } else {
+        // Pre-electra the attestation data index carries the committee index.
+        data.index = committee_index;
+        Ok(Attestation::Base(AttestationBase {
+            aggregation_bits: BitList::with_capacity(committee_length)
+                .map_err(|_| AttestationError::InvalidCommitteeLength)?,
+            data,
+            signature: AggregateSignature::infinity(),
+        }))
+    }
+}
+
 impl<E: EthSpec> Builder<EphemeralHarnessType<E>> {
     pub fn fresh_ephemeral_store(mut self) -> Self {
         let spec = self.spec.as_ref().expect("cannot build without spec");
@@ -1509,7 +1558,6 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::too_many_arguments)]
     pub fn produce_single_attestation_for_block(
         &self,
         slot: Slot,
@@ -1638,7 +1686,7 @@ where
             }
         };
 
-        let data = AttestationData {
+        let mut data = AttestationData {
             slot,
             index: 0,
             beacon_block_root,
@@ -1649,34 +1697,17 @@ where
             },
         };
 
-        if self.spec.fork_name_at_slot::<E>(slot).electra_enabled() {
-            let mut committee_bits: BitVector<E::MaxCommitteesPerSlot> = BitVector::default();
-            committee_bits
-                .set(index as usize, true)
-                .map_err(|_| AttestationError::InvalidCommitteeIndex)?;
-            let mut data = data;
-            // Gloas attestation data index indicates payload presence.
-            if self.spec.fork_name_at_slot::<E>(slot).gloas_enabled() && payload_present {
-                data.index = 1;
-            }
-            Ok(Attestation::Electra(AttestationElectra {
-                aggregation_bits: BitList::with_capacity(committee_len)
-                    .map_err(|_| AttestationError::InvalidCommitteeLength)?,
-                data,
-                committee_bits,
-                signature: AggregateSignature::infinity(),
-            }))
-        } else {
-            let mut data = data;
-            // Pre-electra the attestation data index carries the committee index.
-            data.index = index;
-            Ok(Attestation::Base(AttestationBase {
-                aggregation_bits: BitList::with_capacity(committee_len)
-                    .map_err(|_| AttestationError::InvalidCommitteeLength)?,
-                data,
-                signature: AggregateSignature::infinity(),
-            }))
+        // Gloas attestation data index indicates payload presence.
+        if self.spec.fork_name_at_slot::<E>(slot).gloas_enabled() && payload_present {
+            data.index = 1;
         }
+
+        Ok(empty_attestation_from_data(
+            data,
+            index,
+            committee_len,
+            &self.spec,
+        )?)
     }
 
     /// A list of attestations for each committee for the given slot.
@@ -1789,21 +1820,14 @@ where
                             .unwrap();
 
                         attestation.signature = {
-                            let domain = self.spec.get_domain(
-                                attestation.data.target.epoch,
-                                Domain::BeaconAttester,
+                            let mut agg_sig = AggregateSignature::infinity();
+                            agg_sig.add_assign(&attester_signature(
+                                &attestation.data,
+                                &self.validator_keypairs[*validator_index].sk,
                                 &fork,
                                 state.genesis_validators_root(),
-                            );
-
-                            let message = attestation.data.signing_root(domain);
-
-                            let mut agg_sig = AggregateSignature::infinity();
-
-                            agg_sig.add_assign(
-                                &self.validator_keypairs[*validator_index].sk.sign(message),
-                            );
-
+                                &self.spec,
+                            ));
                             agg_sig
                         };
 
@@ -1894,21 +1918,14 @@ where
                         }
 
                         *attestation.signature_mut() = {
-                            let domain = self.spec.get_domain(
-                                attestation.data().target.epoch,
-                                Domain::BeaconAttester,
+                            let mut agg_sig = AggregateSignature::infinity();
+                            agg_sig.add_assign(&attester_signature(
+                                attestation.data(),
+                                &self.validator_keypairs[*validator_index].sk,
                                 &fork,
                                 state.genesis_validators_root(),
-                            );
-
-                            let message = attestation.data().signing_root(domain);
-
-                            let mut agg_sig = AggregateSignature::infinity();
-
-                            agg_sig.add_assign(
-                                &self.validator_keypairs[*validator_index].sk.sign(message),
-                            );
-
+                                &self.spec,
+                            ));
                             agg_sig
                         };
 
@@ -2518,15 +2535,13 @@ where
 
                         let genesis_validators_root = self.chain.genesis_validators_root;
 
-                        let domain = self.chain.spec.get_domain(
-                            attestation.data.target.epoch,
-                            Domain::BeaconAttester,
+                        attestation.signature.add_assign(&attester_signature(
+                            &attestation.data,
+                            sk,
                             &fork,
                             genesis_validators_root,
-                        );
-                        let message = attestation.data.signing_root(domain);
-
-                        attestation.signature.add_assign(&sk.sign(message));
+                            &self.chain.spec,
+                        ));
                     }
                 }
                 IndexedAttestation::Electra(attestation) => {
@@ -2535,15 +2550,13 @@ where
 
                         let genesis_validators_root = self.chain.genesis_validators_root;
 
-                        let domain = self.chain.spec.get_domain(
-                            attestation.data.target.epoch,
-                            Domain::BeaconAttester,
+                        attestation.signature.add_assign(&attester_signature(
+                            &attestation.data,
+                            sk,
                             &fork,
                             genesis_validators_root,
-                        );
-                        let message = attestation.data.signing_root(domain);
-
-                        attestation.signature.add_assign(&sk.sign(message));
+                            &self.chain.spec,
+                        ));
                     }
                 }
             }
@@ -2630,15 +2643,13 @@ where
 
                         let genesis_validators_root = self.chain.genesis_validators_root;
 
-                        let domain = self.chain.spec.get_domain(
-                            attestation.data.target.epoch,
-                            Domain::BeaconAttester,
+                        attestation.signature.add_assign(&attester_signature(
+                            &attestation.data,
+                            sk,
                             &fork,
                             genesis_validators_root,
-                        );
-                        let message = attestation.data.signing_root(domain);
-
-                        attestation.signature.add_assign(&sk.sign(message));
+                            &self.chain.spec,
+                        ));
                     }
                 }
                 IndexedAttestation::Electra(attestation) => {
@@ -2647,15 +2658,13 @@ where
 
                         let genesis_validators_root = self.chain.genesis_validators_root;
 
-                        let domain = self.chain.spec.get_domain(
-                            attestation.data.target.epoch,
-                            Domain::BeaconAttester,
+                        attestation.signature.add_assign(&attester_signature(
+                            &attestation.data,
+                            sk,
                             &fork,
                             genesis_validators_root,
-                        );
-                        let message = attestation.data.signing_root(domain);
-
-                        attestation.signature.add_assign(&sk.sign(message));
+                            &self.chain.spec,
+                        ));
                     }
                 }
             }

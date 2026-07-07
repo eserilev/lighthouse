@@ -1924,10 +1924,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         }
     }
 
-    /// Produce an unaggregated `Attestation` that is valid for the given `slot` and `index`.
-    ///
-    /// The produced `Attestation` will not be valid until it has been signed by exactly one
-    /// validator that is in the committee for `slot` and `index` in the canonical chain.
+    /// Produce `AttestationData` that is valid for the given `slot`.
     ///
     /// Always attests to the canonical chain.
     ///
