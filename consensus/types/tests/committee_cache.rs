@@ -10,7 +10,7 @@ use types::*;
 
 use crate::test_utils::generate_deterministic_keypairs;
 
-pub const VALIDATOR_COUNT: usize = 16;
+pub const VALIDATOR_COUNT: usize = 160;
 
 /// A cached set of keys.
 static KEYPAIRS: LazyLock<Vec<Keypair>> =
@@ -168,4 +168,71 @@ async fn min_randao_epoch_correct() {
     state.get_randao_mix(min_randao_epoch).unwrap();
     state.get_randao_mix(min_randao_epoch - 1).unwrap_err();
     state.get_randao_mix(min_randao_epoch + 1).unwrap();
+}
+
+/// 16 validators over 8 minimal slots gives ~2 members per slot, fewer than
+/// `INCLUSION_LIST_COMMITTEE_SIZE`, so the committee wraps and validators repeat.
+#[tokio::test]
+async fn inclusion_list_committee_wraps_around_small_committees() {
+    let mut state = new_state::<MinimalEthSpec>(16, Slot::new(0)).await;
+    let spec = &MinimalEthSpec::default_spec();
+    state.build_all_committee_caches(spec).unwrap();
+
+    let size = MinimalEthSpec::inclusion_list_committee_size();
+
+    for slot in state
+        .current_epoch()
+        .slot_iter(MinimalEthSpec::slots_per_epoch())
+    {
+        let concatenated: Vec<u64> = state
+            .get_beacon_committees_at_slot(slot)
+            .unwrap()
+            .iter()
+            .flat_map(|bc| bc.committee.iter().map(|i| *i as u64))
+            .collect();
+        assert!(concatenated.len() < size);
+
+        let committee = state.get_inclusion_list_committee(slot).unwrap();
+
+        assert_eq!(committee.len(), size);
+        for (i, validator) in committee.iter().enumerate() {
+            assert_eq!(*validator, concatenated[i % concatenated.len()]);
+        }
+
+        assert_eq!(committee, state.get_inclusion_list_committee(slot).unwrap());
+    }
+}
+
+/// 160 validators over 8 minimal slots gives ~20 members per slot, more than
+/// `INCLUSION_LIST_COMMITTEE_SIZE`, so the committee takes the first `size`
+/// concatenated members without wrapping.
+#[tokio::test]
+async fn inclusion_list_committee_truncates_large_committees() {
+    let mut state = new_state::<MinimalEthSpec>(160, Slot::new(0)).await;
+    let spec = &MinimalEthSpec::default_spec();
+    state.build_all_committee_caches(spec).unwrap();
+
+    let size = MinimalEthSpec::inclusion_list_committee_size();
+
+    for slot in state
+        .current_epoch()
+        .slot_iter(MinimalEthSpec::slots_per_epoch())
+    {
+        let concatenated: Vec<u64> = state
+            .get_beacon_committees_at_slot(slot)
+            .unwrap()
+            .iter()
+            .flat_map(|bc| bc.committee.iter().map(|i| *i as u64))
+            .collect();
+        assert!(concatenated.len() > size);
+
+        let committee = state.get_inclusion_list_committee(slot).unwrap();
+
+        assert_eq!(committee.len(), size);
+        for (i, validator) in committee.iter().enumerate() {
+            assert_eq!(*validator, concatenated[i]);
+        }
+
+        assert_eq!(committee, state.get_inclusion_list_committee(slot).unwrap());
+    }
 }
