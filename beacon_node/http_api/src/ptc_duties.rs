@@ -14,11 +14,7 @@ pub fn ptc_duties<T: BeaconChainTypes>(
     request_indices: &[u64],
     chain: &BeaconChain<T>,
 ) -> Result<ApiDuties, warp::reject::Rejection> {
-    if !chain
-        .spec
-        .fork_name_at_epoch(request_epoch)
-        .gloas_enabled()
-    {
+    if !chain.spec.fork_name_at_epoch(request_epoch).gloas_enabled() {
         return Err(warp_utils::reject::custom_bad_request(format!(
             "request epoch {request_epoch} is prior to the Gloas fork"
         )));
