@@ -1812,21 +1812,27 @@ async fn poll_beacon_ptc_attesters<S: ValidatorStore + 'static, T: SlotClock + '
         local_indices
     };
 
-    // Poll for current epoch
-    if let Err(e) = poll_beacon_ptc_attesters_for_epoch(
-        duties_service,
-        current_epoch,
-        &local_indices,
-        &local_pubkeys,
-    )
-    .await
+    // Poll for current epoch, unless it is prior to the Gloas fork.
+    if duties_service
+        .spec
+        .fork_name_at_epoch(current_epoch)
+        .gloas_enabled()
     {
-        error!(
-            %current_epoch,
-            request_epoch = %current_epoch,
-            err = ?e,
-            "Failed to download PTC duties"
-        );
+        if let Err(e) = poll_beacon_ptc_attesters_for_epoch(
+            duties_service,
+            current_epoch,
+            &local_indices,
+            &local_pubkeys,
+        )
+        .await
+        {
+            error!(
+                %current_epoch,
+                request_epoch = %current_epoch,
+                err = ?e,
+                "Failed to download PTC duties"
+            );
+        }
     }
     drop(current_epoch_timer);
     let next_epoch_timer = validator_metrics::start_timer_vec(

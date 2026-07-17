@@ -9,7 +9,7 @@ use crate::version::{
 use beacon_chain::data_column_verification::{GossipDataColumnError, GossipVerifiedDataColumn};
 use beacon_chain::payload_envelope_verification::EnvelopeError;
 use beacon_chain::{
-    AvailabilityProcessingStatus, BeaconChain, BeaconChainTypes, NotifyExecutionLayer,
+    AvailabilityProcessingStatus, BeaconChain, BeaconChainTypes, BlockError, NotifyExecutionLayer,
 };
 use bytes::Bytes;
 use eth2::types as api_types;
@@ -168,9 +168,35 @@ pub async fn publish_execution_payload_envelope<T: BeaconChainTypes>(
         Ok(AvailabilityProcessingStatus::MissingComponents(_, _)) => false,
         Err(e) => {
             warn!(%slot, error = ?e, "Failed to import execution payload envelope");
-            return Err(warp_utils::reject::custom_server_error(format!(
-                "envelope import failed: {e}"
-            )));
+            let message = format!("envelope import failed: {e}");
+            let is_internal_error = match e {
+                BlockError::EnvelopeError(envelope_error) => match envelope_error.as_ref() {
+                    EnvelopeError::BadSignature
+                    | EnvelopeError::BuilderIndexMismatch { .. }
+                    | EnvelopeError::SlotMismatch { .. }
+                    | EnvelopeError::BlockHashMismatch { .. }
+                    | EnvelopeError::UnknownValidator { .. }
+                    | EnvelopeError::IncorrectBlockProposer { .. }
+                    | EnvelopeError::BlockRootUnknown { .. }
+                    | EnvelopeError::PriorToFinalization { .. }
+                    | EnvelopeError::EnvelopeProcessingError(_) => false,
+                    EnvelopeError::ExecutionPayloadError(payload_error) => {
+                        !payload_error.penalize_peer()
+                    }
+                    EnvelopeError::BeaconChainError(_)
+                    | EnvelopeError::BeaconStateError(_)
+                    | EnvelopeError::OptimisticSyncNotSupported { .. }
+                    | EnvelopeError::BlockRootNotInForkChoice(_)
+                    | EnvelopeError::InternalError(_) => true,
+                },
+                BlockError::BeaconChainError(_) | BlockError::InternalError(_) => true,
+                _ => false,
+            };
+            return Err(if is_internal_error {
+                warp_utils::reject::custom_server_error(message)
+            } else {
+                warp_utils::reject::custom_bad_request(message)
+            });
         }
     };
 
