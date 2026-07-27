@@ -3712,6 +3712,7 @@ dependencies = [
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "fixed_bytes",
+ "fork_choice_reference",
  "logging",
  "metrics",
  "proto_array",
@@ -3720,6 +3721,13 @@ dependencies = [
  "superstruct",
  "tokio",
  "tracing",
+ "types",
+]
+
+[[package]]
+name = "fork_choice_reference"
+version = "0.1.0"
+dependencies = [
  "types",
 ]
 
@@ -7216,8 +7224,10 @@ dependencies = [
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "fixed_bytes",
+ "fork_choice_reference",
  "safe_arith",
  "serde",
+ "serde_json",
  "smallvec",
  "superstruct",
  "typenum",

@@ -236,6 +236,15 @@ test-network-%:
 		--features "fork_from_env,$(TEST_FEATURES)" \
 		-p network crypto_on
 
+CERTIFY_PYTHON ?= python3
+
+# Certify the naive fork choice reference (consensus/fork_choice_reference) against the
+# executable consensus-specs pyspec. Requires: pip install eth-consensus-specs==1.7.0a11
+certify-fork-choice:
+	env CERTIFY_OUT=$(CURDIR)/certify_scenarios.jsonl cargo test --release -p proto_array \
+		--test differential -- --ignored export_certification_scenarios
+	$(CERTIFY_PYTHON) consensus/fork_choice_reference/certify.py $(CURDIR)/certify_scenarios.jsonl
+
 # Run the tests in the `slasher` crate for all supported database backends.
 test-slasher:
 	cargo nextest run --release -p slasher --features "lmdb,$(TEST_FEATURES)"

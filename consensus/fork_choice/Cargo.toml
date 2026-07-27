@@ -21,6 +21,7 @@ tracing = { workspace = true }
 types = { workspace = true }
 
 [dev-dependencies]
+fork_choice_reference = { workspace = true }
 beacon_chain = { workspace = true }
 bls = { workspace = true }
 criterion = { workspace = true }

@@ -1,0 +1,8 @@
+[package]
+name = "fork_choice_reference"
+version = "0.1.0"
+authors = ["Sigma Prime <contact@sigmaprime.io>"]
+edition = { workspace = true }
+
+[dependencies]
+types = { workspace = true }

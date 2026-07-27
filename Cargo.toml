@@ -50,6 +50,7 @@ members = [
     "consensus/fast_confirmation",
     "consensus/fixed_bytes",
     "consensus/fork_choice",
+    "consensus/fork_choice_reference",
     "consensus/int_to_bytes",
     "consensus/merkle_proof",
     "consensus/proto_array",
@@ -152,6 +153,7 @@ filesystem = { path = "common/filesystem" }
 fixed_bytes = { path = "consensus/fixed_bytes" }
 fnv = "1"
 fork_choice = { path = "consensus/fork_choice" }
+fork_choice_reference = { path = "consensus/fork_choice_reference" }
 fs2 = "0.4"
 futures = "0.3"
 genesis = { path = "beacon_node/genesis" }

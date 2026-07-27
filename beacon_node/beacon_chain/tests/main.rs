@@ -4,6 +4,7 @@ mod blob_verification;
 mod block_verification;
 mod column_verification;
 mod events;
+mod import_ordering;
 mod op_verification;
 mod payload_invalidation;
 mod prepare_payload;

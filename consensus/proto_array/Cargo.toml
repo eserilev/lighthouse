@@ -23,6 +23,8 @@ yaml_serde = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 fixed_bytes = { workspace = true }
+fork_choice_reference = { workspace = true }
+serde_json = { workspace = true }
 
 [[bench]]
 name = "find_head"
