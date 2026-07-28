@@ -245,6 +245,13 @@ certify-fork-choice:
 		--test differential -- --ignored export_certification_scenarios
 	$(CERTIFY_PYTHON) consensus/fork_choice_reference/certify.py $(CURDIR)/certify_scenarios.jsonl
 
+# Certify the ForkChoice wrapper harness's handler-call sequences against the pyspec's
+# fork choice handlers. Requires: pip install eth-consensus-specs==1.7.0a11
+certify-fork-choice-handlers:
+	env CERTIFY_OUT=$(CURDIR)/handler_sequences.jsonl cargo test --release -p fork_choice \
+		--test wrapper_differential -- --ignored export_handler_sequences
+	$(CERTIFY_PYTHON) consensus/fork_choice_reference/certify_handlers.py $(CURDIR)/handler_sequences.jsonl
+
 # Run the tests in the `slasher` crate for all supported database backends.
 test-slasher:
 	cargo nextest run --release -p slasher --features "lmdb,$(TEST_FEATURES)"

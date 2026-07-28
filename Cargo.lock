@@ -3716,6 +3716,7 @@ dependencies = [
  "logging",
  "metrics",
  "proto_array",
+ "serde_json",
  "state_processing",
  "store",
  "superstruct",

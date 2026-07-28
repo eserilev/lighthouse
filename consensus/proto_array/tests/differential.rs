@@ -702,6 +702,7 @@ fn for_each_scenario(mut f: impl FnMut(&Scenario, Slot)) {
     non_finality_scenarios(&mut f);
     void_scenarios(&mut f);
     proposer_equivocation_scenarios(&mut f);
+    extend_payload_arm_scenarios(&mut f);
 }
 
 /// Proposer equivocation at slot 1 (B1 and B2: same slot, same proposer), a boost child B3 of
@@ -762,6 +763,91 @@ fn proposer_equivocation_scenarios(f: &mut impl FnMut(&Scenario, Slot)) {
                                     f(&scenario, Slot::new(2));
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// `should_extend_payload` OR-arm isolation. B (block 1, slot 1) is revealed and
+/// payload-pending at slot 2, with balances [5, 5, 90] ETH making the proposer boost
+/// (total/20 = 5 ETH) exactly one vote's weight, so B's empty and full virtual nodes can tie
+/// and the payload-status tiebreaker decides the head. The slot-2 block attaches to B's empty
+/// node, B's full node, or a fork off the anchor, so across the enumeration each OR-arm
+/// (PTC timely+available / no boost / boost not on B's child / boosted child already full) is
+/// the sole deciding condition in some scenario.
+fn extend_payload_arm_scenarios(f: &mut impl FnMut(&Scenario, Slot)) {
+    let shapes = [
+        (1, 1, ParentStatus::Empty),
+        (1, 1, ParentStatus::Full),
+        (0, 2, ParentStatus::Empty),
+    ];
+    for (parent, slot_offset, parent_status) in shapes {
+        let blocks = vec![
+            ScenarioBlock {
+                parent: 0,
+                slot_offset: 0,
+                parent_status: ParentStatus::Empty,
+                proposer: 0,
+            },
+            ScenarioBlock {
+                parent: 0,
+                slot_offset: 1,
+                parent_status: ParentStatus::Empty,
+                proposer: 1,
+            },
+            ScenarioBlock {
+                parent,
+                slot_offset,
+                parent_status,
+                proposer: 2,
+            },
+        ];
+        for ptc in [
+            PtcPattern::NoVotes,
+            PtcPattern::Timely,
+            PtcPattern::Late,
+            PtcPattern::AtThreshold,
+            PtcPattern::TimelyNotAvailable,
+            PtcPattern::Contested,
+        ] {
+            for boost in [None, Some(2)] {
+                for vote_a in [
+                    None,
+                    Some(Vote {
+                        block: 1,
+                        same_slot: false,
+                        payload_present: false,
+                    }),
+                ] {
+                    for vote_b in [
+                        None,
+                        Some(Vote {
+                            block: 1,
+                            same_slot: false,
+                            payload_present: true,
+                        }),
+                    ] {
+                        for balances in [
+                            vec![5 * GWEI, 5 * GWEI, 90 * GWEI],
+                            vec![32 * GWEI, 32 * GWEI, 32 * GWEI],
+                        ] {
+                            let scenario = Scenario {
+                                blocks: blocks.clone(),
+                                revealed: vec![false, true, false],
+                                votes: vec![vote_a, vote_b],
+                                boost,
+                                ptc,
+                                extra_slot: false,
+                                balances,
+                                checkpoints: vec![(checkpoint(), checkpoint()); 3],
+                                store_justified: checkpoint(),
+                                equivocating: vec![],
+                                ptc_unrevealed: false,
+                            };
+                            f(&scenario, Slot::new(2));
                         }
                     }
                 }
