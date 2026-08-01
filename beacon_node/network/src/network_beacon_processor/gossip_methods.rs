@@ -3807,6 +3807,10 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
                             MessageAcceptance::Ignore,
                         );
 
+                        self.send_sync_message(SyncMessage::UnknownBlockHashFromAttestation(
+                            peer_id, block_root,
+                        ));
+
                         let inner_self = self.clone();
                         let chain = self.chain.clone();
                         let process_fn = Box::pin(async move {

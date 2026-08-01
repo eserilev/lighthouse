@@ -6,7 +6,7 @@ use crate::{
         ChainSegmentProcessId, DuplicateCache, InvalidBlockStorage, NetworkBeaconProcessor,
     },
     service::NetworkMessage,
-    sync::manager::BlockProcessType,
+    sync::manager::{BlockProcessType, SyncMessage},
 };
 use beacon_chain::block_verification_types::LookupBlock;
 use beacon_chain::custody_context::NodeCustodyType;
@@ -78,6 +78,7 @@ struct TestRig {
     beacon_processor_tx: BeaconProcessorSend<E>,
     work_journal_rx: mpsc::Receiver<&'static str>,
     network_rx: mpsc::UnboundedReceiver<NetworkMessage<E>>,
+    sync_rx: mpsc::UnboundedReceiver<SyncMessage<E>>,
     duplicate_cache: DuplicateCache,
     network_beacon_processor: Arc<NetworkBeaconProcessor<T>>,
     _harness: BeaconChainHarness<T>,
@@ -305,7 +306,7 @@ impl TestRig {
             beacon_processor_rx,
         } = BeaconProcessorChannels::new(&beacon_processor_config);
 
-        let (sync_tx, _sync_rx) = mpsc::unbounded_channel();
+        let (sync_tx, sync_rx) = mpsc::unbounded_channel();
 
         // Default metadata
         let meta_data = if spec.is_peer_das_scheduled() {
@@ -411,6 +412,7 @@ impl TestRig {
             beacon_processor_tx,
             work_journal_rx,
             network_rx,
+            sync_rx,
             duplicate_cache,
             network_beacon_processor,
             _harness: harness,
@@ -1622,6 +1624,32 @@ async fn requeue_unknown_block_gossip_payload_attestation_without_import() {
         initial_messages,
         "Payload attestation should not have been included."
     );
+}
+
+/// Ensure that a payload envelope referencing a block we haven't seen triggers a single-block
+/// lookup for that block, in addition to being queued for reprocessing.
+#[tokio::test]
+async fn gossip_payload_envelope_unknown_block_triggers_lookup() {
+    // Only test when the Gloas fork is scheduled
+    if test_spec::<E>().gloas_fork_epoch.is_none() {
+        return;
+    }
+
+    let mut rig = TestRig::new(SMALL_CHAIN).await;
+    let block_root = rig.next_block.canonical_root();
+
+    // Send the envelope without importing its block, so the block root is unknown.
+    rig.enqueue_gossip_envelope();
+    rig.assert_event_journal_completes(&[WorkType::GossipExecutionPayload])
+        .await;
+
+    match rig.sync_rx.try_recv() {
+        Ok(SyncMessage::UnknownBlockHashFromAttestation(_, root)) => assert_eq!(
+            root, block_root,
+            "the lookup should be for the envelope's block root"
+        ),
+        other => panic!("expected an unknown block hash sync message, got: {other:?}"),
+    }
 }
 
 /// Ensure that a payload envelope arriving before its slot (e.g. due to clock drift) is re-queued
