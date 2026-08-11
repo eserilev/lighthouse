@@ -2233,6 +2233,9 @@ pub struct Config {
     #[serde(default = "default_min_epochs_for_data_column_sidecars_requests")]
     #[serde(with = "serde_utils::quoted_u64")]
     min_epochs_for_data_column_sidecars_requests: u64,
+    #[serde(default = "default_max_request_payloads")]
+    #[serde(with = "serde_utils::quoted_u64")]
+    max_request_payloads: u64,
 
     #[serde(default = "default_proposer_reorg_cutoff_bps")]
     #[serde(with = "serde_utils::quoted_u64")]
@@ -2797,6 +2800,7 @@ impl Config {
             balance_per_additional_custody_group: spec.balance_per_additional_custody_group,
             min_epochs_for_data_column_sidecars_requests: spec
                 .min_epochs_for_data_column_sidecars_requests,
+            max_request_payloads: spec.max_request_payloads,
 
             proposer_reorg_cutoff_bps: spec.proposer_reorg_cutoff_bps,
             attestation_due_bps: spec.attestation_due_bps,
@@ -2905,6 +2909,7 @@ impl Config {
             validator_custody_requirement,
             balance_per_additional_custody_group,
             min_epochs_for_data_column_sidecars_requests,
+            max_request_payloads,
             proposer_reorg_cutoff_bps,
             attestation_due_bps,
             attestation_due_bps_gloas,
@@ -3019,6 +3024,7 @@ impl Config {
             validator_custody_requirement,
             balance_per_additional_custody_group,
             min_epochs_for_data_column_sidecars_requests,
+            max_request_payloads,
 
             proposer_reorg_cutoff_bps,
             attestation_due_bps,
@@ -4006,7 +4012,6 @@ mod yaml_tests {
         "AGGREGATE_DUE_BPS_GLOAS",
         "SYNC_MESSAGE_DUE_BPS_GLOAS",
         "CONTRIBUTION_DUE_BPS_GLOAS",
-        "MAX_REQUEST_PAYLOADS",
         // Heze networking
         "MAX_REQUEST_INCLUSION_LIST",
         "MAX_BYTES_PER_INCLUSION_LIST",
