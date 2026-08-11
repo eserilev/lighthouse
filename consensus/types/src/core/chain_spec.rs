@@ -3562,6 +3562,7 @@ mod yaml_tests {
         spec.min_genesis_active_validator_count += 1;
         spec.deposit_chain_id += 1;
         spec.deposit_network_id += 1;
+        spec.max_request_payloads += 1;
         // Applying a yaml config with incorrect EthSpec should fail
         let res = yamlconfig.apply_to_chain_spec::<MainnetEthSpec>(&spec);
         assert_eq!(res, None);
@@ -3639,6 +3640,14 @@ mod yaml_tests {
         check_default!(resp_timeout);
         check_default!(message_domain_invalid_snappy);
         check_default!(message_domain_valid_snappy);
+        check_default!(max_request_payloads);
+        check_default!(min_builder_withdrawability_delay);
+        check_default!(attestation_due_bps_gloas);
+        check_default!(payload_due_bps);
+        check_default!(payload_attestation_due_bps);
+        check_default!(churn_limit_quotient_gloas);
+        check_default!(consolidation_churn_limit_quotient);
+        check_default!(max_per_epoch_activation_churn_limit_gloas);
 
         assert_eq!(chain_spec.bellatrix_fork_epoch, None);
     }

@@ -243,6 +243,7 @@ mod test {
             "ATTESTATION_SUBNET_PREFIX_BITS",
             "UPDATE_TIMEOUT",
             "DOMAIN_BLS_TO_EXECUTION_CHANGE",
+            "MAX_REQUEST_PAYLOADS",
         ];
         for field in required_fields {
             assert!(obj.contains_key(field), "Missing required field: {}", field);
