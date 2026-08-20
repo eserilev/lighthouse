@@ -700,13 +700,16 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
 
         let mut fork_choice_write_lock = self.canonical_head.fork_choice_write_lock();
 
-        match equivocating_committee_weights {
-            Ok(weights) => fork_choice_write_lock.set_equivocating_committee_weights(weights),
-            Err(e) => error!(
+        // The weights are keyed by duty slot, so keeping the previous call's map would apply
+        // stale slots to this head. Clear them instead and skip the discount.
+        let weights = equivocating_committee_weights.unwrap_or_else(|e| {
+            error!(
                 error = ?e,
                 "Failed to update equivocating committee weights"
-            ),
-        }
+            );
+            BTreeMap::new()
+        });
+        fork_choice_write_lock.set_equivocating_committee_weights(weights);
 
         // Recompute the current head via the fork choice algorithm.
         let (_, new_payload_status) = fork_choice_write_lock.get_head(current_slot, &self.spec)?;
