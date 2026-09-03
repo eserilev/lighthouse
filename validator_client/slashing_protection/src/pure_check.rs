@@ -8,7 +8,7 @@
 //! attestation lives in `../proofs`. It is not a proof about a hand-written model: the Lean
 //! definition it reasons about is generated from this file by Charon and Aeneas, so editing
 //! this file invalidates the proof and the CI job in
-//! `.github/workflows/slashing-proofs.yml` will say so.
+//! `.github/workflows/proofs.yml` will say so.
 //!
 //! # Why this is written the way it is
 //!
