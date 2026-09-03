@@ -1,0 +1,14 @@
+[
+  {
+    "name": "slashing-protection",
+    "crate": "validator_client/slashing_protection",
+    "proofs": "validator_client/slashing_protection/proofs",
+    "lib": "SlashingProofs",
+    "entrypoint": "slashing_protection::pure_check::check_attestation_pure",
+    "generated": "SlashingProofs/Generated.lean",
+    "charon_extra": "-- --lib",
+    "sources": [
+      "validator_client/slashing_protection/src/pure_check.rs"
+    ]
+  }
+]
