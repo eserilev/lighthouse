@@ -1,0 +1,210 @@
+name: proofs
+
+# Builds each Lean project in `.github/proofs.json`, audits its axioms, and regenerates the
+# Aeneas model from the Rust to catch drift. Adding a proof is one object there.
+on:
+  push:
+    branches:
+      - unstable
+      - stable
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # One toolchain for all proofs. `verify` fails if a lakefile.toml pins a different rev.
+  CHARON_REV: fea3fc68d445181cf4ce094855a43a17192a2b12
+  AENEAS_REV: 453b09f98f2b593c0544a8ad654b77e2a3bc621a
+
+jobs:
+  changes:
+    name: select proofs
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+      any: ${{ steps.select.outputs.any }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive path filters from proofs.json
+        id: filters
+        run: |
+          {
+            echo 'yaml<<FILTERS_EOF'
+            jq -r '.[] | "\(.name):\n" + ([("  - " + .proofs + "/**")]
+                    + (.sources | map("  - " + .)) | join("\n"))' .github/proofs.json
+            # A change to the registry or to this workflow re-verifies everything.
+            printf '_all:\n  - .github/proofs.json\n  - .github/workflows/proofs.yml\n'
+            echo FILTERS_EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: ${{ steps.filters.outputs.yaml }}
+
+      - name: Select the projects to verify
+        id: select
+        env:
+          CHANGED: ${{ steps.filter.outputs.changes }}
+          FORCE_ALL: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          set -euo pipefail
+          if [ "$FORCE_ALL" = "true" ] || jq -e 'index("_all")' <<<"$CHANGED" >/dev/null; then
+            selected=$(jq -c '{include: .}' .github/proofs.json)
+          else
+            selected=$(jq -c --argjson names "$CHANGED" \
+              '{include: [.[] | select(.name as $n | $names | index($n))]}' .github/proofs.json)
+          fi
+          echo "matrix=$selected" >> "$GITHUB_OUTPUT"
+          if [ "$(jq '.include | length' <<<"$selected")" -gt 0 ]; then
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "any=false" >> "$GITHUB_OUTPUT"
+          fi
+          jq '.include | map(.name)' <<<"$selected"
+
+  tools:
+    name: charon + aeneas
+    needs: changes
+    if: needs.changes.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cache charon/aeneas builds
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/verif/charon/charon/target/release/charon
+            ~/verif/charon/charon/target/release/charon-driver
+            ~/verif/aeneas/src/_build/default/main.exe
+          key: verif-tools-${{ runner.os }}-${{ env.CHARON_REV }}-${{ env.AENEAS_REV }}
+
+      - name: Build Charon and Aeneas
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p ~/verif && cd ~/verif
+          git clone https://github.com/AeneasVerif/charon
+          git -C charon checkout "$CHARON_REV"
+          (cd charon/charon && cargo build --release)
+          git clone https://github.com/AeneasVerif/aeneas
+          git -C aeneas checkout "$AENEAS_REV"
+          ln -sfn ~/verif/charon ~/verif/aeneas/charon
+          # ubuntu-latest ships neither opam nor OCaml.
+          sudo apt-get update -qq && sudo apt-get install -y -qq opam
+          # domainslib requires OCaml >= 5.0
+          opam init -y --bare --disable-sandboxing
+          opam switch create aeneas 5.2.0 -y
+          # Take the dependency list from Aeneas itself so it cannot drift from the pinned rev.
+          (cd ~/verif/aeneas/src && opam install -y --switch=aeneas --assume-depexts --deps-only \
+            ./aeneas.opam ./aeneas.ppx.opam)
+          (cd ~/verif/aeneas/src && opam exec --switch=aeneas -- dune build)
+
+  verify:
+    name: ${{ matrix.name }}
+    needs: [changes, tools]
+    if: needs.changes.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the pinned Aeneas revision matches this project
+        working-directory: ${{ matrix.proofs }}
+        run: |
+          set -euo pipefail
+          # Lake needs the rev in its own file, so assert the two agree.
+          rev=$(sed -n '/name = "aeneas"/,/^$/s/^rev = "\(.*\)"/\1/p' lakefile.toml)
+          if [ "$rev" != "$AENEAS_REV" ]; then
+            echo "::error::lakefile.toml pins aeneas $rev but the workflow pins $AENEAS_REV"
+            exit 1
+          fi
+
+      - name: Install elan
+        run: |
+          curl -sSfL https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Cache mathlib build
+        uses: actions/cache@v4
+        with:
+          path: ${{ matrix.proofs }}/.lake
+          key: lake-${{ runner.os }}-${{ matrix.name }}-${{ hashFiles(format('{0}/lakefile.toml', matrix.proofs), format('{0}/lean-toolchain', matrix.proofs)) }}
+
+      - name: Build the proofs
+        working-directory: ${{ matrix.proofs }}
+        run: |
+          set -o pipefail
+          lake exe cache get
+          lake build 2>&1 | tee build.log
+
+      - name: Fail on sorry
+        working-directory: ${{ matrix.proofs }}
+        env:
+          LIB: ${{ matrix.lib }}
+        run: |
+          # `sorry` is only a warning, so `lake build` passes -- grep its output, not the
+          # sources. Scoped to $LIB: Aeneas/Std has its own, caught below if depended on.
+          if grep -n "$LIB/.*declaration uses" build.log; then
+            echo "::error::a proof depends on sorry"
+            exit 1
+          fi
+
+      - name: Check the axiom dependencies
+        working-directory: ${{ matrix.proofs }}
+        env:
+          LIB: ${{ matrix.lib }}
+        run: |
+          set -euo pipefail
+          # `#print axioms` only reports, so assert on it. Stronger than the grep above: a
+          # `sorry` under any audited theorem shows as `sorryAx`. Run the file directly --
+          # Lake may replay cached logs rather than re-elaborate.
+          lake env lean "$LIB/Axioms.lean" 2>&1 | tee axioms.log
+
+          expected='[propext, Classical.choice, Quot.sound]'
+
+          # Derived, not hardcoded: every `#print axioms` in the audit file must report.
+          want=$(grep -c '^#print axioms' "$LIB/Axioms.lean")
+          got=$(grep -c 'depends on axioms' axioms.log || true)
+          if [ "$got" -ne "$want" ]; then
+            echo "::error::$LIB/Axioms.lean has $want audited theorems but $got reported"
+            exit 1
+          fi
+
+          if grep 'depends on axioms' axioms.log | grep -vF "$expected"; then
+            echo "::error::a theorem depends on axioms beyond $expected"
+            exit 1
+          fi
+
+      - name: Restore charon/aeneas
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/verif/charon/charon/target/release/charon
+            ~/verif/charon/charon/target/release/charon-driver
+            ~/verif/aeneas/src/_build/default/main.exe
+          key: verif-tools-${{ runner.os }}-${{ env.CHARON_REV }}-${{ env.AENEAS_REV }}
+
+      # Re-derive the model from the Rust: this is what ties the theorem to current source.
+      - name: Regenerate and diff
+        working-directory: ${{ matrix.crate }}
+        env:
+          ENTRYPOINT: ${{ matrix.entrypoint }}
+          GENERATED: ${{ matrix.generated }}
+          CHARON_EXTRA: ${{ matrix.charon_extra }}
+          PROOFS: ${{ github.workspace }}/${{ matrix.proofs }}
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/verif/charon/charon/target/release:$PATH"
+          # `-- --lib`: without it Charon translates the crate's binaries into opaque bodies.
+          # shellcheck disable=SC2086
+          charon cargo --preset=aeneas \
+            --start-from "$ENTRYPOINT" \
+            --dest-file pure.llbc $CHARON_EXTRA
+          ~/verif/aeneas/src/_build/default/main.exe -backend lean pure.llbc -dest "$RUNNER_TEMP/regen"
+          # The generated file is namespaced/renamed on the way in; compare the definitions.
+          diff <(sed -n '/^namespace/,$p' "$RUNNER_TEMP/regen/Pure.lean") \
+               <(sed -n '/^namespace/,$p' "$PROOFS/$GENERATED") \
+            || { echo "::error::$GENERATED is stale -- regenerate it (see $PROOFS/README.md)"; exit 1; }
