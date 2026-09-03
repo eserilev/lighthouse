@@ -63,6 +63,65 @@ const SLASHING_PROTECTION_HISTORY_EPOCHS: u64 = 1;
 /// https://ethpandaops.io/posts/gaslimit-scaling/.
 pub const DEFAULT_GAS_LIMIT: u64 = 60_000_000;
 
+/// Wrapper for attestations which have been signed but not yet checked against the slashing
+/// protection database.
+///
+/// This is its own module so that the inner attestation is private even to the rest of this
+/// file: nothing outside these few lines can reach the signature except through
+/// [`UnprotectedAttestation::release_checked`].
+mod unprotected {
+    use bls::PublicKeyBytes;
+    use types::{AttestationData, SingleAttestation};
+
+    /// A signed attestation which has NOT yet passed slashing protection.
+    ///
+    /// A signature is produced before the slashing protection check runs, so for a moment
+    /// there exists a fully-formed attestation which must not be published. Previously that
+    /// value had the same type as a checked one, and the distinction was maintained only by
+    /// the privacy of `sign_attestation_data_no_slashing_protection` and by convention.
+    ///
+    /// Wrapping it means a signed-but-unchecked attestation no longer has the type this crate
+    /// hands out, so a future code path that tries to publish one fails to compile instead of
+    /// silently risking a slashing. Rust cannot restrict a method to a single caller, so this
+    /// does not make misuse impossible -- but it does make it impossible to do by accident,
+    /// and `release_checked` is a greppable name that states the obligation.
+    pub struct UnprotectedAttestation {
+        attestation: SingleAttestation,
+        pubkey: PublicKeyBytes,
+    }
+
+    impl UnprotectedAttestation {
+        pub fn new(attestation: SingleAttestation, pubkey: PublicKeyBytes) -> Self {
+            Self {
+                attestation,
+                pubkey,
+            }
+        }
+
+        /// The validator that produced this attestation.
+        pub fn pubkey(&self) -> &PublicKeyBytes {
+            &self.pubkey
+        }
+
+        /// The attestation data, which is what the slashing protection check consumes.
+        ///
+        /// Deliberately does not expose the signature, so this cannot be used to publish.
+        pub fn data(&self) -> &AttestationData {
+            &self.attestation.data
+        }
+
+        /// Release the attestation for publication.
+        ///
+        /// ONLY call this once the slashing protection database has returned `Safe` for it.
+        /// The sole caller is `LighthouseValidatorStore::slashing_protect_attestations`.
+        pub fn release_checked(self) -> SingleAttestation {
+            self.attestation
+        }
+    }
+}
+
+use unprotected::UnprotectedAttestation;
+
 pub struct LighthouseValidatorStore<T, E> {
     validators: Arc<RwLock<InitializedValidators>>,
     slashing_protection: SlashingDatabase,
@@ -603,7 +662,7 @@ impl<T: SlotClock + 'static, E: EthSpec> LighthouseValidatorStore<T, E> {
     #[instrument(level = "debug", skip_all)]
     fn slashing_protect_attestations(
         &self,
-        attestations: Vec<(SingleAttestation, PublicKeyBytes)>,
+        attestations: Vec<UnprotectedAttestation>,
     ) -> Result<Vec<SingleAttestation>, Error> {
         let mut safe_attestations = Vec::with_capacity(attestations.len());
         let mut attestations_to_check = Vec::with_capacity(attestations.len());
@@ -613,9 +672,9 @@ impl<T: SlotClock + 'static, E: EthSpec> LighthouseValidatorStore<T, E> {
         //
         // All attestations are added to `attestation_to_check`, with skipped attestations having
         // `CheckSlashability::No`.
-        for (attestation, validator_pubkey) in &attestations {
-            let signing_method = self.doppelganger_checked_signing_method(*validator_pubkey)?;
-            let signing_epoch = attestation.data.target.epoch;
+        for attestation in &attestations {
+            let signing_method = self.doppelganger_checked_signing_method(*attestation.pubkey())?;
+            let signing_epoch = attestation.data().target.epoch;
             let signing_context = self.signing_context(Domain::BeaconAttester, signing_epoch);
             let domain_hash = signing_context.domain_hash(&self.spec);
 
@@ -627,8 +686,8 @@ impl<T: SlotClock + 'static, E: EthSpec> LighthouseValidatorStore<T, E> {
                 CheckSlashability::No
             };
             attestations_to_check.push((
-                &attestation.data,
-                validator_pubkey,
+                attestation.data(),
+                attestation.pubkey(),
                 domain_hash,
                 check_slashability,
             ));
@@ -643,12 +702,12 @@ impl<T: SlotClock + 'static, E: EthSpec> LighthouseValidatorStore<T, E> {
             .check_and_insert_attestations(&attestations_to_check)
             .map_err(Error::Slashable)?;
 
-        for ((attestation, validator_pubkey), slashing_status) in
-            attestations.into_iter().zip(results.into_iter())
-        {
+        for (attestation, slashing_status) in attestations.into_iter().zip(results.into_iter()) {
             match slashing_status {
                 Ok(Safe::Valid) => {
-                    safe_attestations.push(attestation);
+                    // The only place an attestation is released for publication, and only
+                    // once the slashing protection DB has recorded it as safe.
+                    safe_attestations.push(attestation.release_checked());
                     validator_metrics::inc_counter_vec(
                         &validator_metrics::SIGNED_ATTESTATIONS_TOTAL,
                         &[validator_metrics::SUCCESS],
@@ -674,9 +733,9 @@ impl<T: SlotClock + 'static, E: EthSpec> LighthouseValidatorStore<T, E> {
                 }
                 Err(e) => {
                     warn!(
-                        slot = %attestation.data.slot,
-                        block_root = ?attestation.data.beacon_block_root,
-                        public_key = ?validator_pubkey,
+                        slot = %attestation.data().slot,
+                        block_root = ?attestation.data().beacon_block_root,
+                        public_key = ?attestation.pubkey(),
                         error = ?e,
                         "Skipping signing of slashable attestation"
                     );
@@ -1019,7 +1078,7 @@ impl<T: SlotClock + 'static, E: EthSpec> ValidatorStore for LighthouseValidatorS
             for (result, att) in results.into_iter().zip(attestations) {
                 match result {
                     Ok(signature) => {
-                        signed_attestations.push((
+                        signed_attestations.push(UnprotectedAttestation::new(
                             SingleAttestation {
                                 committee_index: att.committee_index,
                                 attester_index: att.attester_index,
