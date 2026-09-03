@@ -401,9 +401,9 @@ impl SlashingDatabase {
         // `pure_check::check_attestation_pure`, which holds the slashing conditions.
         //
         // This reads every row for the validator instead of issuing four filtered queries.
-        // That is not a regression: the only index is `UNIQUE (validator_id, target_epoch)`,
-        // so the `MIN(source_epoch)` and `MIN(target_epoch)` lower-bound lookups this
-        // replaces already scanned the same rows.
+        // It is a real, if small, cost: `UNIQUE (validator_id, target_epoch)` served
+        // `MIN(target_epoch)` as a seek, and both surround queries stopped at the first hit
+        // via `ORDER BY target_epoch DESC LIMIT 1`. Only `MIN(source_epoch)` scanned.
         //
         // The row count is normally tiny, since pruning runs each epoch and retains only
         // `SLASHING_PROTECTION_HISTORY_EPOCHS` (currently 1) worth of attestations. It is
