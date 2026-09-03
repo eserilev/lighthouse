@@ -5,16 +5,18 @@
 //! compares the two on *every* history of up to `MAX_HISTORY` attestations drawn from epochs
 //! `0..=MAX_EPOCH`.
 //!
-//! Exhaustive enumeration is unusually strong here because the rules depend only on the
-//! *ordering* between epochs, never on their magnitudes: there is no arithmetic, only `<`,
-//! `>` and `=`. Any larger history is order-isomorphic, for the purposes of the pairwise
-//! conditions, to one enumerated below.
+//! A small bound goes a long way here because the rules use no arithmetic, only `<`, `>` and
+//! `=` between epochs, and each guard is decided by a bounded number of witness rows: one
+//! sharing the target, one surrounding, one surrounded, and the two holding the minima. A
+//! history of three suffices to place those witnesses independently. (This is not the same
+//! as saying every larger history is order-isomorphic to an enumerated one — four rows admit
+//! order types three cannot.)
 //!
-//! What this catches that a test suite of hand-written cases does not: a guard whose SQL
-//! quietly means something other than the rule it is supposed to implement — `MIN` where
-//! `MAX` was meant, a `<` that should be `<=`, a `WHERE` clause that drops a case. Those are
-//! transcription errors rather than logic errors, and they survive both code review and a
-//! proof of the rules themselves.
+//! What this catches: a guard whose SQL quietly means something other than the rule it is
+//! supposed to implement — `MIN` where `MAX` was meant, a `<` that should be `<=`, a `WHERE`
+//! clause that drops a case. Those are transcription errors rather than logic errors, and
+//! they survive both code review and a proof of the rules themselves. Hand-written cases do
+//! catch some of them; the value here is not needing to have thought of the case first.
 
 #![cfg(test)]
 
@@ -79,35 +81,43 @@ fn all_histories() -> Vec<Vec<Att>> {
     histories
 }
 
-/// The slashing conditions, stated once. Returns `true` if the database should accept
+/// The slashing conditions, stated once. Returns the verdict the database should reach for
 /// `candidate` given that it currently holds `history`.
 ///
 /// Mirrors `SlashingDatabase::check_attestation`, guard for guard, in the same order —
 /// including the early return for identical data, which is reached *before* the lower bounds
 /// and so admits a resubmission the bounds would otherwise reject.
-fn reference_check(history: &[Att], candidate: Att) -> bool {
+///
+/// Returns a `Verdict` rather than a bool so that a guard reporting the *wrong reason* is
+/// caught as well as one reaching the wrong accept/reject. Swapping the two surround
+/// branches, for instance, changes no acceptance decision anywhere.
+fn reference_check(history: &[Att], candidate: Att) -> Verdict {
     let (source, target) = candidate;
 
     // Invalid: source after target.
     if source > target {
-        return false;
+        return Verdict::SourceExceedsTarget;
     }
 
     // Double vote: an existing attestation with the same target. The schema's
     // `UNIQUE (validator_id, target_epoch)` means there is at most one, and an exact match is
-    // `Safe::SameData` rather than an error.
+    // `Safe::SameData` rather than an error. The signing root is a function of
+    // `(source, target)` here, so an equal source means an identical attestation.
     if let Some(&(existing_source, _)) = history.iter().find(|&&(_, t)| t == target) {
-        return existing_source == source;
+        if existing_source == source {
+            return Verdict::SameData;
+        }
+        return Verdict::DoubleVote;
     }
 
     // A stored attestation surrounds the candidate.
     if history.iter().any(|&(s, t)| s < source && t > target) {
-        return false;
+        return Verdict::PrevSurroundsNew;
     }
 
     // The candidate surrounds a stored attestation.
     if history.iter().any(|&(s, t)| s > source && t < target) {
-        return false;
+        return Verdict::NewSurroundsPrev;
     }
 
     // Lower bounds. Note MIN, not MAX: the candidate must sit at or above the *oldest*
@@ -115,16 +125,43 @@ fn reference_check(history: &[Att], candidate: Att) -> bool {
     if let Some(min_source) = history.iter().map(|&(s, _)| s).min()
         && source < min_source
     {
-        return false;
+        return Verdict::SourceLessThanLowerBound;
     }
 
     if let Some(min_target) = history.iter().map(|&(_, t)| t).min()
         && target <= min_target
     {
-        return false;
+        return Verdict::TargetLessThanOrEqLowerBound;
     }
 
-    true
+    Verdict::Valid
+}
+
+/// `true` if the verdict means the database accepts the attestation.
+fn accepts(verdict: &Verdict) -> bool {
+    matches!(verdict, Verdict::Valid | Verdict::SameData)
+}
+
+/// The verdict corresponding to a `check_attestation` result, so the database can be compared
+/// against the reference by reason and not merely by accept/reject.
+fn verdict_of(result: &Result<Safe, NotSafe>) -> Verdict {
+    match result {
+        Ok(Safe::Valid) => Verdict::Valid,
+        Ok(Safe::SameData) => Verdict::SameData,
+        Err(NotSafe::InvalidAttestation(invalid)) => match invalid {
+            InvalidAttestation::SourceExceedsTarget => Verdict::SourceExceedsTarget,
+            InvalidAttestation::DoubleVote(_) => Verdict::DoubleVote,
+            InvalidAttestation::PrevSurroundsNew { .. } => Verdict::PrevSurroundsNew,
+            InvalidAttestation::NewSurroundsPrev { .. } => Verdict::NewSurroundsPrev,
+            InvalidAttestation::SourceLessThanLowerBound { .. } => {
+                Verdict::SourceLessThanLowerBound
+            }
+            InvalidAttestation::TargetLessThanOrEqLowerBound { .. } => {
+                Verdict::TargetLessThanOrEqLowerBound
+            }
+        },
+        other => panic!("unexpected result outside the slashing conditions: {other:?}"),
+    }
 }
 
 /// The signing root `attestation_data` produces for a given `(source, target)`.
@@ -179,22 +216,20 @@ fn reference_agrees_with_database() {
         let mut stored: Vec<Att> = Vec::new();
         for &att in history {
             let data = attestation_data(att.0, att.1);
-            let db_verdict = db
-                .with_transaction(|txn| {
-                    db.check_and_insert_attestation(&validator, &data, DEFAULT_DOMAIN, txn)
-                })
-                .is_ok();
+            let db_result = db.with_transaction(|txn| {
+                db.check_and_insert_attestation(&validator, &data, DEFAULT_DOMAIN, txn)
+            });
+            let db_verdict = verdict_of(&db_result);
             let reference_verdict = reference_check(&stored, att);
 
             assert_eq!(
                 db_verdict, reference_verdict,
-                "insertion disagreement: history {stored:?}, inserting {att:?} \
-                 (database accepted: {db_verdict}, reference accepted: {reference_verdict})"
+                "insertion disagreement: history {stored:?}, inserting {att:?}"
             );
             comparisons += 1;
 
             // `Safe::SameData` is accepted but not stored, so only record genuinely new rows.
-            if db_verdict && !stored.iter().any(|&(_, t)| t == att.1) {
+            if accepts(&db_verdict) && !stored.iter().any(|&(_, t)| t == att.1) {
                 stored.push(att);
             }
         }
@@ -202,15 +237,13 @@ fn reference_agrees_with_database() {
         // (2) Offer every candidate against the resulting history, without mutating it.
         for &candidate in &candidates {
             let data = attestation_data(candidate.0, candidate.1);
-            let db_verdict = db
-                .preliminary_check_attestation(&validator, &data, DEFAULT_DOMAIN)
-                .is_ok();
+            let db_result = db.preliminary_check_attestation(&validator, &data, DEFAULT_DOMAIN);
+            let db_verdict = verdict_of(&db_result);
             let reference_verdict = reference_check(&stored, candidate);
 
             assert_eq!(
                 db_verdict, reference_verdict,
-                "check disagreement: history {stored:?}, candidate {candidate:?} \
-                 (database accepted: {db_verdict}, reference accepted: {reference_verdict})"
+                "check disagreement: history {stored:?}, candidate {candidate:?}"
             );
             comparisons += 1;
 
@@ -219,10 +252,8 @@ fn reference_agrees_with_database() {
             // `Epoch`/`u64` and `SigningRoot`/`[u8; 32]` conversions.
             let pure_verdict = check_attestation_pure(&to_rows(&stored), &to_row(candidate));
             assert_eq!(
-                pure_verdict != Verdict::Valid && pure_verdict != Verdict::SameData,
-                !reference_verdict,
-                "pure disagreement: history {stored:?}, candidate {candidate:?} \
-                 (pure verdict: {pure_verdict:?}, reference accepted: {reference_verdict})"
+                pure_verdict, reference_verdict,
+                "pure disagreement: history {stored:?}, candidate {candidate:?}"
             );
             comparisons += 1;
         }
@@ -246,16 +277,17 @@ fn enumeration_reaches_distinguishing_cases() {
     let candidate = (1, 2);
 
     // `>= MIN(source)` accepts: 1 >= 0.
-    assert!(reference_check(&history, candidate));
+    assert_eq!(reference_check(&history, candidate), Verdict::Valid);
 
     // `>= MAX(source)` would reject: 1 < 2. The two encodings differ here, so any test that
     // exercises this shape distinguishes them.
     let max_source = history.iter().map(|&(s, _)| s).max().unwrap();
     assert!(candidate.0 < max_source);
 
-    // And the shape is inside the enumerated space.
-    assert!(history.iter().all(|&(s, t)| t <= MAX_EPOCH && s <= t));
-    assert!(history.len() <= MAX_HISTORY);
+    // And the enumeration really produces this history, rather than merely permitting its
+    // shape.
+    assert!(all_histories().contains(&history.to_vec()));
+    assert!(all_attestations().contains(&candidate));
 }
 
 /// A null signing root never compares equal, not even to another null root.
