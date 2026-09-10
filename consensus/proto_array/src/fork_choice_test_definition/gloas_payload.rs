@@ -1258,6 +1258,88 @@ mod tests {
         get_pending_head_resolves_when_justified_subtree_non_viable_test_definition().run();
     }
 
+    /// An equivocating block below an invalidated ancestor must not withhold the boost.
+    ///
+    ///   genesis(V17) -> block_1(V17, slot 31) -> block_2(V29, slot 32)  <- equivocating sibling
+    ///   genesis(V17) -> block_3(V29, slot 32)  -> block_4(V29, slot 33) <- boosted block
+    ///
+    /// All test blocks use proposer index 0, so block 2 and block 3 equivocate at slot 32.
+    #[test]
+    fn execution_invalid_equivocation_does_not_withhold_proposer_boost() {
+        // Threshold is 63. Block 3 has no votes, so it is weak and the check runs.
+        let balances = vec![100, 10000];
+        let ops = vec![
+            // Invalidated below.
+            Operation::ProcessBlock {
+                slot: Slot::new(31),
+                root: get_root(1),
+                parent_root: get_root(0),
+                justified_checkpoint: get_checkpoint(0),
+                finalized_checkpoint: get_checkpoint(0),
+                execution_payload_parent_hash: None,
+                execution_payload_block_hash: None,
+            },
+            // Equivocating sibling, on the branch of block 1.
+            Operation::ProcessBlock {
+                slot: Slot::new(32),
+                root: get_root(2),
+                parent_root: get_root(1),
+                justified_checkpoint: get_checkpoint(0),
+                finalized_checkpoint: get_checkpoint(0),
+                execution_payload_parent_hash: Some(get_hash(1)),
+                execution_payload_block_hash: Some(get_hash(2)),
+            },
+            // Parent of the boosted block.
+            Operation::ProcessBlock {
+                slot: Slot::new(32),
+                root: get_root(3),
+                parent_root: get_root(0),
+                justified_checkpoint: get_checkpoint(0),
+                finalized_checkpoint: get_checkpoint(0),
+                execution_payload_parent_hash: Some(get_hash(0)),
+                execution_payload_block_hash: Some(get_hash(3)),
+            },
+            // The boosted block.
+            Operation::ProcessBlock {
+                slot: Slot::new(33),
+                root: get_root(4),
+                parent_root: get_root(3),
+                justified_checkpoint: get_checkpoint(0),
+                finalized_checkpoint: get_checkpoint(0),
+                execution_payload_parent_hash: Some(get_hash(3)),
+                execution_payload_block_hash: Some(get_hash(4)),
+            },
+            // Block 2 is optimistic, so it withholds the boost.
+            Operation::AssertShouldApplyProposerBoost {
+                proposer_boost_root: get_root(4),
+                justified_state_balances: balances.clone(),
+                expected: false,
+            },
+            // Block 2 leaves the block tree with block 1.
+            Operation::InvalidatePayload {
+                head_block_root: get_root(1),
+                latest_valid_ancestor_root: Some(get_hash(0)),
+            },
+            // The boost now applies.
+            Operation::AssertShouldApplyProposerBoost {
+                proposer_boost_root: get_root(4),
+                justified_state_balances: balances,
+                expected: true,
+            },
+        ];
+
+        ForkChoiceTestDefinition {
+            finalized_block_slot: Slot::new(0),
+            justified_checkpoint: get_checkpoint(0),
+            finalized_checkpoint: get_checkpoint(0),
+            operations: ops,
+            execution_payload_parent_hash: None,
+            execution_payload_block_hash: None,
+            spec: Some(gloas_fork_boundary_spec()),
+        }
+        .run();
+    }
+
     /// Test that execution payload invalidation propagates across the V17→V29 fork
     /// boundary: after invalidating a V17 parent, head must not select any descendant.
     ///

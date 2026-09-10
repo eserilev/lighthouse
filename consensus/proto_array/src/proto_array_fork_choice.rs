@@ -1028,6 +1028,20 @@ impl ProtoArrayForkChoice {
             .map_err(|e| format!("{e:?}"))
     }
 
+    /// Spec's `should_apply_proposer_boost` for Gloas.
+    ///
+    /// Exposed for tests. `find_head` calls the `ProtoArray` method directly.
+    pub fn should_apply_proposer_boost<E: EthSpec>(
+        &self,
+        proposer_boost_root: Hash256,
+        justified_balances: &JustifiedBalances,
+        spec: &ChainSpec,
+    ) -> Result<bool, String> {
+        self.proto_array
+            .should_apply_proposer_boost::<E>(proposer_boost_root, justified_balances, spec)
+            .map_err(|e| format!("{e:?}"))
+    }
+
     /// Returns whether the proposer should extend the parent's execution payload chain.
     ///
     /// This checks timeliness, data availability, and proposer boost conditions per the spec.
