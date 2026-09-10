@@ -662,7 +662,7 @@ impl<E: EthSpec> ProductionValidatorClient<E> {
 
         self.attestation_service
             .clone()
-            .start_update_service(&self.context.eth2_config.spec)
+            .start_update_service()
             .map_err(|e| format!("Unable to start attestation service: {}", e))?;
 
         self.sync_committee_service
