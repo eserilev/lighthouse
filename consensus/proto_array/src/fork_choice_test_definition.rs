@@ -133,6 +133,12 @@ pub enum Operation {
         proposal_slot: Slot,
         expected: bool,
     },
+    /// Assert the result of `should_apply_proposer_boost` for `proposer_boost_root`.
+    AssertShouldApplyProposerBoost {
+        proposer_boost_root: Hash256,
+        justified_state_balances: Vec<u64>,
+        expected: bool,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -637,6 +643,32 @@ impl ForkChoiceTestDefinition {
                     assert_eq!(
                         actual, expected,
                         "should_build_on_full mismatch at op index {}",
+                        op_index
+                    );
+                }
+                Operation::AssertShouldApplyProposerBoost {
+                    proposer_boost_root,
+                    justified_state_balances,
+                    expected,
+                } => {
+                    let justified_balances =
+                        JustifiedBalances::from_effective_balances(justified_state_balances)
+                            .unwrap();
+                    let actual = fork_choice
+                        .should_apply_proposer_boost::<MainnetEthSpec>(
+                            proposer_boost_root,
+                            &justified_balances,
+                            &spec,
+                        )
+                        .unwrap_or_else(|e| {
+                            panic!(
+                                "should_apply_proposer_boost op at index {} returned error: {}",
+                                op_index, e
+                            )
+                        });
+                    assert_eq!(
+                        actual, expected,
+                        "should_apply_proposer_boost mismatch at op index {}",
                         op_index
                     );
                 }

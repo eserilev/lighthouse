@@ -731,10 +731,9 @@ impl ProtoArray {
 
     /// Spec's `should_apply_proposer_boost` for Gloas.
     ///
-    /// Returns `true` if the proposer boost should be kept. Returns `false` if the
-    /// boost should be subtracted (invalidated) because the parent is weak and there
-    /// are no equivocating blocks at the parent's slot.
-    fn should_apply_proposer_boost<E: EthSpec>(
+    /// Returns `false` when the parent is from the previous slot, is weak, and has a
+    /// PTC-timely equivocating block at its slot. The boost is then removed.
+    pub(crate) fn should_apply_proposer_boost<E: EthSpec>(
         &self,
         proposer_boost_root: Hash256,
         justified_balances: &JustifiedBalances,
@@ -777,7 +776,7 @@ impl ProtoArray {
         let parent_root = parent.root();
         let parent_proposer = parent.proposer_index();
 
-        let has_equivocation = self.nodes.iter().any(|node| {
+        let has_equivocation = self.nodes.iter().enumerate().any(|(node_index, node)| {
             if let Ok(timeliness) = node.block_timeliness_ptc_threshold()
                 && let Ok(proposer_index) = node.proposer_index()
             {
@@ -785,6 +784,8 @@ impl ProtoArray {
                     && Ok(proposer_index) == parent_proposer
                     && node.slot() == parent_slot
                     && node.root() != parent_root
+                    // An invalidated block leaves the block tree, so it is not an equivocation.
+                    && !self.is_execution_invalid_subtree(node_index)
             } else {
                 // Pre-Gloas.
                 false
@@ -792,6 +793,30 @@ impl ProtoArray {
         });
 
         Ok(!has_equivocation)
+    }
+
+    /// Returns `true` if this node or an ancestor has an invalid execution status. Matches
+    /// the exclusion rule in `filter_block_tree`. Only V17 nodes carry a status.
+    ///
+    /// A Gloas block with a rejected payload stays in `store.blocks`. It is still an
+    /// equivocation, so it is not excluded here.
+    fn is_execution_invalid_subtree(&self, node_index: usize) -> bool {
+        let mut index = node_index;
+        loop {
+            let Some(node) = self.nodes.get(index) else {
+                return false;
+            };
+            if node
+                .execution_status()
+                .is_ok_and(|status| status.is_invalid())
+            {
+                return true;
+            }
+            match node.parent() {
+                Some(parent_index) => index = parent_index,
+                None => return false,
+            }
+        }
     }
 
     /// Process a valid execution payload envelope for a Gloas block.
