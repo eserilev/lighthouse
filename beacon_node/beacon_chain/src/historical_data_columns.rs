@@ -58,6 +58,10 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
     ) -> Result<usize, HistoricalDataColumnError> {
         let mut total_imported = 0;
         let mut ops = vec![];
+        let mut missing_slots_and_data_columns = vec![];
+        let required_columns = self
+            .custody_context
+            .custody_columns_for_group_count(expected_cgc);
 
         let unique_column_indices = historical_data_column_sidecar_list
             .iter()
@@ -95,7 +99,24 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 continue;
             }
 
+            let block = self
+                .get_blinded_block(&block_root)
+                .map_err(|e| HistoricalDataColumnError::BeaconChainError(Box::new(e)))?
+                .ok_or_else(|| {
+                    HistoricalDataColumnError::BeaconChainError(Box::new(
+                        BeaconChainError::MissingBeaconBlock(block_root),
+                    ))
+                })?;
+
             let fork_name = self.spec.fork_name_at_slot::<T::EthSpec>(slot);
+            let received_at_slot = unique_column_indices
+                .iter()
+                .filter(|column_index| {
+                    slot_and_column_index_to_data_columns.contains_key(&(slot, **column_index))
+                })
+                .copied()
+                .collect::<HashSet<_>>();
+
             for column_index in unique_column_indices.clone() {
                 if let Some(data_column) =
                     slot_and_column_index_to_data_columns.remove(&(slot, column_index))
@@ -121,6 +142,28 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                     total_imported += 1;
                 }
             }
+
+            if block.num_expected_blobs() == 0 {
+                continue;
+            }
+            for column_index in required_columns {
+                if received_at_slot.contains(column_index) {
+                    continue;
+                }
+                if self
+                    .store
+                    .get_data_column(&block_root, column_index, fork_name)?
+                    .is_none()
+                {
+                    missing_slots_and_data_columns.push((slot, *column_index));
+                }
+            }
+        }
+
+        if !missing_slots_and_data_columns.is_empty() {
+            return Err(HistoricalDataColumnError::MissingDataColumns {
+                missing_slots_and_data_columns,
+            });
         }
 
         // If we've made it to here with no columns to import, this means there are no blobs for this epoch.
