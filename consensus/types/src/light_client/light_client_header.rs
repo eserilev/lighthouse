@@ -157,8 +157,8 @@ type ExecutionHeaderAndBranch<E> = Option<(ExecutionPayloadHeader<E>, Vec<Hash25
 /// Returns the execution payload header of `block` and the branch proving it in the block body.
 ///
 /// Returns `None` for blocks prior to Capella, which carry no execution data in light client
-/// headers. The block may belong to an earlier fork than the header being built: during fork
-/// transitions the finalized block lags the attested block.
+/// headers. The block may belong to an earlier fork than the header being built, because the
+/// finalized block lags the attested block during fork transitions.
 fn execution_header_and_branch<E: EthSpec>(
     block: &SignedBlindedBeaconBlock<E>,
 ) -> Result<ExecutionHeaderAndBranch<E>, LightClientError> {
