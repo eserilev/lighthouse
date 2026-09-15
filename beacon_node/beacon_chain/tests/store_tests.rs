@@ -389,6 +389,81 @@ async fn light_client_updates_test() {
     assert_eq!(lc_updates.len(), 2);
 }
 
+/// Light client updates must build while the attested block is post-fork and the finalized block
+/// is still pre-fork.
+#[tokio::test]
+async fn light_client_updates_across_fork_boundary() {
+    // This test sets its own fork schedule and only needs to be executed once.
+    if fork_name_from_env() != Some(ForkName::latest_stable()) {
+        return;
+    }
+
+    let mut spec = ForkName::Electra.make_genesis_spec(E::default_spec());
+    let fulu_fork_epoch = Epoch::new(4);
+    spec.fulu_fork_epoch = Some(fulu_fork_epoch);
+    let fulu_fork_slot = fulu_fork_epoch.start_slot(E::slots_per_epoch());
+
+    let db_path = tempdir().unwrap();
+    let store = get_store_generic(&db_path, StoreConfig::default(), spec.clone());
+    let harness = get_harness(store.clone(), LOW_VALIDATOR_COUNT);
+    let all_validators = (0..LOW_VALIDATOR_COUNT).collect::<Vec<_>>();
+
+    let pre_fork_slots: Vec<Slot> = (1..fulu_fork_slot.as_u64()).map(Slot::new).collect();
+    let (_, _, _, mut state) = harness
+        .add_attested_blocks_at_slots_with_lc_data(
+            harness.get_current_state(),
+            &pre_fork_slots,
+            &all_validators,
+            None,
+            SyncCommitteeStrategy::NoValidators,
+        )
+        .await;
+
+    // Add blocks one at a time until finalization moves past the fork. Every block must produce a
+    // fresh finality update, including those whose finalized block is still Electra. The harness
+    // uses each new block as the attested block of the update it computes.
+    let last_slot = fulu_fork_slot + 3 * E::slots_per_epoch();
+    for slot in (fulu_fork_slot.as_u64()..last_slot.as_u64()).map(Slot::new) {
+        let (_, _, _, new_state) = harness
+            .add_attested_blocks_at_slots_with_lc_data(
+                state,
+                &[slot],
+                &all_validators,
+                None,
+                SyncCommitteeStrategy::NoValidators,
+            )
+            .await;
+        state = new_state;
+
+        let finality_update = harness
+            .chain
+            .light_client_server_cache
+            .get_latest_finality_update()
+            .unwrap();
+        assert_eq!(
+            finality_update.get_attested_header_slot(),
+            slot,
+            "stale finality update at slot {slot}"
+        );
+
+        let finalized_slot = match &finality_update {
+            LightClientFinalityUpdate::Electra(update) => update.finalized_header.beacon.slot,
+            LightClientFinalityUpdate::Fulu(update) => update.finalized_header.beacon.slot,
+            other => panic!("unexpected finality update variant {other:?}"),
+        };
+        assert_eq!(
+            matches!(finality_update, LightClientFinalityUpdate::Fulu(_)),
+            slot >= fulu_fork_slot
+        );
+        if slot == fulu_fork_slot {
+            // The attested block is the first Fulu block and the finalized block is Electra.
+            assert!(finalized_slot < fulu_fork_slot);
+        }
+    }
+
+    assert!(state.finalized_checkpoint().epoch >= fulu_fork_epoch);
+}
+
 /// Verifies that `get_light_client_updates` returns the full requested range
 /// even when it crosses a sync committee period boundary after
 /// switching to big-endian keys.
