@@ -9,13 +9,18 @@ use std::sync::Arc;
 use task_executor::TaskExecutor;
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
-use types::{ChainSpec, Epoch, EthSpec, ForkName, Hash256, ProposerPreferences, Slot};
+use types::{
+    ChainSpec, Epoch, EthSpec, ForkName, Hash256, ProposerPreferences, SignedProposerPreferences,
+    Slot,
+};
 use validator_store::{ProposalData, ValidatorStore};
 
-/// `(validator_index, proposal_slot)` duties already published, keyed by epoch and dependent
-/// root. Sets for stale roots persist until their epoch is pruned, so a dependent root that
-/// recurs within an epoch is not re-published.
-type PublishedPreferences = HashMap<(Epoch, Hash256), HashSet<(u64, Slot)>>;
+/// Signed preferences keyed by epoch and dependent root, then by `(validator_index,
+/// proposal_slot)`. Each duty is signed once. The whole set is sent again on every poll, so a
+/// beacon node that restarted or came back online holds the preferences within one slot. Sets
+/// for stale roots persist until their epoch is pruned, so a dependent root that recurs within an
+/// epoch is not signed again.
+type SignedPreferences = HashMap<(Epoch, Hash256), HashMap<(u64, Slot), SignedProposerPreferences>>;
 
 pub struct Inner<S, T> {
     duties_service: Arc<DutiesService<S, T>>,
@@ -73,10 +78,10 @@ impl<S: ValidatorStore + 'static, T: SlotClock + 'static> ProposerPreferencesSer
         let executor = self.executor.clone();
 
         let interval_fut = async move {
-            let mut published_preferences = PublishedPreferences::new();
+            let mut signed_preferences = SignedPreferences::new();
 
             loop {
-                self.run_update(&mut published_preferences).await;
+                self.run_update(&mut signed_preferences).await;
             }
         };
 
@@ -84,7 +89,7 @@ impl<S: ValidatorStore + 'static, T: SlotClock + 'static> ProposerPreferencesSer
         Ok(())
     }
 
-    async fn run_update(&self, published_preferences: &mut PublishedPreferences) {
+    async fn run_update(&self, signed_preferences: &mut SignedPreferences) {
         let slot_duration = self.chain_spec.get_slot_duration();
 
         let Some(current_slot) = self.slot_clock.now() else {
@@ -93,9 +98,7 @@ impl<S: ValidatorStore + 'static, T: SlotClock + 'static> ProposerPreferencesSer
             return;
         };
 
-        let current_epoch = current_slot.epoch(S::E::slots_per_epoch());
-
-        self.poll_and_publish_preferences(current_epoch, published_preferences)
+        self.poll_and_publish_preferences(current_slot, signed_preferences)
             .await;
 
         self.sleep_until_next_slot().await;
@@ -110,17 +113,22 @@ impl<S: ValidatorStore + 'static, T: SlotClock + 'static> ProposerPreferencesSer
         sleep(duration_to_next_slot).await;
     }
 
-    /// Publish proposer preferences for `current_epoch` and `current_epoch + 1`.
+    /// Publish proposer preferences for the current epoch and the next one.
     ///
-    /// Each proposer duty is published once per epoch and dependent root, so a validator added
-    /// after an epoch's duties were first published is still picked up, and a dependent root
-    /// change re-publishes the epoch's duties. Duties that are missing proposal data or that
-    /// fail to sign or publish are retried on later polls without re-publishing their siblings.
+    /// Each proposer duty is signed once per epoch and dependent root, so a validator added
+    /// after an epoch's duties were first signed is still picked up, and a dependent root
+    /// change re-signs the epoch's duties. Every signed preference is sent again on every poll.
+    /// The beacon node keeps its preferences cache in memory and loses it on restart, and it
+    /// ignores preferences it already holds, so re-sending is the cheap way to keep it warm.
+    /// Duties at or before `current_slot` are never signed and are dropped once they pass, since
+    /// the beacon node rejects them and a single rejected item fails the whole batch. Duties that
+    /// are missing proposal data or that fail to sign are retried on later polls.
     async fn poll_and_publish_preferences(
         &self,
-        current_epoch: Epoch,
-        published_preferences: &mut PublishedPreferences,
+        current_slot: Slot,
+        signed_preferences: &mut SignedPreferences,
     ) {
+        let current_epoch = current_slot.epoch(S::E::slots_per_epoch());
         for (epoch, fork_name) in [
             (
                 current_epoch,
@@ -143,36 +151,64 @@ impl<S: ValidatorStore + 'static, T: SlotClock + 'static> ProposerPreferencesSer
                 }
             };
 
-            let published = published_preferences
+            let signed = signed_preferences
                 .entry((epoch, dependent_root))
                 .or_default();
 
-            let preferences_to_sign =
-                preferences_to_publish(dependent_root, &duties, published, |pubkey| {
-                    self.validator_store.proposal_data(pubkey)
-                });
+            signed.retain(|(_, proposal_slot), _| *proposal_slot > current_slot);
 
-            if preferences_to_sign.is_empty() {
+            let already_signed = signed.keys().copied().collect();
+            let preferences_to_sign = preferences_to_publish(
+                dependent_root,
+                &duties,
+                &already_signed,
+                current_slot,
+                |pubkey| self.validator_store.proposal_data(pubkey),
+            );
+
+            let newly_signed = self
+                .sign_proposer_preferences(epoch, preferences_to_sign)
+                .await;
+            let newly_signed_count = newly_signed.len();
+            for preferences in newly_signed {
+                signed.insert(
+                    (
+                        preferences.message.validator_index,
+                        preferences.message.proposal_slot,
+                    ),
+                    preferences,
+                );
+            }
+
+            if signed.is_empty() {
                 continue;
             }
 
-            let newly_published = self
-                .publish_proposer_preferences(epoch, fork_name, preferences_to_sign)
+            let published = self
+                .publish_proposer_preferences(epoch, fork_name, signed.values().cloned().collect())
                 .await;
-            published.extend(newly_published);
+            if published && newly_signed_count > 0 {
+                info!(
+                    %epoch,
+                    count = newly_signed_count,
+                    "Successfully published proposer preferences"
+                );
+            }
         }
 
-        published_preferences.retain(|(epoch, _), _| *epoch >= current_epoch);
+        signed_preferences.retain(|(epoch, _), _| *epoch >= current_epoch);
     }
 
-    /// Sign and publish `preferences_to_sign`, returning the `(validator_index, slot)` pairs
-    /// that were signed and included in a successfully published batch.
-    async fn publish_proposer_preferences(
+    /// Sign `preferences_to_sign`, skipping any that fail to sign.
+    async fn sign_proposer_preferences(
         &self,
         epoch: Epoch,
-        fork_name: ForkName,
         preferences_to_sign: Vec<(PublicKeyBytes, ProposerPreferences)>,
-    ) -> Vec<(u64, Slot)> {
+    ) -> Vec<SignedProposerPreferences> {
+        if preferences_to_sign.is_empty() {
+            return vec![];
+        }
+
         debug!(
             %epoch,
             count = preferences_to_sign.len(),
@@ -196,9 +232,18 @@ impl<S: ValidatorStore + 'static, T: SlotClock + 'static> ProposerPreferencesSer
                 }
             }
         }
+        signed
+    }
 
+    /// Publish `signed` to the first beacon node that accepts it. Returns `true` on success.
+    async fn publish_proposer_preferences(
+        &self,
+        epoch: Epoch,
+        fork_name: ForkName,
+        signed: Vec<SignedProposerPreferences>,
+    ) -> bool {
         if signed.is_empty() {
-            return vec![];
+            return false;
         }
 
         let count = signed.len();
@@ -238,20 +283,8 @@ impl<S: ValidatorStore + 'static, T: SlotClock + 'static> ProposerPreferencesSer
 
         match result {
             Ok(()) => {
-                info!(
-                    %epoch,
-                    %count,
-                    "Successfully published proposer preferences"
-                );
-                signed
-                    .iter()
-                    .map(|preferences| {
-                        (
-                            preferences.message.validator_index,
-                            preferences.message.proposal_slot,
-                        )
-                    })
-                    .collect()
+                debug!(%epoch, %count, "Published proposer preferences");
+                true
             }
             Err(e) => {
                 error!(
@@ -259,23 +292,26 @@ impl<S: ValidatorStore + 'static, T: SlotClock + 'static> ProposerPreferencesSer
                     %epoch,
                     "Failed to publish proposer preferences"
                 );
-                vec![]
+                false
             }
         }
     }
 }
 
-/// Build the proposer preferences that still need publishing: one per proposer duty whose
-/// `(validator_index, slot)` is not in `published` and whose proposal data is available.
+/// Build the proposer preferences that still need signing: one per proposer duty after
+/// `current_slot` whose `(validator_index, slot)` is not in `signed` and whose proposal data is
+/// available.
 fn preferences_to_publish(
     dependent_root: Hash256,
     duties: &[ProposerData],
-    published: &HashSet<(u64, Slot)>,
+    signed: &HashSet<(u64, Slot)>,
+    current_slot: Slot,
     proposal_data: impl Fn(&PublicKeyBytes) -> Option<ProposalData>,
 ) -> Vec<(PublicKeyBytes, ProposerPreferences)> {
     duties
         .iter()
-        .filter(|duty| !published.contains(&(duty.validator_index, duty.slot)))
+        .filter(|duty| duty.slot > current_slot)
+        .filter(|duty| !signed.contains(&(duty.validator_index, duty.slot)))
         .filter_map(|duty| {
             let Some(proposal_data) = proposal_data(&duty.pubkey) else {
                 warn!(
@@ -309,11 +345,12 @@ fn preferences_to_publish(
 mod tests {
     use super::*;
     use crate::duties_service::DutiesServiceBuilder;
+    use bls::Signature;
     use eth2::types::ProposerData;
     use futures::FutureExt;
     use slot_clock::ManualSlotClock;
     use std::time::Duration;
-    use types::{Address, ForkName, Hash256, Slot};
+    use types::{Address, ForkName, Hash256, MainnetEthSpec, Slot};
     use validator_test_rig::validator_client_harness::{
         S, ValidatorClientHarness, ValidatorStoreConfig,
     };
@@ -346,26 +383,36 @@ mod tests {
         Some(proposal_data(Some(FEE_RECIPIENT)))
     }
 
-    /// Run the state transitions of one poll (select unpublished duties, then record them as
-    /// published on success) and return how many duties were published. Mirrors the map
-    /// bookkeeping in `poll_and_publish_preferences` around the signing effect.
+    /// Run the state transitions of one poll (select unsigned duties, then record them as
+    /// signed) and return how many duties were signed. Mirrors the map bookkeeping in
+    /// `poll_and_publish_preferences` around the signing effect.
     fn publish_round(
-        published_preferences: &mut PublishedPreferences,
+        signed_preferences: &mut SignedPreferences,
         epoch: Epoch,
         dependent_root: Hash256,
         duties: &[ProposerData],
     ) -> usize {
-        let published = published_preferences
+        let signed = signed_preferences
             .entry((epoch, dependent_root))
             .or_default();
-        let to_sign =
-            preferences_to_publish(dependent_root, duties, published, default_proposal_data);
-        let count = to_sign.len();
-        published.extend(
-            to_sign
-                .iter()
-                .map(|(_, preferences)| (preferences.validator_index, preferences.proposal_slot)),
+        let already_signed = signed.keys().copied().collect();
+        let to_sign = preferences_to_publish(
+            dependent_root,
+            duties,
+            &already_signed,
+            Slot::new(0),
+            default_proposal_data,
         );
+        let count = to_sign.len();
+        for (_, message) in to_sign {
+            signed.insert(
+                (message.validator_index, message.proposal_slot),
+                SignedProposerPreferences {
+                    message,
+                    signature: Signature::empty(),
+                },
+            );
+        }
         count
     }
 
@@ -419,7 +466,7 @@ mod tests {
                 .map(|(i, pubkey)| ProposerData {
                     pubkey: *pubkey,
                     validator_index: i as u64,
-                    slot: Slot::new(0),
+                    slot: epoch.start_slot(MainnetEthSpec::slots_per_epoch()) + 1,
                 })
                 .collect();
             self.service
@@ -442,8 +489,13 @@ mod tests {
         let duties = [duty(1, 1), duty(2, 2), duty(3, 3)];
         let published = HashSet::from([(1, Slot::new(1)), (2, Slot::new(2))]);
 
-        let result =
-            preferences_to_publish(dependent_root, &duties, &published, default_proposal_data);
+        let result = preferences_to_publish(
+            dependent_root,
+            &duties,
+            &published,
+            Slot::new(0),
+            default_proposal_data,
+        );
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].0, pubkey(3));
@@ -459,6 +511,7 @@ mod tests {
             dependent_root,
             &duties,
             &HashSet::new(),
+            Slot::new(0),
             default_proposal_data,
         );
 
@@ -480,17 +533,17 @@ mod tests {
         let duties = [duty(1, 1), duty(2, 2), duty(3, 3)];
         let mut published = HashSet::new();
 
-        let result =
-            preferences_to_publish(
-                dependent_root,
-                &duties,
-                &published,
-                |pubkey_in| match pubkey_in {
-                    pk if *pk == pubkey(1) => Some(proposal_data(None)),
-                    pk if *pk == pubkey(3) => None,
-                    _ => Some(proposal_data(Some(FEE_RECIPIENT))),
-                },
-            );
+        let result = preferences_to_publish(
+            dependent_root,
+            &duties,
+            &published,
+            Slot::new(0),
+            |pubkey_in| match pubkey_in {
+                pk if *pk == pubkey(1) => Some(proposal_data(None)),
+                pk if *pk == pubkey(3) => None,
+                _ => Some(proposal_data(Some(FEE_RECIPIENT))),
+            },
+        );
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].0, pubkey(2));
@@ -498,9 +551,13 @@ mod tests {
         // A later poll, after validator 1's fee recipient becomes available and validator 2's
         // preferences were published. Validator 3 still has no proposal data.
         published.insert((2, Slot::new(2)));
-        let result = preferences_to_publish(dependent_root, &duties, &published, |pubkey_in| {
-            (*pubkey_in != pubkey(3)).then(|| proposal_data(Some(FEE_RECIPIENT)))
-        });
+        let result = preferences_to_publish(
+            dependent_root,
+            &duties,
+            &published,
+            Slot::new(0),
+            |pubkey_in| (*pubkey_in != pubkey(3)).then(|| proposal_data(Some(FEE_RECIPIENT))),
+        );
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].0, pubkey(1));
@@ -512,12 +569,34 @@ mod tests {
         let duties = [duty(1, 10), duty(1, 11)];
         let published = HashSet::from([(1, Slot::new(10))]);
 
-        let result =
-            preferences_to_publish(dependent_root, &duties, &published, default_proposal_data);
+        let result = preferences_to_publish(
+            dependent_root,
+            &duties,
+            &published,
+            Slot::new(0),
+            default_proposal_data,
+        );
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].0, pubkey(1));
         assert_eq!(result[0].1.proposal_slot, Slot::new(11));
+    }
+
+    #[test]
+    fn duties_at_or_before_the_current_slot_are_not_signed() {
+        let dependent_root = Hash256::repeat_byte(1);
+        let duties = [duty(1, 1), duty(2, 2), duty(3, 3)];
+
+        let result = preferences_to_publish(
+            dependent_root,
+            &duties,
+            &HashSet::new(),
+            Slot::new(2),
+            default_proposal_data,
+        );
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, pubkey(3));
     }
 
     #[test]
@@ -526,22 +605,22 @@ mod tests {
         let root_a = Hash256::repeat_byte(1);
         let root_b = Hash256::repeat_byte(2);
         let duties = [duty(1, 1), duty(2, 2)];
-        let mut published_preferences = PublishedPreferences::new();
+        let mut signed_preferences = SignedPreferences::new();
 
-        // Publish under the original root, then re-publish under the reorged root.
+        // Sign under the original root, then re-sign under the reorged root.
         assert_eq!(
-            publish_round(&mut published_preferences, epoch, root_a, &duties),
+            publish_round(&mut signed_preferences, epoch, root_a, &duties),
             2
         );
         assert_eq!(
-            publish_round(&mut published_preferences, epoch, root_b, &duties),
+            publish_round(&mut signed_preferences, epoch, root_b, &duties),
             2
         );
 
-        // The head reorgs back to the original root. Its published set was retained under its own
+        // The head reorgs back to the original root. Its signed set was retained under its own
         // key, so nothing is signed again.
         assert_eq!(
-            publish_round(&mut published_preferences, epoch, root_a, &duties),
+            publish_round(&mut signed_preferences, epoch, root_a, &duties),
             0
         );
     }
@@ -618,13 +697,17 @@ mod tests {
             .mock_beacon_node_2
             .mock_post_validator_proposer_preferences_json();
 
+        let signed = test_harness
+            .service
+            .sign_proposer_preferences(current_epoch, duties)
+            .await;
         let result = test_harness
             .service
-            .publish_proposer_preferences(current_epoch, ForkName::Gloas, duties)
+            .publish_proposer_preferences(current_epoch, ForkName::Gloas, signed)
             .await;
 
         // assert that result is ok (successfully publishes proposer preferences)
-        assert!(!result.is_empty());
+        assert!(result);
         // First try on beacon_node_1 (mock_ssz) is successful
         // therefore mock_json is not hit at all
         mock_ssz.expect(1).assert();
@@ -667,13 +750,17 @@ mod tests {
             .mock_beacon_node_1
             .mock_post_validator_proposer_preferences_json();
 
+        let signed = test_harness
+            .service
+            .sign_proposer_preferences(current_epoch, duties)
+            .await;
         let result = test_harness
             .service
-            .publish_proposer_preferences(current_epoch, ForkName::Gloas, duties)
+            .publish_proposer_preferences(current_epoch, ForkName::Gloas, signed)
             .await;
 
         // still successfully publishes proposer preferences because JSON BN is working
-        assert!(!result.is_empty());
+        assert!(result);
         // first_success function tries both beacon nodes for SSZ post proposer preferences
         // first pass: both fail (mock_ssz returns 500, mock_json does not support SSZ)
         // second pass: repeats the first pass
@@ -700,13 +787,13 @@ mod tests {
             .await;
 
         // No duties, publish_proposer_preference should return false
-        assert!(result.is_empty());
+        assert!(!result);
         // When there is no proposer duty, the function should return early and does not call the post proposer preferences endpoint
         mock_ssz.expect(0).assert();
     }
 
     #[tokio::test]
-    async fn poll_and_publish_preferences_same_root() {
+    async fn poll_and_publish_preferences_same_root_republishes_without_resigning() {
         let mut test_harness = TestHarness::new_with_validators(1).await;
 
         let current_epoch = Epoch::new(0);
@@ -717,22 +804,126 @@ mod tests {
             .mock_beacon_node_1
             .mock_post_validator_proposer_preferences_ssz();
 
-        let mut published_preferences = HashMap::new();
+        let mut signed_preferences = HashMap::new();
 
-        // First call publishes
+        // First call signs and publishes
         test_harness
             .service
-            .poll_and_publish_preferences(current_epoch, &mut published_preferences)
+            .poll_and_publish_preferences(
+                current_epoch.start_slot(MainnetEthSpec::slots_per_epoch()),
+                &mut signed_preferences,
+            )
             .await;
+        let first_signed = signed_preferences
+            .get(&(current_epoch, Hash256::ZERO))
+            .cloned()
+            .unwrap();
+        assert_eq!(first_signed.len(), 1);
 
-        // Second call with same epoch and same dependent root should be skipped
+        // Second call with same epoch and same dependent root publishes the same signed
+        // preferences again, so a restarted beacon node gets them back.
         test_harness
             .service
-            .poll_and_publish_preferences(current_epoch, &mut published_preferences)
+            .poll_and_publish_preferences(
+                current_epoch.start_slot(MainnetEthSpec::slots_per_epoch()),
+                &mut signed_preferences,
+            )
             .await;
+        let second_signed = signed_preferences
+            .get(&(current_epoch, Hash256::ZERO))
+            .cloned()
+            .unwrap();
+        assert_eq!(first_signed, second_signed);
 
-        // Only one call to BN is expected despite two poll_and_publish_preferences calls
+        // The BN is called on every poll
+        mock_ssz.expect(2).assert();
+    }
+
+    #[tokio::test]
+    async fn poll_drops_duties_once_their_slot_has_passed() {
+        let mut test_harness = TestHarness::new_with_validators(1).await;
+
+        let current_epoch = Epoch::new(0);
+        // The harness places the duty at slot 1.
+        test_harness.insert_proposer_duties(current_epoch);
+
+        let mock_ssz = test_harness
+            .harness
+            .mock_beacon_node_1
+            .mock_post_validator_proposer_preferences_ssz();
+
+        let mut signed_preferences = HashMap::new();
+
+        // At slot 0 the duty is signed and published.
+        test_harness
+            .service
+            .poll_and_publish_preferences(Slot::new(0), &mut signed_preferences)
+            .await;
+        assert_eq!(
+            signed_preferences
+                .get(&(current_epoch, Hash256::ZERO))
+                .map(HashMap::len),
+            Some(1)
+        );
+
+        // At slot 1 the duty has passed. It is dropped and nothing is sent, so the beacon node
+        // never sees a preference it would reject.
+        test_harness
+            .service
+            .poll_and_publish_preferences(Slot::new(1), &mut signed_preferences)
+            .await;
+        assert_eq!(
+            signed_preferences
+                .get(&(current_epoch, Hash256::ZERO))
+                .map(HashMap::len),
+            Some(0)
+        );
+
         mock_ssz.expect(1).assert();
+    }
+
+    #[tokio::test]
+    async fn failed_publish_keeps_the_signatures_and_retries() {
+        let mut test_harness = TestHarness::new_with_validators(1).await;
+
+        let current_epoch = Epoch::new(0);
+        test_harness.insert_proposer_duties(current_epoch);
+
+        // The SSZ endpoint fails and there is no JSON endpoint, so the publish fails.
+        let _mock_ssz_error = test_harness
+            .harness
+            .mock_beacon_node_1
+            .mock_post_validator_proposer_preferences_ssz_error();
+
+        let mut signed_preferences = HashMap::new();
+
+        test_harness
+            .service
+            .poll_and_publish_preferences(Slot::new(0), &mut signed_preferences)
+            .await;
+        let first_signed = signed_preferences
+            .get(&(current_epoch, Hash256::ZERO))
+            .cloned()
+            .unwrap();
+        assert_eq!(first_signed.len(), 1);
+
+        // The JSON endpoint comes up. The next poll sends the same signatures again and succeeds.
+        let mock_json = test_harness
+            .harness
+            .mock_beacon_node_1
+            .mock_post_validator_proposer_preferences_json();
+
+        test_harness
+            .service
+            .poll_and_publish_preferences(Slot::new(0), &mut signed_preferences)
+            .await;
+        let second_signed = signed_preferences
+            .get(&(current_epoch, Hash256::ZERO))
+            .cloned()
+            .unwrap();
+        assert_eq!(first_signed, second_signed);
+
+        mock_json.expect(1).assert();
     }
 
     #[tokio::test]
@@ -747,12 +938,15 @@ mod tests {
             .mock_beacon_node_1
             .mock_post_validator_proposer_preferences_ssz();
 
-        let mut published_preferences = HashMap::new();
+        let mut signed_preferences = HashMap::new();
 
         // First call publishes with default dependent_root: Hash256::ZERO
         test_harness
             .service
-            .poll_and_publish_preferences(current_epoch, &mut published_preferences)
+            .poll_and_publish_preferences(
+                current_epoch.start_slot(MainnetEthSpec::slots_per_epoch()),
+                &mut signed_preferences,
+            )
             .await;
 
         // Update duties with a different dependent root
@@ -762,7 +956,10 @@ mod tests {
         // Second call should publish again because dependent root has changed
         test_harness
             .service
-            .poll_and_publish_preferences(current_epoch, &mut published_preferences)
+            .poll_and_publish_preferences(
+                current_epoch.start_slot(MainnetEthSpec::slots_per_epoch()),
+                &mut signed_preferences,
+            )
             .await;
 
         // The BN should be called twice because poll_and_publish_preferences will call publish_proposer_preferences to insert the preferences
@@ -778,25 +975,31 @@ mod tests {
             .mock_beacon_node_1
             .mock_post_validator_proposer_preferences_ssz();
 
-        let mut published_preferences = HashMap::new();
+        let mut signed_preferences = HashMap::new();
 
         // Insert and publish for epoch 0
         test_harness.insert_proposer_duties(Epoch::new(0));
         test_harness
             .service
-            .poll_and_publish_preferences(Epoch::new(0), &mut published_preferences)
+            .poll_and_publish_preferences(
+                Epoch::new(0).start_slot(MainnetEthSpec::slots_per_epoch()),
+                &mut signed_preferences,
+            )
             .await;
-        assert!(published_preferences.contains_key(&(Epoch::new(0), Hash256::ZERO)));
+        assert!(signed_preferences.contains_key(&(Epoch::new(0), Hash256::ZERO)));
 
         // Now poll with Epoch = 1
         // Epoch 0 should be removed from the HashMap
         test_harness.insert_proposer_duties(Epoch::new(1));
         test_harness
             .service
-            .poll_and_publish_preferences(Epoch::new(1), &mut published_preferences)
+            .poll_and_publish_preferences(
+                Epoch::new(1).start_slot(MainnetEthSpec::slots_per_epoch()),
+                &mut signed_preferences,
+            )
             .await;
-        assert!(published_preferences.contains_key(&(Epoch::new(1), Hash256::ZERO)));
-        assert!(!published_preferences.contains_key(&(Epoch::new(0), Hash256::ZERO)));
+        assert!(signed_preferences.contains_key(&(Epoch::new(1), Hash256::ZERO)));
+        assert!(!signed_preferences.contains_key(&(Epoch::new(0), Hash256::ZERO)));
 
         // The mock BN should be called once for each poll_and_publish_preferences call
         mock_ssz.expect(2).assert();
