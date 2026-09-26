@@ -3981,6 +3981,134 @@ async fn test_import_historical_data_columns_batch() {
     }
 }
 
+// This test withholds one column index from a batch and asserts that the import
+// rejects the batch and writes nothing, then re-imports the full batch.
+#[tokio::test]
+async fn test_import_historical_data_columns_batch_missing_column() {
+    let spec = ForkName::Fulu.make_genesis_spec(E::default_spec());
+    let db_path = tempdir().unwrap();
+    let store = get_store_generic(&db_path, StoreConfig::default(), spec);
+    let start_slot = Epoch::new(0).start_slot(E::slots_per_epoch()) + 1;
+    let end_slot = Epoch::new(0).end_slot(E::slots_per_epoch());
+    let cgc = 128;
+
+    let harness = get_harness_import_all_data_columns(store.clone(), LOW_VALIDATOR_COUNT);
+
+    harness
+        .extend_chain(
+            (E::slots_per_epoch() * 2) as usize,
+            BlockStrategy::OnCanonicalHead,
+            AttestationStrategy::AllValidators,
+        )
+        .await;
+    harness.advance_slot();
+
+    let block_root_and_slot = harness
+        .chain
+        .forwards_iter_block_roots_until(start_slot, end_slot)
+        .unwrap();
+
+    let mut data_columns_list = vec![];
+
+    // Get all data columns for epoch 0
+    for block_root_and_slot in block_root_and_slot {
+        let (block_root, slot) = block_root_and_slot.unwrap();
+        let fork_name = harness.spec.fork_name_at_slot::<E>(slot);
+        let data_columns = harness
+            .chain
+            .store
+            .get_data_columns(&block_root, fork_name)
+            .unwrap();
+        for data_column in data_columns.unwrap_or_default() {
+            data_columns_list.push(data_column);
+        }
+    }
+
+    assert!(!data_columns_list.is_empty());
+
+    harness
+        .extend_chain(
+            (E::slots_per_epoch() * 4) as usize,
+            BlockStrategy::OnCanonicalHead,
+            AttestationStrategy::AllValidators,
+        )
+        .await;
+
+    harness.advance_slot();
+
+    // Prune data columns
+    harness
+        .chain
+        .store
+        .try_prune_blobs(true, Epoch::new(2))
+        .unwrap();
+
+    let block_root_and_slot_iter = harness
+        .chain
+        .forwards_iter_block_roots_until(start_slot, end_slot)
+        .unwrap();
+
+    // Assert that data columns no longer exist for epoch 0
+    for block_root_and_slot in block_root_and_slot_iter {
+        let (block_root, slot) = block_root_and_slot.unwrap();
+        let fork_name = harness.spec.fork_name_at_slot::<E>(slot);
+        let data_columns = harness
+            .chain
+            .store
+            .get_data_columns(&block_root, fork_name)
+            .unwrap();
+        assert!(data_columns.is_none())
+    }
+
+    let withheld_column = *data_columns_list[0].index();
+    let partial_list = data_columns_list
+        .iter()
+        .filter(|data_column| *data_column.index() != withheld_column)
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(partial_list.len() < data_columns_list.len());
+
+    let err = harness
+        .chain
+        .import_historical_data_column_batch(Epoch::new(0), partial_list, cgc)
+        .unwrap_err();
+    let HistoricalDataColumnError::MissingDataColumns {
+        missing_slots_and_data_columns,
+    } = err
+    else {
+        panic!("expected MissingDataColumns, got {err:?}");
+    };
+    assert!(!missing_slots_and_data_columns.is_empty());
+    assert!(
+        missing_slots_and_data_columns
+            .iter()
+            .all(|(_, column_index)| *column_index == withheld_column),
+        "unexpected missing columns: {missing_slots_and_data_columns:?}"
+    );
+
+    // Assert that the rejected batch wrote nothing
+    let block_root_and_slot_iter = harness
+        .chain
+        .forwards_iter_block_roots_until(start_slot, end_slot)
+        .unwrap();
+    for block_root_and_slot in block_root_and_slot_iter {
+        let (block_root, slot) = block_root_and_slot.unwrap();
+        let fork_name = harness.spec.fork_name_at_slot::<E>(slot);
+        let data_columns = harness
+            .chain
+            .store
+            .get_data_columns(&block_root, fork_name)
+            .unwrap();
+        assert!(data_columns.is_none())
+    }
+
+    // The full batch imports
+    harness
+        .chain
+        .import_historical_data_column_batch(Epoch::new(0), data_columns_list, cgc)
+        .unwrap();
+}
+
 // This should verify that a data column sidecar containing mismatched block roots should fail to be imported.
 // This also covers any test cases related to data columns with incorrect/invalid/mismatched block roots.
 #[tokio::test]
