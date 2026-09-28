@@ -5134,6 +5134,7 @@ dependencies = [
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "fixed_bytes",
+ "proptest",
  "ssz_types",
  "tree_hash",
  "tree_hash_derive",
