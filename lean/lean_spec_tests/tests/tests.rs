@@ -32,3 +32,18 @@ fn justifiability() {
 fn state_transition() {
     assert_category::<StateTransitionCase>();
 }
+
+#[test]
+fn verify_signatures() {
+    assert_category::<VerifySignaturesCase>();
+}
+
+#[test]
+fn verify_single_message_proofs() {
+    assert_category::<VerifySingleMessageProofsCase>();
+}
+
+#[test]
+fn poseidon_permutation() {
+    assert_category::<PoseidonPermutationCase>();
+}

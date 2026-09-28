@@ -65,6 +65,7 @@ members = [
     "crypto/kzg",
     "database_manager",
     "lcli",
+    "lean/lean_crypto",
     "lean/lean_spec_tests",
     "lean/lean_state_transition",
     "lean/lean_types",
@@ -174,8 +175,10 @@ initialized_validators = { path = "validator_client/initialized_validators" }
 int_to_bytes = { path = "consensus/int_to_bytes" }
 itertools = "0.14"
 kzg = { path = "crypto/kzg" }
+lean_crypto = { path = "lean/lean_crypto" }
 lean_state_transition = { path = "lean/lean_state_transition" }
 lean_types = { path = "lean/lean_types" }
+leansig_wrapper = { git = "https://github.com/leanEthereum/leanMultisig", rev = "e2592df4e30fdddbbf8ae26a333116c68cec7026" }
 libp2p = { git = "https://github.com/libp2p/rust-libp2p.git", default-features = false, features = ["identify", "yamux", "noise", "dns", "tcp", "tokio", "secp256k1", "macros", "metrics", "quic", "upnp", "gossipsub", "gossipsub-partial-messages"] }
 libsecp256k1 = "0.7"
 lighthouse_network = { path = "beacon_node/lighthouse_network" }
@@ -206,6 +209,9 @@ opentelemetry-http = "0.30.0"
 opentelemetry-otlp = { version = "0.30.0", features = ["grpc-tonic", "tls-roots"] }
 opentelemetry_sdk = "0.30.0"
 operation_pool = { path = "beacon_node/operation_pool" }
+p3-field = { git = "https://github.com/Plonky3/Plonky3.git" }
+p3-koala-bear = { git = "https://github.com/Plonky3/Plonky3.git" }
+p3-symmetric = { git = "https://github.com/Plonky3/Plonky3.git" }
 parking_lot = "0.12"
 paste = "1"
 pretty_reqwest_error = { path = "common/pretty_reqwest_error" }
@@ -218,6 +224,7 @@ r2d2 = "0.8"
 rand = "0.9.0"
 rand_xorshift = "0.4.0"
 rayon = "1.7"
+rec_aggregation = { git = "https://github.com/leanEthereum/leanMultisig", rev = "e2592df4e30fdddbbf8ae26a333116c68cec7026" }
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "stream", "rustls-tls"] }
 ring = "0.17"

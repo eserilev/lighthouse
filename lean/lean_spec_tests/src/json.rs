@@ -208,3 +208,39 @@ impl JsonState {
         })
     }
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct JsonBytes {
+    data: String,
+}
+
+impl JsonBytes {
+    pub fn to_proof_bytes(&self) -> Result<ProofBytes, String> {
+        ProofBytes::new(decode_hex(&self.data)?).map_err(|e| format!("{e:?}"))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct JsonMultiMessageAggregate {
+    proof: JsonBytes,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct JsonSignedBlock {
+    block: JsonBlock,
+    proof: JsonMultiMessageAggregate,
+}
+
+impl JsonSignedBlock {
+    pub fn to_signed_block(&self) -> Result<SignedBlock, String> {
+        Ok(SignedBlock {
+            block: self.block.to_block()?,
+            proof: MultiMessageAggregate {
+                proof: self.proof.proof.to_proof_bytes()?,
+            },
+        })
+    }
+}
