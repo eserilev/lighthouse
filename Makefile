@@ -1,6 +1,7 @@
 .PHONY: tests
 
 EF_TESTS = "testing/ef_tests"
+LEAN_SPEC_TESTS = "lean/lean_spec_tests"
 STATE_TRANSITION_VECTORS = "testing/state_transition_vectors"
 EXECUTION_ENGINE_INTEGRATION = "testing/execution_engine_integration"
 GIT_TAG = $(shell git describe --tags --candidates 1)
@@ -257,6 +258,12 @@ test-ef: make-ef-tests run-ef-tests
 # Downloads and runs the nightly EF test vectors.
 test-ef-nightly: make-ef-tests-nightly run-ef-tests
 
+# Downloads and runs the leanSpec test fixtures.
+test-lean-spec: make-lean-spec-tests run-lean-spec-tests
+
+run-lean-spec-tests:
+	cargo nextest run --release -p lean_spec_tests --features lean_spec_tests
+
 # Runs tests checking interop between Lighthouse and execution clients.
 test-exec-engine:
 	make -C $(EXECUTION_ENGINE_INTEGRATION) test
@@ -318,6 +325,10 @@ make-ef-tests:
 # Download/extract the nightly EF test vectors.
 make-ef-tests-nightly:
 	CONSENSUS_SPECS_TEST_VERSION=nightly make -C $(EF_TESTS)
+
+# Download/extract the leanSpec test fixtures.
+make-lean-spec-tests:
+	make -C $(LEAN_SPEC_TESTS)
 
 # Verifies that crates compile with fuzzing features enabled
 arbitrary-fuzz:
