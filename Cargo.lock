@@ -5120,9 +5120,21 @@ dependencies = [
  "cargo_metadata",
  "ethereum_ssz",
  "hex",
+ "lean_state_transition",
  "lean_types",
  "serde",
  "serde_json",
+ "ssz_types",
+ "tree_hash",
+]
+
+[[package]]
+name = "lean_state_transition"
+version = "0.1.0"
+dependencies = [
+ "ethereum_ssz",
+ "lean_types",
+ "safe_arith",
  "ssz_types",
  "tree_hash",
 ]

@@ -1,6 +1,7 @@
 use typenum::{Prod, U4096, U131072, U262144, U524288};
 
 pub const IMMEDIATE_JUSTIFICATION_WINDOW: u64 = 5;
+pub const MAX_ATTESTATIONS_DATA: usize = 8;
 
 pub type HistoricalRootsLimit = U262144;
 pub type ValidatorRegistryLimit = U4096;

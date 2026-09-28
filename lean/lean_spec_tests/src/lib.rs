@@ -1,5 +1,7 @@
+mod json;
 mod justifiability;
 mod ssz_static;
+mod state_transition;
 
 use serde::de::DeserializeOwned;
 use std::collections::BTreeMap;
@@ -8,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 pub use justifiability::JustifiabilityCase;
 pub use ssz_static::SszCase;
+pub use state_transition::StateTransitionCase;
 
 pub const FORK: &str = "lstar";
 
