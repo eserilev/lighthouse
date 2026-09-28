@@ -17,28 +17,44 @@ impl Slot {
     }
 
     pub fn justified_index_after(self, finalized_slot: Slot) -> Option<usize> {
-        let index = self.0.checked_sub(finalized_slot.0)?.checked_sub(1)?;
-        usize::try_from(index).ok()
+        justified_index_after(self.0, finalized_slot.0)
     }
 
     pub fn is_justifiable_after(self, finalized_slot: Slot) -> bool {
-        let Some(delta) = self.0.checked_sub(finalized_slot.0) else {
-            return false;
-        };
-
-        if delta <= IMMEDIATE_JUSTIFICATION_WINDOW {
-            return true;
-        }
-
-        let root = delta.isqrt();
-        if root.saturating_mul(root) == delta {
-            return true;
-        }
-
-        let discriminant = u128::from(delta).saturating_mul(4).saturating_add(1);
-        let root = discriminant.isqrt();
-        root.saturating_mul(root) == discriminant
+        is_justifiable_after(self.0, finalized_slot.0)
     }
+}
+
+fn justified_index_after(slot: u64, finalized_slot: u64) -> Option<usize> {
+    let Some(delta) = slot.checked_sub(finalized_slot) else {
+        return None;
+    };
+    let Some(index) = delta.checked_sub(1) else {
+        return None;
+    };
+    if index > usize::MAX as u64 {
+        return None;
+    }
+    Some(index as usize)
+}
+
+fn is_justifiable_after(slot: u64, finalized_slot: u64) -> bool {
+    let Some(delta) = slot.checked_sub(finalized_slot) else {
+        return false;
+    };
+
+    if delta <= IMMEDIATE_JUSTIFICATION_WINDOW {
+        return true;
+    }
+
+    let root = delta.isqrt();
+    if root * root == delta {
+        return true;
+    }
+
+    let discriminant = 4 * u128::from(delta) + 1;
+    let root = discriminant.isqrt();
+    root * root == discriminant
 }
 
 impl From<u64> for Slot {

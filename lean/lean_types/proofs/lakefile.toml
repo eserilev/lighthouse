@@ -1,0 +1,15 @@
+name = "lean_types_proofs"
+defaultTargets = ["LeanTypesProofs"]
+
+# Aeneas provides the Lean semantics for the translated Rust (`Result`, the scalar types and
+# the `step` tactic). Pinned: the generated file in `LeanTypesProofs/Generated.lean` must be
+# produced by the matching Aeneas/Charon versions. See README.md. The CI workflow reads `rev`
+# from here, so this is the single source of truth.
+[[require]]
+name = "aeneas"
+git = "https://github.com/AeneasVerif/aeneas"
+rev = "453b09f98f2b593c0544a8ad654b77e2a3bc621a"
+subDir = "backends/lean"
+
+[[lean_lib]]
+name = "LeanTypesProofs"
