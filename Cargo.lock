@@ -5134,6 +5134,7 @@ version = "0.1.0"
 dependencies = [
  "ethereum_ssz",
  "lean_types",
+ "proptest",
  "safe_arith",
  "ssz_types",
  "tree_hash",

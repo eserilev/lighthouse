@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 378509214847648723bf9eea63f14ceb6327abfaa737493e54829c33270d5921 # shrinks to (validator_count, slot_gaps, batches) = (8, [1, 1, 2], [[AttestationSpec { source: 12653859476148875432, target: 724951569758008425, head: 2040834458581660, random_target_root: None, bits: [true, false, true, false, true, true, true, true] }], [AttestationSpec { source: 2606632060364257073, target: 15122394620010568142, head: 5408528447443231836, random_target_root: None, bits: [false, false, true, true, true, true, true, true] }]])
+cc 7230935cb3ffeee6dc61d7b695bd8fd769c6a528ea259ab65ffe186d4e28208c # shrinks to validator_count = 2, slot_gaps = [1, 1], target = Index(0), voters = Index(0)
+cc 6c85689465e8b9093aa3feb4d607ebcd2c6ac478915b84571cae14aa03c849a2 # shrinks to (validator_count, slot_gaps, batches) = (3, [1, 1, 1, 1, 1], [[AttestationSpec { source: 291377309863635300, target: 5641734116373656611, head: 0, random_target_root: None, bits: [false, true, true] }, AttestationSpec { source: 14151054781491330935, target: 233758017769589793, head: 0, random_target_root: None, bits: [false, true, true] }], [AttestationSpec { source: 1123042688272618785, target: 7356348512997035062, head: 17512841192158106575, random_target_root: None, bits: [true, true, true] }]])

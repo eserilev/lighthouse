@@ -10,3 +10,6 @@ lean_types = { workspace = true }
 safe_arith = { workspace = true }
 ssz_types = { workspace = true }
 tree_hash = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
