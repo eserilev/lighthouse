@@ -3,6 +3,7 @@ name = "lean_spec_tests"
 version = "0.1.0"
 authors = ["Eitan Seri-Levi <eitan@sigmaprime.io>"]
 edition = { workspace = true }
+rust-version = "1.93.0"
 
 [features]
 lean_spec_tests = []
@@ -10,8 +11,12 @@ lean_spec_tests = []
 [dependencies]
 ethereum_ssz = { workspace = true }
 hex = { workspace = true }
+lean_crypto = { workspace = true }
 lean_state_transition = { workspace = true }
 lean_types = { workspace = true }
+p3-field = { workspace = true }
+p3-koala-bear = { workspace = true }
+p3-symmetric = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 ssz_types = { workspace = true }

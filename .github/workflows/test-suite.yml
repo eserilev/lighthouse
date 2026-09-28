@@ -438,7 +438,13 @@ jobs:
         msrv=$(echo $metadata | jq -r '.packages | map(select(.name == "lighthouse")) | .[0].rust_version')
         rustup override set $msrv
     - name: Run cargo check
-      run: cargo check --workspace
+      run: cargo check --workspace --exclude 'lean_*'
+    - name: Run cargo check on the lean crates at their MSRV
+      run: |
+        metadata=$(cargo metadata --no-deps --format-version 1)
+        msrv=$(echo $metadata | jq -r '.packages | map(select(.name == "lean_crypto")) | .[0].rust_version')
+        rustup override set $msrv
+        cargo check -p 'lean_*'
   cargo-udeps:
     name: cargo-udeps
     needs: [check-labels]

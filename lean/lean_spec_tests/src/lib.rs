@@ -1,7 +1,10 @@
 mod json;
 mod justifiability;
+mod poseidon;
 mod ssz_static;
 mod state_transition;
+mod verify_proofs;
+mod verify_signatures;
 
 use serde::de::DeserializeOwned;
 use std::collections::BTreeMap;
@@ -9,8 +12,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub use justifiability::JustifiabilityCase;
+pub use poseidon::PoseidonPermutationCase;
 pub use ssz_static::SszCase;
 pub use state_transition::StateTransitionCase;
+pub use verify_proofs::VerifySingleMessageProofsCase;
+pub use verify_signatures::VerifySignaturesCase;
 
 pub const FORK: &str = "lstar";
 
