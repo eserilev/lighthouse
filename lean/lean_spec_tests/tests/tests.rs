@@ -27,3 +27,8 @@ fn ssz() {
 fn justifiability() {
     assert_category::<JustifiabilityCase>();
 }
+
+#[test]
+fn state_transition() {
+    assert_category::<StateTransitionCase>();
+}

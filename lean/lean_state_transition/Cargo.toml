@@ -1,21 +1,15 @@
 [package]
-name = "lean_spec_tests"
+name = "lean_state_transition"
 version = "0.1.0"
 authors = ["Eitan Seri-Levi <eitan@sigmaprime.io>"]
 edition = { workspace = true }
 
-[features]
-lean_spec_tests = []
-
 [dependencies]
 ethereum_ssz = { workspace = true }
-hex = { workspace = true }
-lean_state_transition = { workspace = true }
 lean_types = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
+safe_arith = { workspace = true }
 ssz_types = { workspace = true }
 tree_hash = { workspace = true }
 
 [dev-dependencies]
-cargo_metadata = { workspace = true }
+proptest = { workspace = true }
