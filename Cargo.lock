@@ -5114,6 +5114,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "lean_spec_tests"
+version = "0.1.0"
+dependencies = [
+ "cargo_metadata",
+ "ethereum_ssz",
+ "hex",
+ "lean_types",
+ "serde",
+ "serde_json",
+ "ssz_types",
+ "tree_hash",
+]
+
+[[package]]
+name = "lean_types"
+version = "0.1.0"
+dependencies = [
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "fixed_bytes",
+ "proptest",
+ "ssz_types",
+ "tree_hash",
+ "tree_hash_derive",
+ "typenum",
+]
+
+[[package]]
 name = "leb128fmt"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

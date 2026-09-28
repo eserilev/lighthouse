@@ -315,6 +315,21 @@ jobs:
           cache-provider: warpbuild
     - name: Run consensus-spec-tests with blst and fake_crypto
       run: make test-ef
+  lean-spec-tests-ubuntu:
+    name: lean-spec-tests-ubuntu
+    needs: [check-labels]
+    if: needs.check-labels.outputs.skip_ci != 'true'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+    - name: Get latest version of stable Rust
+      uses: moonrepo/setup-rust@v1
+      with:
+          channel: stable
+          cache-target: release
+          bins: cargo-nextest
+    - name: Run leanSpec test fixtures
+      run: make test-lean-spec
   basic-simulator-ubuntu:
     name: basic-simulator-ubuntu
     needs: [check-labels]
@@ -526,6 +541,7 @@ jobs:
       'debug-tests-ubuntu',
       'state-transition-vectors-ubuntu',
       'ef-tests-ubuntu',
+      'lean-spec-tests-ubuntu',
       'basic-simulator-ubuntu',
       'fallback-simulator-ubuntu',
       'execution-engine-integration-ubuntu',
