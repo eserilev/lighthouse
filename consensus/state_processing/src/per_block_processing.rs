@@ -545,9 +545,13 @@ pub fn compute_timestamp_at_slot<E: EthSpec>(
     spec: &ChainSpec,
 ) -> Result<u64, ArithError> {
     let slots_since_genesis = block_slot.as_u64().safe_sub(spec.genesis_slot.as_u64())?;
-    slots_since_genesis
-        .safe_mul(spec.get_slot_duration().as_secs())
-        .and_then(|since_genesis| state.genesis_time().safe_add(since_genesis))
+    spec.slot_duration_schedule()
+        .compute_time_at_slot_ms(
+            E::slots_per_epoch(),
+            state.genesis_time().safe_mul(1000)?,
+            Slot::new(slots_since_genesis),
+        )?
+        .safe_div(1000)
 }
 
 /// Process the parent block's deferred execution payload effects.
