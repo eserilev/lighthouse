@@ -1053,6 +1053,19 @@ impl ChainSpec {
         self.compute_derived_values::<E>()
     }
 
+    /// Set the slot duration schedule. The genesis entry also sets the slot duration.
+    pub fn set_slot_duration_schedule<E: EthSpec>(
+        mut self,
+        schedule: SlotDurationSchedule,
+    ) -> Self {
+        if let Some(genesis_slot_duration_ms) = schedule.slot_duration_ms_for_epoch(Epoch::new(0)) {
+            self.slot_duration_ms = genesis_slot_duration_ms;
+            self.seconds_per_slot = genesis_slot_duration_ms.saturating_div(1000);
+        }
+        self.slot_duration_schedule = schedule;
+        self.compute_derived_values::<E>()
+    }
+
     pub fn get_slot_duration_ms(&self, epoch: Epoch) -> u64 {
         self.slot_duration_schedule
             .slot_duration_ms_for_epoch(epoch)
