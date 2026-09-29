@@ -29,6 +29,7 @@ use lighthouse_network::{
     types::{GossipEncoding, GossipTopic, core_topics_to_subscribe},
 };
 use logging::crit;
+use slot_clock::SlotClock;
 use std::collections::BTreeSet;
 use std::{collections::HashSet, pin::Pin, sync::Arc, time::Duration};
 use store::HotColdDB;
@@ -900,11 +901,18 @@ impl<T: BeaconChainTypes> NetworkService<T> {
             self.next_digest_update = Box::pin(next_digest_delay(&self.beacon_chain).into());
 
             // Set the next_unsubscribe delay.
-            let unsubscribe_delay = Duration::from_secs(
-                UNSUBSCRIBE_DELAY_EPOCHS
-                    * self.beacon_chain.spec.get_slot_duration().as_secs()
-                    * T::EthSpec::slots_per_epoch(),
-            );
+            let slot_clock = &self.beacon_chain.slot_clock;
+            let unsubscribe_delay = slot_clock
+                .now()
+                .map(|slot| {
+                    (slot.epoch(T::EthSpec::slots_per_epoch()) + UNSUBSCRIBE_DELAY_EPOCHS)
+                        .start_slot(T::EthSpec::slots_per_epoch())
+                })
+                .and_then(|slot| slot_clock.duration_to_slot(slot))
+                .unwrap_or_else(|| {
+                    slot_clock.slot_duration()
+                        * (UNSUBSCRIBE_DELAY_EPOCHS * T::EthSpec::slots_per_epoch()) as u32
+                });
 
             // Update the `next_topic_subscriptions` timer if the next change in the fork digest is known.
             self.next_topic_subscriptions =
@@ -954,9 +962,8 @@ fn next_topic_subscriptions_delay<T: BeaconChainTypes>(
     beacon_chain: &BeaconChain<T>,
 ) -> Option<tokio::time::Sleep> {
     if let Some((_, duration_to_epoch)) = beacon_chain.duration_to_next_digest() {
-        let duration_to_subscription = duration_to_epoch.saturating_sub(Duration::from_secs(
-            beacon_chain.spec.get_slot_duration().as_secs() * SUBSCRIBE_DELAY_SLOTS,
-        ));
+        let duration_to_subscription = duration_to_epoch
+            .saturating_sub(beacon_chain.slot_clock.slot_duration() * SUBSCRIBE_DELAY_SLOTS as u32);
         if !duration_to_subscription.is_zero() {
             return Some(tokio::time::sleep(duration_to_subscription));
         }
