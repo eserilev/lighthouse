@@ -286,6 +286,8 @@ pub struct ChainSpec {
     pub heze_fork_version: [u8; 4],
     /// The Heze fork epoch is optional, with `None` representing "Heze never happens".
     pub heze_fork_epoch: Option<Epoch>,
+    pub eip8198_fork_version: [u8; 4],
+    pub eip8198_fork_epoch: Option<Epoch>,
 
     /*
      * Experimental features, generated from `features/registry.toml`
@@ -984,6 +986,11 @@ impl ChainSpec {
 
     /// Spec: `get_attestation_due_ms`. Returns the epoch-appropriate threshold.
     pub fn get_attestation_due<E: EthSpec>(&self, slot: Slot) -> Duration {
+        if let Some(due) =
+            self.eip8198_slot_component_duration::<E>(self.attestation_due_bps_gloas, slot)
+        {
+            return due;
+        }
         if self.fork_name_at_slot::<E>(slot).gloas_enabled() {
             self.unaggregated_attestation_due_gloas
         } else {
@@ -992,17 +999,24 @@ impl ChainSpec {
     }
 
     /// Spec: `get_payload_due_ms`.
-    pub fn get_payload_due(&self) -> Duration {
-        self.payload_due
+    pub fn get_payload_due<E: EthSpec>(&self, slot: Slot) -> Duration {
+        self.eip8198_slot_component_duration::<E>(self.payload_due_bps, slot)
+            .unwrap_or(self.payload_due)
     }
 
     /// Spec: `get_payload_attestation_due_ms`.
-    pub fn get_payload_attestation_due(&self) -> Duration {
-        self.payload_attestation_due
+    pub fn get_payload_attestation_due<E: EthSpec>(&self, slot: Slot) -> Duration {
+        self.eip8198_slot_component_duration::<E>(self.payload_attestation_due_bps, slot)
+            .unwrap_or(self.payload_attestation_due)
     }
 
     /// Spec: `get_aggregate_attestation_due_ms`. Returns the epoch-appropriate threshold.
     pub fn get_aggregate_attestation_due<E: EthSpec>(&self, slot: Slot) -> Duration {
+        if let Some(due) =
+            self.eip8198_slot_component_duration::<E>(self.aggregate_due_bps_gloas, slot)
+        {
+            return due;
+        }
         if self.fork_name_at_slot::<E>(slot).gloas_enabled() {
             self.aggregate_attestation_due_gloas
         } else {
@@ -1012,6 +1026,11 @@ impl ChainSpec {
 
     /// Spec: `get_contribution_due_ms`. Returns the epoch-appropriate threshold.
     pub fn get_contribution_message_due<E: EthSpec>(&self, slot: Slot) -> Duration {
+        if let Some(due) =
+            self.eip8198_slot_component_duration::<E>(self.contribution_due_bps_gloas, slot)
+        {
+            return due;
+        }
         if self.fork_name_at_slot::<E>(slot).gloas_enabled() {
             self.contribution_and_proof_due_gloas
         } else {
@@ -1021,11 +1040,43 @@ impl ChainSpec {
 
     /// Spec: `get_sync_message_due_ms`. Returns the epoch-appropriate threshold.
     pub fn get_sync_message_due<E: EthSpec>(&self, slot: Slot) -> Duration {
+        if let Some(due) =
+            self.eip8198_slot_component_duration::<E>(self.sync_message_due_bps_gloas, slot)
+        {
+            return due;
+        }
         if self.fork_name_at_slot::<E>(slot).gloas_enabled() {
             self.sync_message_due_gloas
         } else {
             self.sync_message_due
         }
+    }
+
+    pub fn compute_slot_component_duration_at<E: EthSpec>(
+        &self,
+        component_basis_points: u64,
+        slot: Slot,
+    ) -> Result<Duration, ArithError> {
+        match self.eip8198_slot_component_duration::<E>(component_basis_points, slot) {
+            Some(duration) => Ok(duration),
+            None => self.compute_slot_component_duration(component_basis_points),
+        }
+    }
+
+    fn eip8198_slot_component_duration<E: EthSpec>(
+        &self,
+        component_basis_points: u64,
+        slot: Slot,
+    ) -> Option<Duration> {
+        let fork_epoch = self.eip8198_fork_epoch?;
+        if slot.epoch(E::slots_per_epoch()) < fork_epoch {
+            return None;
+        }
+        Some(Duration::from_millis(
+            component_basis_points
+                .saturating_mul(self.get_slot_duration_ms(fork_epoch))
+                .saturating_div(BASIS_POINTS),
+        ))
     }
 
     /// Calculate the duration into a slot for a given slot component
@@ -1494,6 +1545,8 @@ impl ChainSpec {
              */
             heze_fork_version: [0x08, 0x00, 0x00, 0x00],
             heze_fork_epoch: None,
+            eip8198_fork_version: [0xe8, 0x19, 0x80, 0x00],
+            eip8198_fork_epoch: None,
             features: FeatureSpec::mainnet(),
             max_transactions_bytes_per_inclusion_list: 8192,
             max_request_inclusion_list: 16,
@@ -1656,6 +1709,8 @@ impl ChainSpec {
             // Heze
             heze_fork_version: [0x08, 0x00, 0x00, 0x01],
             heze_fork_epoch: None,
+            eip8198_fork_version: [0xe8, 0x19, 0x80, 0x01],
+            eip8198_fork_epoch: None,
             features: FeatureSpec::minimal(),
 
             /*
@@ -1956,6 +2011,8 @@ impl ChainSpec {
              */
             heze_fork_version: [0x08, 0x00, 0x00, 0x64],
             heze_fork_epoch: None,
+            eip8198_fork_version: [0xe8, 0x19, 0x80, 0x64],
+            eip8198_fork_epoch: None,
             features: FeatureSpec::gnosis(),
             max_transactions_bytes_per_inclusion_list: 8192,
             max_request_inclusion_list: 16,
@@ -2429,6 +2486,14 @@ pub struct Config {
     #[serde(deserialize_with = "deserialize_fork_epoch")]
     pub heze_fork_epoch: Option<MaybeQuoted<Epoch>>,
 
+    #[serde(default = "default_eip8198_fork_version")]
+    #[serde(with = "serde_utils::bytes_4_hex")]
+    eip8198_fork_version: [u8; 4],
+    #[serde(default)]
+    #[serde(serialize_with = "serialize_fork_epoch")]
+    #[serde(deserialize_with = "deserialize_fork_epoch")]
+    pub eip8198_fork_epoch: Option<MaybeQuoted<Epoch>>,
+
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     seconds_per_slot: Option<MaybeQuoted<u64>>,
@@ -2686,6 +2751,10 @@ fn default_gloas_fork_version() -> [u8; 4] {
 
 fn default_heze_fork_version() -> [u8; 4] {
     // This value shouldn't be used.
+    [0xff, 0xff, 0xff, 0xff]
+}
+
+fn default_eip8198_fork_version() -> [u8; 4] {
     [0xff, 0xff, 0xff, 0xff]
 }
 
@@ -3135,6 +3204,11 @@ impl Config {
                 .heze_fork_epoch
                 .map(|epoch| MaybeQuoted { value: epoch }),
 
+            eip8198_fork_version: spec.eip8198_fork_version,
+            eip8198_fork_epoch: spec
+                .eip8198_fork_epoch
+                .map(|epoch| MaybeQuoted { value: epoch }),
+
             seconds_per_slot: Some(MaybeQuoted {
                 value: spec.seconds_per_slot,
             }),
@@ -3269,6 +3343,8 @@ impl Config {
             gloas_fork_epoch,
             heze_fork_version,
             heze_fork_epoch,
+            eip8198_fork_version,
+            eip8198_fork_epoch,
             seconds_per_slot,
             slot_duration_ms,
             seconds_per_eth1_block,
@@ -3423,6 +3499,8 @@ impl Config {
             gloas_fork_epoch: gloas_fork_epoch.map(|q| q.value),
             heze_fork_version,
             heze_fork_epoch: heze_fork_epoch.map(|q| q.value),
+            eip8198_fork_version,
+            eip8198_fork_epoch: eip8198_fork_epoch.map(|q| q.value),
             seconds_per_slot,
             slot_duration_ms,
             slot_duration_schedule: slot_duration_schedule.clone(),
@@ -4508,11 +4586,11 @@ mod yaml_tests {
 
         // Test payload due (5000 bps = 50% of 12s = 6s)
         let spec = ChainSpec::mainnet().compute_derived_values::<MainnetEthSpec>();
-        let payload_due = spec.get_payload_due();
+        let payload_due = spec.get_payload_due::<MainnetEthSpec>(Slot::new(0));
         assert_eq!(payload_due, Duration::from_millis(6000)); // 12000 * 5000 / 10000
 
         // Test payload attestation due (7500 bps = 75% of 12s = 9s)
-        let payload_att_due = spec.get_payload_attestation_due();
+        let payload_att_due = spec.get_payload_attestation_due::<MainnetEthSpec>(Slot::new(0));
         assert_eq!(payload_att_due, Duration::from_millis(9000)); // 12000 * 7500 / 10000
 
         // Test gloas attestation due (2500 bps = 25% of 12s = 3s)
@@ -4628,6 +4706,63 @@ mod yaml_tests {
     }
 
     #[test]
+    fn deadlines_use_the_slot_duration_at_the_eip8198_fork() {
+        let mut spec = ChainSpec::mainnet().set_slot_duration_schedule::<MainnetEthSpec>(
+            slot_duration_schedule(&[(0, 12000), (10, 10000), (20, 6000)]),
+        );
+        spec.eip8198_fork_epoch = Some(Epoch::new(10));
+        let pre_fork_slot = Slot::new(319);
+        let fork_slot = Slot::new(320);
+        let later_slot = Slot::new(700);
+        let at_fork = |bps: u64| Duration::from_millis(bps * 10000 / BASIS_POINTS);
+
+        assert_eq!(
+            spec.get_attestation_due::<MainnetEthSpec>(pre_fork_slot),
+            spec.unaggregated_attestation_due
+        );
+        for slot in [fork_slot, later_slot] {
+            assert_eq!(
+                spec.get_attestation_due::<MainnetEthSpec>(slot),
+                at_fork(spec.attestation_due_bps_gloas)
+            );
+            assert_eq!(
+                spec.get_aggregate_attestation_due::<MainnetEthSpec>(slot),
+                at_fork(spec.aggregate_due_bps_gloas)
+            );
+            assert_eq!(
+                spec.get_sync_message_due::<MainnetEthSpec>(slot),
+                at_fork(spec.sync_message_due_bps_gloas)
+            );
+            assert_eq!(
+                spec.get_contribution_message_due::<MainnetEthSpec>(slot),
+                at_fork(spec.contribution_due_bps_gloas)
+            );
+            assert_eq!(
+                spec.get_payload_due::<MainnetEthSpec>(slot),
+                at_fork(spec.payload_due_bps)
+            );
+            assert_eq!(
+                spec.get_payload_attestation_due::<MainnetEthSpec>(slot),
+                at_fork(spec.payload_attestation_due_bps)
+            );
+            assert_eq!(
+                spec.compute_slot_component_duration_at::<MainnetEthSpec>(
+                    spec.proposer_reorg_cutoff_bps,
+                    slot
+                ),
+                Ok(at_fork(spec.proposer_reorg_cutoff_bps))
+            );
+        }
+        assert_eq!(
+            spec.compute_slot_component_duration_at::<MainnetEthSpec>(
+                spec.proposer_reorg_cutoff_bps,
+                pre_fork_slot
+            ),
+            spec.compute_slot_component_duration(spec.proposer_reorg_cutoff_bps)
+        );
+    }
+
+    #[test]
     fn test_contribution_message_due_is_fork_aware() {
         type E = MainnetEthSpec;
 
@@ -4674,9 +4809,12 @@ mod yaml_tests {
         );
 
         // Mainnet payload due: 12000ms slots, 5000 bps = 6000ms
-        assert_eq!(mainnet.get_payload_due(), Duration::from_millis(6000));
         assert_eq!(
-            mainnet.get_payload_attestation_due(),
+            mainnet.get_payload_due::<MainnetEthSpec>(Slot::new(0)),
+            Duration::from_millis(6000)
+        );
+        assert_eq!(
+            mainnet.get_payload_attestation_due::<MainnetEthSpec>(Slot::new(0)),
             Duration::from_millis(9000)
         );
 
@@ -4719,9 +4857,12 @@ mod yaml_tests {
             Duration::from_millis(4000)
         );
         // Minimal payload due: 6000ms slots, 5000 bps = 3000ms
-        assert_eq!(minimal.get_payload_due(), Duration::from_millis(3000));
         assert_eq!(
-            minimal.get_payload_attestation_due(),
+            minimal.get_payload_due::<MinimalEthSpec>(Slot::new(0)),
+            Duration::from_millis(3000)
+        );
+        assert_eq!(
+            minimal.get_payload_attestation_due::<MinimalEthSpec>(Slot::new(0)),
             Duration::from_millis(4500)
         );
 
@@ -4764,9 +4905,12 @@ mod yaml_tests {
             Duration::from_millis(3333)
         );
         // Gnosis payload due: 5000ms slots, 5000 bps = 2500ms
-        assert_eq!(gnosis.get_payload_due(), Duration::from_millis(2500));
         assert_eq!(
-            gnosis.get_payload_attestation_due(),
+            gnosis.get_payload_due::<crate::core::GnosisEthSpec>(Slot::new(0)),
+            Duration::from_millis(2500)
+        );
+        assert_eq!(
+            gnosis.get_payload_attestation_due::<crate::core::GnosisEthSpec>(Slot::new(0)),
             Duration::from_millis(3750)
         );
 
