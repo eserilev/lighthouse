@@ -107,10 +107,10 @@ impl GossipVerifiedExecutionProof {
         }
 
         // [REJECT] The signature is valid with respect to the validator's public key.
-        let fork_name = ctx.spec.fork_name_at_slot::<T::EthSpec>(block_slot);
         let domain = ctx.spec.compute_domain(
             Domain::ExecutionProof,
-            ctx.spec.fork_version_for_name(fork_name),
+            ctx.spec
+                .fork_version_for_epoch(block_slot.epoch(T::EthSpec::slots_per_epoch())),
             ctx.genesis_validators_root,
         );
         let signing_root = proof.message.signing_root(domain);

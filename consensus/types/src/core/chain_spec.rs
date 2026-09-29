@@ -399,9 +399,13 @@ impl ChainSpec {
     ///
     /// `next_fork_version = current_fork_version` if no future fork is planned,
     pub fn next_fork_version<E: EthSpec>(&self, slot: Slot) -> [u8; 4] {
+        let epoch = slot.epoch(E::slots_per_epoch());
         match self.next_fork_epoch::<E>(slot) {
             Some((fork, _)) => self.fork_version_for_name(fork),
-            None => self.fork_version_for_name(self.fork_name_at_slot::<E>(slot)),
+            None => match self.eip8198_fork_epoch {
+                Some(eip8198_fork_epoch) if epoch < eip8198_fork_epoch => self.eip8198_fork_version,
+                _ => self.fork_version_for_epoch(epoch),
+            },
         }
     }
 
@@ -462,7 +466,15 @@ impl ChainSpec {
 
     // This is `compute_fork_version` in the spec
     pub fn fork_version_for_epoch(&self, epoch: Epoch) -> [u8; 4] {
+        if self.is_eip8198_active_at_epoch(epoch) {
+            return self.eip8198_fork_version;
+        }
         self.fork_version_for_name(self.fork_name_at_epoch(epoch))
+    }
+
+    pub fn is_eip8198_active_at_epoch(&self, epoch: Epoch) -> bool {
+        self.eip8198_fork_epoch
+            .is_some_and(|eip8198_fork_epoch| epoch >= eip8198_fork_epoch)
     }
 
     /// For a given fork name, return the epoch at which it activates.
@@ -530,6 +542,17 @@ impl ChainSpec {
     /// Returns a full `Fork` struct for a given epoch.
     pub fn fork_at_epoch(&self, epoch: Epoch) -> Fork {
         let current_fork_name = self.fork_name_at_epoch(epoch);
+
+        if let Some(eip8198_fork_epoch) = self
+            .eip8198_fork_epoch
+            .filter(|eip8198_fork_epoch| epoch >= *eip8198_fork_epoch)
+        {
+            return Fork {
+                previous_version: self.fork_version_for_name(current_fork_name),
+                current_version: self.eip8198_fork_version,
+                epoch: eip8198_fork_epoch,
+            };
+        }
 
         let fork_epoch = self
             .fork_epoch(current_fork_name)
@@ -706,6 +729,9 @@ impl ChainSpec {
             for blob_parameters in &self.blob_schedule {
                 relevant_epochs.insert(blob_parameters.epoch);
             }
+        }
+        if let Some(eip8198_fork_epoch) = self.eip8198_fork_epoch {
+            relevant_epochs.insert(eip8198_fork_epoch);
         }
         let mut vec = relevant_epochs.into_iter().collect::<Vec<_>>();
         vec.sort();
@@ -2306,7 +2332,12 @@ impl SlotDurationSchedule {
         start_slot.safe_add(slots)
     }
 
-    fn validate(&self, genesis_slot_duration_ms: u64, slots_per_epoch: u64) -> Result<(), String> {
+    fn validate(
+        &self,
+        genesis_slot_duration_ms: u64,
+        slots_per_epoch: u64,
+        eip8198_fork_epoch: Option<Epoch>,
+    ) -> Result<(), String> {
         if self.is_empty() {
             return Ok(());
         }
@@ -2351,10 +2382,10 @@ impl SlotDurationSchedule {
         if let Some(entry) = self
             .as_vec()
             .iter()
-            .find(|entry| entry.epoch != Epoch::new(0))
+            .find(|entry| entry.epoch != Epoch::new(0) && Some(entry.epoch) != eip8198_fork_epoch)
         {
             return Err(format!(
-                "slot duration changes are not supported yet, found an entry at epoch {}",
+                "the slot duration change at epoch {} is not at the EIP-8198 fork epoch",
                 entry.epoch
             ));
         }
@@ -3444,7 +3475,22 @@ impl Config {
         let seconds_per_slot = seconds_per_slot
             .map(|q| q.value)
             .or_else(|| slot_duration_ms.checked_div(1000))?;
-        if let Err(e) = slot_duration_schedule.validate(slot_duration_ms, E::slots_per_epoch()) {
+        if let Some(eip8198_fork_epoch) = eip8198_fork_epoch.map(|q| q.value)
+            && heze_fork_epoch
+                .map(|q| q.value)
+                .is_none_or(|heze_fork_epoch| eip8198_fork_epoch < heze_fork_epoch)
+        {
+            error!(
+                eip8198_fork_epoch = %eip8198_fork_epoch,
+                "EIP8198_FORK_EPOCH is before HEZE_FORK_EPOCH"
+            );
+            return None;
+        }
+        if let Err(e) = slot_duration_schedule.validate(
+            slot_duration_ms,
+            E::slots_per_epoch(),
+            eip8198_fork_epoch.map(|q| q.value),
+        ) {
             error!(error = %e, "Invalid SLOT_DURATION_SCHEDULE");
             return None;
         }
@@ -5030,14 +5076,18 @@ mod yaml_tests {
                 &[(0, 12000), (u64::MAX, 6000)],
             ),
             (
-                "slot duration changes are not supported yet",
+                "is not at the EIP-8198 fork epoch",
                 12000,
                 &[(0, 12000), (10, 10000)],
             ),
         ];
         for (expected, genesis_slot_duration_ms, entries) in invalid {
             let error = slot_duration_schedule(entries)
-                .validate(genesis_slot_duration_ms, MainnetEthSpec::slots_per_epoch())
+                .validate(
+                    genesis_slot_duration_ms,
+                    MainnetEthSpec::slots_per_epoch(),
+                    None,
+                )
                 .expect_err(expected);
             assert!(
                 error.contains(expected),
@@ -5047,6 +5097,86 @@ mod yaml_tests {
         assert!(
             spec_with_slot_config(None, slot_duration_schedule(&[(0, 12000), (10, 10000)]))
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn slot_duration_change_at_the_eip8198_fork_epoch() {
+        let schedule = slot_duration_schedule(&[(0, 12000), (10, 10000)]);
+        assert_eq!(
+            schedule.validate(
+                12000,
+                MainnetEthSpec::slots_per_epoch(),
+                Some(Epoch::new(10))
+            ),
+            Ok(())
+        );
+        let error = schedule
+            .validate(
+                12000,
+                MainnetEthSpec::slots_per_epoch(),
+                Some(Epoch::new(11)),
+            )
+            .expect_err("change is not at the fork epoch");
+        assert!(
+            error.contains("is not at the EIP-8198 fork epoch"),
+            "{error}"
+        );
+
+        let mut config = Config::from_chain_spec::<MainnetEthSpec>(&ChainSpec::mainnet());
+        config.heze_fork_epoch = Some(MaybeQuoted {
+            value: Epoch::new(5),
+        });
+        config.eip8198_fork_epoch = Some(MaybeQuoted {
+            value: Epoch::new(10),
+        });
+        config.slot_duration_schedule = schedule;
+        let spec = ChainSpec::from_config::<MainnetEthSpec>(&config).expect("valid config");
+        assert_eq!(spec.get_slot_duration_ms(Epoch::new(10)), 10000);
+
+        config.eip8198_fork_epoch = Some(MaybeQuoted {
+            value: Epoch::new(4),
+        });
+        assert!(ChainSpec::from_config::<MainnetEthSpec>(&config).is_none());
+    }
+
+    #[test]
+    fn eip8198_fork_versions_and_digests() {
+        let mut spec = ChainSpec::mainnet();
+        spec.fulu_fork_epoch = Some(Epoch::new(0));
+        spec.gloas_fork_epoch = Some(Epoch::new(0));
+        spec.heze_fork_epoch = Some(Epoch::new(5));
+        spec.eip8198_fork_epoch = Some(Epoch::new(10));
+        let genesis_validators_root = Hash256::repeat_byte(1);
+
+        assert_eq!(
+            spec.fork_version_for_epoch(Epoch::new(9)),
+            spec.heze_fork_version
+        );
+        assert_eq!(
+            spec.fork_version_for_epoch(Epoch::new(10)),
+            spec.eip8198_fork_version
+        );
+        assert_eq!(
+            spec.fork_at_epoch(Epoch::new(12)),
+            Fork {
+                previous_version: spec.heze_fork_version,
+                current_version: spec.eip8198_fork_version,
+                epoch: Epoch::new(10),
+            }
+        );
+        assert_eq!(spec.next_digest_epoch(Epoch::new(7)), Some(Epoch::new(10)));
+        assert_ne!(
+            spec.compute_fork_digest(genesis_validators_root, Epoch::new(9)),
+            spec.compute_fork_digest(genesis_validators_root, Epoch::new(10))
+        );
+        assert_eq!(
+            spec.next_fork_version::<MainnetEthSpec>(Epoch::new(7).start_slot(32)),
+            spec.eip8198_fork_version
+        );
+        assert_eq!(
+            spec.next_fork_version::<MainnetEthSpec>(Epoch::new(12).start_slot(32)),
+            spec.eip8198_fork_version
         );
     }
 
