@@ -22,7 +22,7 @@ mod sqlite;
 pub use application_domain::{APPLICATION_DOMAIN_BUILDER, ApplicationDomain};
 pub use chain_spec::{
     BlobParameters, BlobSchedule, ChainSpec, Config, DEFAULT_GAS_LIMIT, Domain, EpochSchedule,
-    GasLimitSchedule, GasLimitScheduleEntry,
+    GasLimitSchedule, GasLimitScheduleEntry, SlotDurationSchedule, SlotDurationScheduleEntry,
 };
 #[allow(unused_imports, reason = "used by the generated feature config")]
 pub(crate) use chain_spec::{deserialize_fork_epoch, serialize_fork_epoch};
