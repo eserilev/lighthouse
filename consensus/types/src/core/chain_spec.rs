@@ -1053,7 +1053,6 @@ impl ChainSpec {
         self.compute_derived_values::<E>()
     }
 
-    /// Spec: `get_slot_duration_ms`.
     pub fn get_slot_duration_ms(&self, epoch: Epoch) -> u64 {
         self.slot_duration_schedule
             .slot_duration_ms_for_epoch(epoch)
@@ -1071,7 +1070,6 @@ impl ChainSpec {
         }
     }
 
-    /// Spec: `compute_time_at_slot_ms`.
     pub fn compute_time_at_slot_ms<E: EthSpec>(
         &self,
         genesis_time_ms: u64,
@@ -1084,7 +1082,6 @@ impl ChainSpec {
         )
     }
 
-    /// Spec: `compute_slot_at_time_ms`.
     pub fn compute_slot_at_time_ms<E: EthSpec>(
         &self,
         genesis_time_ms: u64,
@@ -2193,7 +2190,6 @@ impl SlotDurationSchedule {
             .map(|entry| entry.slot_duration_ms)
     }
 
-    /// Spec: `compute_time_at_slot_ms`.
     pub fn compute_time_at_slot_ms(
         &self,
         slots_per_epoch: u64,
@@ -2213,7 +2209,6 @@ impl SlotDurationSchedule {
         Ok(time_ms)
     }
 
-    /// Spec: `compute_slot_at_time_ms`.
     pub fn compute_slot_at_time_ms(
         &self,
         slots_per_epoch: u64,
