@@ -69,14 +69,19 @@ jobs:
     if: needs.changes.outputs.any == 'true'
     runs-on: ubuntu-latest
     steps:
+      # `charon-driver` is a rustc driver linked against the nightly in Charon's rust-toolchain
+      # file, so that toolchain is cached with the binaries. The binaries alone cannot start.
       - name: Cache charon/aeneas builds
         id: cache
         uses: actions/cache@v4
         with:
           path: |
+            ~/verif/charon/rust-toolchain
+            ~/verif/charon/rust-toolchain.toml
             ~/verif/charon/charon/target/release/charon
             ~/verif/charon/charon/target/release/charon-driver
             ~/verif/aeneas/src/_build/default/main.exe
+            ~/.rustup/toolchains
           key: verif-tools-${{ runner.os }}-${{ env.CHARON_REV }}-${{ env.AENEAS_REV }}
 
       - name: Build Charon and Aeneas
@@ -95,9 +100,10 @@ jobs:
           # domainslib requires OCaml >= 5.0
           opam init -y --bare --disable-sandboxing
           opam switch create aeneas 5.2.0 -y
-          # Take the dependency list from Aeneas itself so it cannot drift from the pinned rev.
-          (cd ~/verif/aeneas/src && opam install -y --switch=aeneas --assume-depexts --deps-only \
-            ./aeneas.opam ./aeneas.ppx.opam)
+          # The list from the Aeneas README. Its .opam files are dune-generated and list only dune.
+          opam install -y --switch=aeneas --assume-depexts \
+            calendar core_unix domainslib easy_logging menhir ocamlformat.0.27.0 ocamlgraph odoc \
+            ppx_deriving ppx_deriving_yojson progress unionFind visitors yojson zarith
           (cd ~/verif/aeneas/src && opam exec --switch=aeneas -- dune build)
 
   verify:
@@ -182,9 +188,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
+            ~/verif/charon/rust-toolchain
+            ~/verif/charon/rust-toolchain.toml
             ~/verif/charon/charon/target/release/charon
             ~/verif/charon/charon/target/release/charon-driver
             ~/verif/aeneas/src/_build/default/main.exe
+            ~/.rustup/toolchains
           key: verif-tools-${{ runner.os }}-${{ env.CHARON_REV }}-${{ env.AENEAS_REV }}
 
       # Re-derive the model from the Rust: this is what ties the theorem to current source.
@@ -199,11 +208,13 @@ jobs:
           set -euo pipefail
           export PATH="$HOME/verif/charon/charon/target/release:$PATH"
           # `-- --lib`: without it Charon translates the crate's binaries into opaque bodies.
+          # An absolute `--dest-file`: rustc runs in the workspace root, not in the crate.
           # shellcheck disable=SC2086
           charon cargo --preset=aeneas \
             --start-from "$ENTRYPOINT" \
-            --dest-file pure.llbc $CHARON_EXTRA
-          ~/verif/aeneas/src/_build/default/main.exe -backend lean pure.llbc -dest "$RUNNER_TEMP/regen"
+            --dest-file "$RUNNER_TEMP/pure.llbc" $CHARON_EXTRA
+          ~/verif/aeneas/src/_build/default/main.exe -backend lean "$RUNNER_TEMP/pure.llbc" \
+            -dest "$RUNNER_TEMP/regen"
           # The generated file is namespaced/renamed on the way in; compare the definitions.
           diff <(sed -n '/^namespace/,$p' "$RUNNER_TEMP/regen/Pure.lean") \
                <(sed -n '/^namespace/,$p' "$PROOFS/$GENERATED") \

@@ -71,12 +71,14 @@ git checkout 453b09f98f2b593c0544a8ad654b77e2a3bc621a
 ln -s ../charon charon && cd src && dune build
 
 # Translate. `--lib` matters: without it Charon picks up src/bin/test_generator.rs
-# and emits a file with opaque bodies and no error.
+# and emits a file with opaque bodies and no error. `--dest-file` is absolute because
+# rustc runs in the workspace root.
 cd validator_client/slashing_protection
+out=$(mktemp -d)
 charon cargo --preset=aeneas \
   --start-from 'slashing_protection::pure_check::check_attestation_pure' \
-  --dest-file pure.llbc -- --lib
-aeneas -backend lean pure.llbc -dest proofs/SlashingProofs
+  --dest-file "$out/pure.llbc" -- --lib
+aeneas -backend lean "$out/pure.llbc" -dest proofs/SlashingProofs
 ```
 
 ## Why `pure_check.rs` is written the way it is
