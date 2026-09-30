@@ -1,5 +1,5 @@
 use clap::Parser;
-use fresnel::{Registry, generate, rustfmt};
+use fresnel::{Registry, generate, read_forks, rustfmt};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -9,6 +9,9 @@ struct Cli {
     /// Path to `registry.toml`.
     #[arg(long, default_value = "consensus/types/src/features/registry.toml")]
     registry: PathBuf,
+    /// Path to the source file of the `ForkName` enum.
+    #[arg(long, default_value = "consensus/types/src/fork/fork_name.rs")]
+    forks: PathBuf,
     /// Path to the generated Rust file.
     #[arg(long, default_value = "consensus/types/src/features/generated.rs")]
     out: PathBuf,
@@ -27,7 +30,17 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    let registry = match Registry::parse(&source) {
+    let forks = match std::fs::read_to_string(&cli.forks)
+        .map_err(|e| format!("cannot read {}: {e}", cli.forks.display()))
+        .and_then(|fork_source| read_forks(&fork_source).map_err(|e| e.to_string()))
+    {
+        Ok(forks) => forks,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::from(1);
+        }
+    };
+    let registry = match Registry::parse(&source, &forks) {
         Ok(registry) => registry,
         Err(e) => {
             eprintln!("{}: {e}", cli.registry.display());

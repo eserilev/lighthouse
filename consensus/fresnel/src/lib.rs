@@ -9,21 +9,6 @@ use std::fmt::{self, Write};
 use std::io::Write as _;
 use std::process::{Command, Stdio};
 
-/// The real forks, in order. A feature must build on one of these, from `FIRST_FEATURE_FORK` on.
-pub const FORKS: &[&str] = &[
-    "Base",
-    "Altair",
-    "Bellatrix",
-    "Capella",
-    "Deneb",
-    "Electra",
-    "Fulu",
-    "Gloas",
-    "Heze",
-];
-
-pub const FIRST_FEATURE_FORK: &str = "Gloas";
-
 /// The networks with a built-in `ChainSpec` constructor.
 pub const NETWORKS: &[&str] = &["mainnet", "minimal", "gnosis"];
 
@@ -65,8 +50,36 @@ fn error(id: &'static str, message: impl Into<String>) -> RegistryError {
     }
 }
 
+/// Read the variants of `pub enum ForkName` from the source of `fork_name.rs`.
+pub fn read_forks(fork_name_source: &str) -> Result<Vec<String>, RegistryError> {
+    let missing = || {
+        error(
+            "F-R06",
+            "cannot find `pub enum ForkName` in the fork name source",
+        )
+    };
+    let (_, after) = fork_name_source
+        .split_once("pub enum ForkName {")
+        .ok_or_else(missing)?;
+    let (body, _) = after.split_once('}').ok_or_else(missing)?;
+    let forks: Vec<String> = body
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with("//") && !line.starts_with('#'))
+        .map(|line| line.trim_end_matches(',').to_string())
+        .collect();
+    if forks.is_empty()
+        || !forks
+            .iter()
+            .all(|fork| !fork.is_empty() && fork.chars().all(|c| c.is_ascii_alphanumeric()))
+    {
+        return Err(missing());
+    }
+    Ok(forks)
+}
+
 impl Registry {
-    pub fn parse(source: &str) -> Result<Self, RegistryError> {
+    pub fn parse(source: &str, forks: &[String]) -> Result<Self, RegistryError> {
         let table: toml::Table =
             toml::from_str(source).map_err(|e| error("F-R00", format!("invalid TOML: {e}")))?;
         let mut features = Vec::with_capacity(table.len());
@@ -85,15 +98,11 @@ impl Registry {
             });
         }
         let registry = Registry { features };
-        registry.validate()?;
+        registry.validate(forks)?;
         Ok(registry)
     }
 
-    fn validate(&self) -> Result<(), RegistryError> {
-        let first_feature_fork = FORKS
-            .iter()
-            .position(|fork| *fork == FIRST_FEATURE_FORK)
-            .unwrap_or(FORKS.len());
+    fn validate(&self, forks: &[String]) -> Result<(), RegistryError> {
         let mut versions: BTreeMap<(&str, [u8; 4]), &str> = BTreeMap::new();
 
         for feature in &self.features {
@@ -107,17 +116,14 @@ impl Registry {
                     ),
                 ));
             }
-            match FORKS.iter().position(|fork| *fork == feature.min_fork) {
-                Some(index) if index >= first_feature_fork => {}
-                _ => {
-                    return Err(error(
-                        "F-R02",
-                        format!(
-                            "feature `{}`: min_fork `{}` is not a fork from {FIRST_FEATURE_FORK} on",
-                            feature.name, feature.min_fork
-                        ),
-                    ));
-                }
+            if !forks.contains(&feature.min_fork) {
+                return Err(error(
+                    "F-R02",
+                    format!(
+                        "feature `{}`: min_fork `{}` is not a variant of `ForkName`",
+                        feature.name, feature.min_fork
+                    ),
+                ));
             }
             for network in NETWORKS {
                 if !feature.fork_versions.contains_key(*network) {

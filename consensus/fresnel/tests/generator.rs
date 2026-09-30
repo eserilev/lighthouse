@@ -1,19 +1,42 @@
-use fresnel::{Registry, generate, rustfmt, type_name};
+use fresnel::{Registry, generate, read_forks, rustfmt, type_name};
 
 const TWO_FEATURES: &str = include_str!("fixtures/two_features.toml");
+const FORK_NAME_SOURCE: &str = include_str!("../../types/src/fork/fork_name.rs");
+
+fn forks() -> Vec<String> {
+    read_forks(FORK_NAME_SOURCE).expect("fork names")
+}
 
 fn generated(source: &str) -> String {
-    let registry = Registry::parse(source).expect("valid registry");
+    let registry = Registry::parse(source, &forks()).expect("valid registry");
     rustfmt(&generate(&registry).expect("generate")).expect("rustfmt")
 }
 
 fn parse_error(source: &str) -> &'static str {
-    Registry::parse(source).expect_err("invalid registry").id
+    Registry::parse(source, &forks())
+        .expect_err("invalid registry")
+        .id
+}
+
+#[test]
+fn fork_names_come_from_the_fork_name_enum() {
+    let forks = forks();
+    assert_eq!(forks.first().map(String::as_str), Some("Base"));
+    for fork in ["Altair", "Fulu", "Gloas", "Heze"] {
+        assert!(
+            forks.iter().any(|f| f == fork),
+            "{fork} missing in {forks:?}"
+        );
+    }
+    assert_eq!(
+        read_forks("pub struct Nope {}").expect_err("no enum").id,
+        "F-R06"
+    );
 }
 
 #[test]
 fn registry_order_is_kept() {
-    let registry = Registry::parse(TWO_FEATURES).expect("valid registry");
+    let registry = Registry::parse(TWO_FEATURES, &forks()).expect("valid registry");
     let names: Vec<&str> = registry.features.iter().map(|f| f.name.as_str()).collect();
     assert_eq!(names, ["eip8198", "eip_toy"]);
 }
@@ -73,10 +96,6 @@ fn invalid_registries_are_rejected() {
     assert_eq!(
         parse_error(&format!("[Eip1]\nmin_fork = \"Heze\"\n{versions}")),
         "F-R01"
-    );
-    assert_eq!(
-        parse_error(&format!("[eip1]\nmin_fork = \"Fulu\"\n{versions}")),
-        "F-R02"
     );
     assert_eq!(
         parse_error(&format!("[eip1]\nmin_fork = \"Nope\"\n{versions}")),
