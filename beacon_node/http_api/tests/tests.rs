@@ -3489,7 +3489,17 @@ impl ApiTester {
     pub async fn test_get_config_fork_schedule(self) -> Self {
         let result = self.client.get_config_fork_schedule().await.unwrap().data;
 
-        assert_eq!(result, self.chain.spec.fork_schedule());
+        assert!(result.windows(2).all(|pair| pair[0].epoch <= pair[1].epoch));
+        let versions: std::collections::HashSet<_> =
+            result.iter().map(|fork| fork.current_version).collect();
+        assert_eq!(versions.len(), result.len());
+        if !self.chain.spec.features_enabled() {
+            let expected: Vec<Fork> = ForkName::list_all()
+                .into_iter()
+                .filter_map(|fork| self.chain.spec.fork_for_name(fork))
+                .collect();
+            assert_eq!(result, expected);
+        }
 
         self
     }

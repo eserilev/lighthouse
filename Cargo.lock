@@ -3357,6 +3357,7 @@ dependencies = [
  "bytes",
  "discv5",
  "eth2_config",
+ "ethereum_serde_utils",
  "ethereum_ssz",
  "fixed_bytes",
  "kzg",

@@ -1,4 +1,4 @@
-use std::{fs::File, path::Path, time::Duration};
+use std::{collections::BTreeSet, fs::File, path::Path, time::Duration};
 
 use educe::Educe;
 use ethereum_hashing::hash;
@@ -609,10 +609,15 @@ impl ChainSpec {
             .into_iter()
             .filter_map(|fork_name| self.fork_for_name(fork_name))
             .collect();
+        let feature_epochs: BTreeSet<Epoch> = self
+            .scheduled_features()
+            .into_iter()
+            .map(|(_, fork_epoch)| fork_epoch)
+            .collect();
         forks.extend(
-            self.scheduled_features()
+            feature_epochs
                 .into_iter()
-                .map(|(_, fork_epoch)| self.fork_at_epoch(fork_epoch)),
+                .map(|fork_epoch| self.fork_at_epoch(fork_epoch)),
         );
         forks.sort_by_key(|fork| fork.epoch);
         forks

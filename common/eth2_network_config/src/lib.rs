@@ -214,8 +214,9 @@ impl Eth2NetworkConfig {
             && known_genesis_fork_versions()?.contains(&spec.genesis_fork_version)
         {
             return Err(format!(
-                "experimental features cannot run on a built-in network (genesis fork version 0x{})",
-                hex_bytes(&spec.genesis_fork_version)
+                "experimental features cannot run on a built-in network or a shadow fork of one \
+                 (genesis fork version {})",
+                serde_utils::hex::encode(spec.genesis_fork_version)
             ));
         }
         Ok(spec)
@@ -423,34 +424,17 @@ fn known_genesis_fork_versions() -> Result<Vec<[u8; 4]>, String> {
     HARDCODED_NETS
         .iter()
         .map(|net| {
-            let config: GenesisForkVersion = yaml_serde::from_reader(net.config)
-                .map_err(|e| format!("Unable to parse yaml config of {}: {:?}", net.name, e))?;
-            parse_fork_version(&config.genesis_fork_version)
-                .ok_or_else(|| format!("No valid GENESIS_FORK_VERSION in {}", net.name))
+            yaml_serde::from_reader(net.config)
+                .map(|config: GenesisForkVersion| config.genesis_fork_version)
+                .map_err(|e| format!("Unable to parse yaml config of {}: {:?}", net.name, e))
         })
         .collect()
 }
 
 #[derive(Deserialize)]
 struct GenesisForkVersion {
-    #[serde(rename = "GENESIS_FORK_VERSION")]
-    genesis_fork_version: String,
-}
-
-fn parse_fork_version(value: &str) -> Option<[u8; 4]> {
-    let hex = value.strip_prefix("0x")?;
-    if hex.len() != 8 {
-        return None;
-    }
-    let mut version = [0u8; 4];
-    for (i, byte) in version.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(hex.get(i * 2..i * 2 + 2)?, 16).ok()?;
-    }
-    Some(version)
-}
-
-fn hex_bytes(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    #[serde(rename = "GENESIS_FORK_VERSION", with = "serde_utils::bytes_4_hex")]
+    genesis_fork_version: [u8; 4],
 }
 
 /// The contents of `config.yaml`: the config keys and the experimental feature keys.
