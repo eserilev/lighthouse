@@ -44,6 +44,7 @@ pub struct FeatureSpec {
     /// `None` means that the feature never activates.
     pub eip8198_fork_epoch: Option<Epoch>,
     pub slot_duration_schedule: Option<crate::core::SlotDurationSchedule>,
+    pub min_blob_data_retention_ms: Option<u64>,
 }
 
 impl FeatureSpec {
@@ -52,6 +53,7 @@ impl FeatureSpec {
             eip8198_fork_version: [0xe8, 0x19, 0x80, 0x00],
             eip8198_fork_epoch: None,
             slot_duration_schedule: None,
+            min_blob_data_retention_ms: None,
         }
     }
 
@@ -60,6 +62,7 @@ impl FeatureSpec {
             eip8198_fork_version: [0xe8, 0x19, 0x80, 0x01],
             eip8198_fork_epoch: None,
             slot_duration_schedule: None,
+            min_blob_data_retention_ms: None,
         }
     }
 
@@ -68,6 +71,7 @@ impl FeatureSpec {
             eip8198_fork_version: [0xe8, 0x19, 0x80, 0x64],
             eip8198_fork_epoch: None,
             slot_duration_schedule: None,
+            min_blob_data_retention_ms: None,
         }
     }
 
@@ -107,6 +111,12 @@ pub struct FeatureConfig {
         skip_serializing_if = "Option::is_none"
     )]
     pub slot_duration_schedule: Option<crate::core::SlotDurationSchedule>,
+    #[serde(
+        rename = "MIN_BLOB_DATA_RETENTION_MS",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub min_blob_data_retention_ms: Option<u64>,
 }
 
 impl FeatureConfig {
@@ -115,6 +125,7 @@ impl FeatureConfig {
             eip8198_fork_version: Some(spec.eip8198_fork_version),
             eip8198_fork_epoch: spec.eip8198_fork_epoch.map(|value| MaybeQuoted { value }),
             slot_duration_schedule: Clone::clone(&spec.slot_duration_schedule),
+            min_blob_data_retention_ms: Clone::clone(&spec.min_blob_data_retention_ms),
         }
     }
 
@@ -126,6 +137,9 @@ impl FeatureConfig {
         spec.eip8198_fork_epoch = self.eip8198_fork_epoch.map(|epoch| epoch.value);
         if let Some(value) = &self.slot_duration_schedule {
             spec.slot_duration_schedule = Some(Clone::clone(value));
+        }
+        if let Some(value) = &self.min_blob_data_retention_ms {
+            spec.min_blob_data_retention_ms = Some(Clone::clone(value));
         }
     }
 }

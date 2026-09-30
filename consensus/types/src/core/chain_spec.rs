@@ -1001,7 +1001,15 @@ impl ChainSpec {
     /// Returns the min epoch for blob / data column sidecar requests based on the current epoch.
     /// Switch to use the column sidecar config once the `blob_retention_epoch` has passed Fulu fork epoch.
     /// Never uses the `blob_retention_epoch` for networks that started with Fulu enabled.
-    pub fn min_epoch_data_availability_boundary(&self, current_epoch: Epoch) -> Option<Epoch> {
+    #[feature_dispatch(
+        Eip8198 => features::eip8198::min_epoch_data_availability_boundary::<E>,
+        spec = self,
+        epoch = current_epoch
+    )]
+    pub fn min_epoch_data_availability_boundary<E: EthSpec>(
+        &self,
+        current_epoch: Epoch,
+    ) -> Option<Epoch> {
         let deneb_fork_epoch = self.deneb_fork_epoch?;
         let blob_retention_epoch =
             current_epoch.saturating_sub(self.min_epochs_for_blob_sidecars_requests);
@@ -4257,14 +4265,14 @@ mod yaml_tests {
         // `min_epochs_for_data_sidecar_requests` cannot be earlier than Deneb fork epoch.
         assert_eq!(
             spec.deneb_fork_epoch,
-            spec.min_epoch_data_availability_boundary(Epoch::new(blob_retention_epochs / 2))
+            spec.min_epoch_data_availability_boundary::<E>(Epoch::new(blob_retention_epochs / 2))
         );
 
         let current_epoch = Epoch::new(blob_retention_epochs * 2);
         let expected_min_blob_epoch = current_epoch - blob_retention_epochs;
         assert_eq!(
             Some(expected_min_blob_epoch),
-            spec.min_epoch_data_availability_boundary(current_epoch)
+            spec.min_epoch_data_availability_boundary::<E>(current_epoch)
         );
     }
 
@@ -4288,7 +4296,7 @@ mod yaml_tests {
         let expected_blob_retention_epoch = fulu_fork_epoch - blob_retention_epochs;
         assert_eq!(
             Some(expected_blob_retention_epoch),
-            spec.min_epoch_data_availability_boundary(fulu_fork_epoch)
+            spec.min_epoch_data_availability_boundary::<E>(fulu_fork_epoch)
         );
 
         // Now, the blob retention period starts still before the fulu fork epoch, so the boundary
@@ -4298,7 +4306,7 @@ mod yaml_tests {
             half_blob_retention_epoch_after_fulu - blob_retention_epochs;
         assert_eq!(
             Some(expected_blob_retention_epoch),
-            spec.min_epoch_data_availability_boundary(half_blob_retention_epoch_after_fulu)
+            spec.min_epoch_data_availability_boundary::<E>(half_blob_retention_epoch_after_fulu)
         );
 
         // If the retention period starts with the fulu fork epoch, there are no more blobs to
@@ -4307,7 +4315,7 @@ mod yaml_tests {
         let expected_data_column_retention_epoch = current_epoch - data_column_retention_epochs;
         assert_eq!(
             Some(expected_data_column_retention_epoch),
-            spec.min_epoch_data_availability_boundary(current_epoch)
+            spec.min_epoch_data_availability_boundary::<E>(current_epoch)
         );
     }
 
@@ -4330,7 +4338,7 @@ mod yaml_tests {
             let epoch = Epoch::new(epoch);
             assert_eq!(
                 Some(epoch.saturating_sub(data_column_retention_epochs)),
-                spec.min_epoch_data_availability_boundary(epoch)
+                spec.min_epoch_data_availability_boundary::<E>(epoch)
             )
         };
 

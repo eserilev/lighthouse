@@ -35,6 +35,7 @@ The lines outside the `features/eip8198/` directories that name `Eip8198` or `fe
 - `consensus/types/src/core/chain_spec.rs`: `Eip8198 => features::eip8198::get_payload_attestation_due::<E>,`
 - `consensus/types/src/core/chain_spec.rs`: `Eip8198 => features::eip8198::get_payload_due::<E>,`
 - `consensus/types/src/core/chain_spec.rs`: `Eip8198 => features::eip8198::get_sync_message_due::<E>,`
+- `consensus/types/src/core/chain_spec.rs`: `Eip8198 => features::eip8198::min_epoch_data_availability_boundary::<E>,`
 - `consensus/types/src/core/chain_spec.rs`: `features::eip8198::slot_duration_schedule(self)`
 - `consensus/types/src/core/chain_spec.rs`: `features::eip8198::validate_slot_duration_schedule(&spec, E::slots_per_epoch())`
 - `consensus/types/src/core/chain_spec.rs`: `features::{self, Eip8198, FeatureId, FeatureSpec},`

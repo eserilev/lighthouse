@@ -14,4 +14,5 @@ min_fork = "Heze"
 fork_version = { mainnet = "0xe8198000", minimal = "0xe8198001", gnosis = "0xe8198064" }
 config = [
     { name = "SLOT_DURATION_SCHEDULE", type = "crate::core::SlotDurationSchedule", optional = true },
+    { name = "MIN_BLOB_DATA_RETENTION_MS", type = "u64", optional = true },
 ]
