@@ -1940,11 +1940,7 @@ pub async fn serve<T: BeaconChainTypes>(
         .then(
             |task_spawner: TaskSpawner<T::EthSpec>, chain: Arc<BeaconChain<T>>| {
                 task_spawner.blocking_json_task(Priority::P1, move || {
-                    let forks = ForkName::list_all()
-                        .into_iter()
-                        .filter_map(|fork_name| chain.spec.fork_for_name(fork_name))
-                        .collect::<Vec<_>>();
-                    Ok(api_types::GenericResponse::from(forks))
+                    Ok(api_types::GenericResponse::from(chain.spec.fork_schedule()))
                 })
             },
         );

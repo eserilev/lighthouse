@@ -603,6 +603,21 @@ impl ChainSpec {
         })
     }
 
+    /// Every scheduled fork, including the feature forks, sorted by epoch.
+    pub fn fork_schedule(&self) -> Vec<Fork> {
+        let mut forks: Vec<Fork> = ForkName::list_all()
+            .into_iter()
+            .filter_map(|fork_name| self.fork_for_name(fork_name))
+            .collect();
+        forks.extend(
+            self.scheduled_features()
+                .into_iter()
+                .map(|(_, fork_epoch)| self.fork_at_epoch(fork_epoch)),
+        );
+        forks.sort_by_key(|fork| fork.epoch);
+        forks
+    }
+
     /// Get the domain number, unmodified by the fork.
     ///
     /// Spec v0.12.1
@@ -5208,6 +5223,29 @@ mod yaml_tests {
         spec.heze_fork_epoch = None;
         let error = spec.validate_features().expect_err("EIP-8198 without Heze");
         assert!(error.contains("needs the"), "{error}");
+    }
+
+    #[test]
+    fn fork_schedule_lists_feature_forks() {
+        let mut spec = ForkName::Gloas.make_genesis_spec(ChainSpec::mainnet());
+        spec.heze_fork_epoch = Some(Epoch::new(5));
+        let real_forks = spec.fork_schedule();
+        assert_eq!(
+            real_forks.last().map(|fork| fork.epoch),
+            Some(Epoch::new(5))
+        );
+
+        spec.features.eip8198_fork_epoch = Some(Epoch::new(10));
+        let forks = spec.fork_schedule();
+        assert_eq!(forks.len(), real_forks.len() + 1);
+        assert_eq!(
+            forks.last(),
+            Some(&Fork {
+                previous_version: spec.heze_fork_version,
+                current_version: spec.features.eip8198_fork_version,
+                epoch: Epoch::new(10),
+            })
+        );
     }
 
     #[test]

@@ -18,7 +18,7 @@ use kzg::trusted_setup::get_trusted_setup;
 use pretty_reqwest_error::PrettyReqwestError;
 use reqwest::{Client, Error};
 use sensitive_url::SensitiveUrl;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{File, create_dir_all};
 use std::io::{Read, Write};
@@ -210,6 +210,14 @@ impl Eth2NetworkConfig {
                 )
             })?;
         spec.validate_features()?;
+        if spec.features_enabled()
+            && known_genesis_fork_versions()?.contains(&spec.genesis_fork_version)
+        {
+            return Err(format!(
+                "experimental features cannot run on a built-in network (genesis fork version 0x{})",
+                hex_bytes(&spec.genesis_fork_version)
+            ));
+        }
         Ok(spec)
     }
 
@@ -410,6 +418,41 @@ impl Eth2NetworkConfig {
     }
 }
 
+/// The genesis fork versions of the built-in networks.
+fn known_genesis_fork_versions() -> Result<Vec<[u8; 4]>, String> {
+    HARDCODED_NETS
+        .iter()
+        .map(|net| {
+            let config: GenesisForkVersion = yaml_serde::from_reader(net.config)
+                .map_err(|e| format!("Unable to parse yaml config of {}: {:?}", net.name, e))?;
+            parse_fork_version(&config.genesis_fork_version)
+                .ok_or_else(|| format!("No valid GENESIS_FORK_VERSION in {}", net.name))
+        })
+        .collect()
+}
+
+#[derive(Deserialize)]
+struct GenesisForkVersion {
+    #[serde(rename = "GENESIS_FORK_VERSION")]
+    genesis_fork_version: String,
+}
+
+fn parse_fork_version(value: &str) -> Option<[u8; 4]> {
+    let hex = value.strip_prefix("0x")?;
+    if hex.len() != 8 {
+        return None;
+    }
+    let mut version = [0u8; 4];
+    for (i, byte) in version.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(hex.get(i * 2..i * 2 + 2)?, 16).ok()?;
+    }
+    Some(version)
+}
+
+fn hex_bytes(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
 /// The contents of `config.yaml`: the config keys and the experimental feature keys.
 #[derive(Serialize)]
 struct ConfigFile<'a> {
@@ -507,7 +550,8 @@ mod tests {
     use fixed_bytes::FixedBytesExtended;
     use ssz::Encode;
     use tempfile::Builder as TempBuilder;
-    use types::{Eth1Data, GnosisEthSpec, MainnetEthSpec, MinimalEthSpec};
+    use types::features::Eip8198;
+    use types::{Epoch, Eth1Data, GnosisEthSpec, MainnetEthSpec, MinimalEthSpec};
 
     type E = MainnetEthSpec;
 
@@ -529,6 +573,30 @@ mod tests {
         let config = Eth2NetworkConfig::from_hardcoded_net(&MAINNET).unwrap();
         let spec = ChainSpec::mainnet();
         assert_eq!(spec, config.chain_spec::<E>().unwrap());
+    }
+
+    #[test]
+    fn features_are_rejected_on_built_in_networks() {
+        let with_features = |mut spec: ChainSpec| {
+            spec.heze_fork_epoch = Some(Epoch::new(5));
+            let mut features = spec.features.clone();
+            features.eip8198_fork_epoch = Some(Epoch::new(10));
+            (
+                Config::from_chain_spec::<E>(&spec),
+                FeatureConfig::from_spec(&features),
+            )
+        };
+
+        let mut net = Eth2NetworkConfig::from_hardcoded_net(&MAINNET).unwrap();
+        (net.config, net.features) = with_features(ChainSpec::mainnet());
+        let error = net.chain_spec::<E>().expect_err("mainnet rejects features");
+        assert!(error.contains("built-in network"), "{error}");
+
+        let mut spec = ChainSpec::mainnet();
+        spec.genesis_fork_version = [0x10, 0x00, 0x00, 0x38];
+        (net.config, net.features) = with_features(spec);
+        let spec = net.chain_spec::<E>().expect("a devnet accepts features");
+        assert!(spec.feature_enabled::<Eip8198>(Epoch::new(10)).is_some());
     }
 
     #[test]
