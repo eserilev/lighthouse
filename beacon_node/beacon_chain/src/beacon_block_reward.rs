@@ -19,7 +19,6 @@ use store::{
     consts::altair::{PARTICIPATION_FLAG_WEIGHTS, PROPOSER_WEIGHT, WEIGHT_DENOMINATOR},
 };
 use tracing::error;
-use types::features::{Eip8198, eip8198};
 use types::{AbstractExecPayload, BeaconBlockRef, BeaconState, BeaconStateError, EthSpec};
 
 type BeaconBlockSubRewardValue = u64;
@@ -285,8 +284,6 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             .safe_mul(WEIGHT_DENOMINATOR)?
             .safe_div(PROPOSER_WEIGHT)?;
 
-        let eip8198_active = self.spec.feature_enabled::<Eip8198>(state.current_epoch());
-
         let mut current_epoch_participation = state.current_epoch_participation()?.to_owned_list();
         let mut previous_epoch_participation =
             state.previous_epoch_participation()?.to_owned_list();
@@ -329,16 +326,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                         && !validator_participation.has_flag(flag_index)?
                     {
                         validator_participation.add_flag(flag_index)?;
-                        let base_reward = if let Some(on) = eip8198_active {
-                            eip8198::get_base_reward_for_epoch(
-                                state.epoch_cache(),
-                                index,
-                                data.target.epoch,
-                                on,
-                            )?
-                        } else {
-                            state.get_base_reward(index)?
-                        };
+                        let base_reward = state.get_base_reward(index)?;
                         proposer_reward_numerator.safe_add_assign(base_reward.safe_mul(weight)?)?;
                     }
                 }

@@ -1,8 +1,5 @@
-use crate::features;
-use feature_dispatch::feature_dispatch;
 use integer_sqrt::IntegerSquareRoot;
 use safe_arith::{ArithError, SafeArith};
-use types::features::Eip8198;
 use types::*;
 
 /// This type exists to avoid confusing `total_active_balance` with `base_reward_per_increment`,
@@ -46,14 +43,9 @@ pub fn get_base_reward(
 /// Returns the base reward for some validator.
 ///
 /// Spec v1.1.0
-#[feature_dispatch(
-    Eip8198 => features::eip8198::get_base_reward_per_increment,
-    spec = spec,
-    epoch = epoch
-)]
 fn get_base_reward_per_increment(
     total_active_balance: u64,
-    epoch: Epoch,
+    _epoch: Epoch,
     spec: &ChainSpec,
 ) -> Result<u64, ArithError> {
     spec.effective_balance_increment

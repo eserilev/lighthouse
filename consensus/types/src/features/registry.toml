@@ -8,11 +8,3 @@
 # config = [{ name = "EIP1234_LIMIT", type = "u64" }]
 # # Add `optional = true` to hold `Option<type>` in the spec, which is `None` until a config sets
 # # the key. A config that the spec produces leaves the key out while it is `None`.
-
-[eip8198]
-min_fork = "Heze"
-fork_version = { mainnet = "0xe8198000", minimal = "0xe8198001", gnosis = "0xe8198064" }
-config = [
-    { name = "SLOT_DURATION_SCHEDULE", type = "crate::core::SlotDurationSchedule", optional = true },
-    { name = "MIN_BLOB_DATA_RETENTION_MS", type = "u64", optional = true },
-]

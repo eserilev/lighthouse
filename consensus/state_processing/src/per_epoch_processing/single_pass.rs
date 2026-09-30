@@ -4,11 +4,9 @@ use crate::{
         update_progressive_balances_cache::initialize_progressive_balances_cache,
     },
     epoch_cache::{PreEpochCache, initialize_epoch_cache},
-    features,
     per_block_processing::is_valid_deposit_signature,
     per_epoch_processing::{Delta, Error, ParticipationEpochSummary},
 };
-use feature_dispatch::feature_dispatch;
 use itertools::izip;
 use milhouse::{Cow, List, Vector};
 use safe_arith::{SafeArith, SafeArithIter};
@@ -17,7 +15,6 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use tracing::instrument;
 use typenum::Unsigned;
-use types::features::Eip8198;
 use types::{
     ActivationQueue, BeaconState, BeaconStateError, BuilderPendingPayment, ChainSpec, Checkpoint,
     CommitteeCache, DepositData, Epoch, EthSpec, ExitCache, ForkName, ParticipationFlags,
@@ -242,7 +239,6 @@ pub fn process_epoch_single_pass<E: EthSpec>(
         None
     };
     let effective_balances_ctxt = &EffectiveBalancesContext::new(spec)?;
-    let eip8198_active = spec.feature_enabled::<Eip8198>(current_epoch);
 
     // Iterate over the validators and related fields in one pass.
     let mut validators_iter = validators.iter_cow();
@@ -270,16 +266,7 @@ pub fn process_epoch_single_pass<E: EthSpec>(
             || (validator.slashed && previous_epoch.safe_add(1)? < validator.withdrawable_epoch);
 
         let base_reward = if is_eligible {
-            if let Some(on) = eip8198_active {
-                types::features::eip8198::get_base_reward_for_epoch(
-                    epoch_cache,
-                    index,
-                    previous_epoch,
-                    on,
-                )?
-            } else {
-                epoch_cache.get_base_reward(index)?
-            }
+            epoch_cache.get_base_reward(index)?
         } else {
             0
         };
@@ -783,18 +770,9 @@ impl RewardsAndPenaltiesContext {
         let active_increments = state_ctxt
             .total_active_balance
             .safe_div(spec.effective_balance_increment)?;
-        let inactivity_penalty_denominator =
-            if let Some(on) = spec.feature_enabled::<Eip8198>(state_ctxt.current_epoch) {
-                features::eip8198::inactivity_penalty_denominator(
-                    state_ctxt.fork_name,
-                    state_ctxt.current_epoch.saturating_sub(1u64),
-                    spec,
-                    on,
-                )?
-            } else {
-                spec.inactivity_score_bias
-                    .safe_mul(spec.inactivity_penalty_quotient_for_fork(state_ctxt.fork_name))?
-            };
+        let inactivity_penalty_denominator = spec
+            .inactivity_score_bias
+            .safe_mul(spec.inactivity_penalty_quotient_for_fork(state_ctxt.fork_name))?;
 
         Ok(Self {
             unslashed_participating_increments_array,
@@ -1005,11 +983,6 @@ fn compute_exit_epoch_and_update_churn(
     Ok(earliest_exit_epoch)
 }
 
-#[feature_dispatch(
-    Eip8198 => features::eip8198::get_activation_exit_churn_limit,
-    spec = spec,
-    epoch = state_ctxt.current_epoch
-)]
 fn get_activation_exit_churn_limit(
     state_ctxt: &StateContext,
     spec: &ChainSpec,
@@ -1025,11 +998,6 @@ fn get_activation_exit_churn_limit(
     ))
 }
 
-#[feature_dispatch(
-    Eip8198 => features::eip8198::get_balance_churn_limit,
-    spec = spec,
-    epoch = state_ctxt.current_epoch
-)]
 fn get_balance_churn_limit(state_ctxt: &StateContext, spec: &ChainSpec) -> Result<u64, Error> {
     let total_active_balance = state_ctxt.total_active_balance;
     let quotient = if state_ctxt.fork_name.gloas_enabled() {

@@ -5,7 +5,6 @@ use compare_fields::CompareFields;
 use context_deserialize::ContextDeserialize;
 use educe::Educe;
 use ethereum_hashing::hash;
-use feature_dispatch::feature_dispatch;
 use fixed_bytes::FixedBytesExtended;
 use int_to_bytes::{int_to_bytes4, int_to_bytes8};
 use metastruct::{NumFields, metastruct};
@@ -39,7 +38,6 @@ use crate::{
         ExecutionPayloadHeaderDeneb, ExecutionPayloadHeaderElectra, ExecutionPayloadHeaderFulu,
         ExecutionPayloadHeaderRef, ExecutionPayloadHeaderRefMut, InclusionListCommittee,
     },
-    features::{self, Eip8198},
     fork::{Fork, ForkName, ForkVersionDecode, InconsistentFork, map_fork_name},
     light_client::consts::{
         CURRENT_SYNC_COMMITTEE_INDEX, CURRENT_SYNC_COMMITTEE_INDEX_ELECTRA, FINALIZED_ROOT_INDEX,
@@ -3138,11 +3136,6 @@ impl<E: EthSpec> BeaconState<E> {
     // ******* Electra accessors *******
 
     /// Return the churn limit for the current epoch.
-    #[feature_dispatch(
-        Eip8198 => features::eip8198::get_balance_churn_limit,
-        spec = spec,
-        epoch = self.current_epoch()
-    )]
     pub fn get_balance_churn_limit(&self, spec: &ChainSpec) -> Result<u64, BeaconStateError> {
         let total_active_balance = self.get_total_active_balance()?;
         let quotient = if self.fork_name_unchecked().gloas_enabled() {
@@ -3162,11 +3155,6 @@ impl<E: EthSpec> BeaconState<E> {
     ///
     /// From Gloas onwards this is the activation-only churn limit (EIP-8061); exits use
     /// [`Self::get_exit_churn_limit`].
-    #[feature_dispatch(
-        Eip8198 => features::eip8198::get_activation_exit_churn_limit,
-        spec = spec,
-        epoch = self.current_epoch()
-    )]
     pub fn get_activation_exit_churn_limit(
         &self,
         spec: &ChainSpec,
@@ -3189,11 +3177,6 @@ impl<E: EthSpec> BeaconState<E> {
         self.get_balance_churn_limit(spec)
     }
 
-    #[feature_dispatch(
-        Eip8198 => features::eip8198::get_consolidation_churn_limit,
-        spec = spec,
-        epoch = self.current_epoch()
-    )]
     pub fn get_consolidation_churn_limit(&self, spec: &ChainSpec) -> Result<u64, BeaconStateError> {
         if self.fork_name_unchecked().gloas_enabled() {
             let total_active_balance = self.get_total_active_balance()?;
