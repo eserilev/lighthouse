@@ -35,6 +35,7 @@ Read the relevant guide for your task:
 | **Code review** | `.ai/CODE_REVIEW.md` |
 | **Creating issues/PRs** | `.ai/ISSUES.md` |
 | **Development patterns** | `.ai/DEVELOPMENT.md` |
+| **Experimental features** | `.ai/FRESNEL.md` |
 
 ## Critical Rules (consensus failures or crashes)
 
