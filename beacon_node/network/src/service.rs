@@ -901,18 +901,8 @@ impl<T: BeaconChainTypes> NetworkService<T> {
             self.next_digest_update = Box::pin(next_digest_delay(&self.beacon_chain).into());
 
             // Set the next_unsubscribe delay.
-            let slot_clock = &self.beacon_chain.slot_clock;
-            let unsubscribe_delay = slot_clock
-                .now()
-                .map(|slot| {
-                    (slot.epoch(T::EthSpec::slots_per_epoch()) + UNSUBSCRIBE_DELAY_EPOCHS)
-                        .start_slot(T::EthSpec::slots_per_epoch())
-                })
-                .and_then(|slot| slot_clock.duration_to_slot(slot))
-                .unwrap_or_else(|| {
-                    slot_clock.slot_duration()
-                        * (UNSUBSCRIBE_DELAY_EPOCHS * T::EthSpec::slots_per_epoch()) as u32
-                });
+            let unsubscribe_delay = self.beacon_chain.slot_clock.slot_duration()
+                * (UNSUBSCRIBE_DELAY_EPOCHS * T::EthSpec::slots_per_epoch()) as u32;
 
             // Update the `next_topic_subscriptions` timer if the next change in the fork digest is known.
             self.next_topic_subscriptions =
@@ -961,10 +951,14 @@ fn next_digest_delay<T: BeaconChainTypes>(
 fn next_topic_subscriptions_delay<T: BeaconChainTypes>(
     beacon_chain: &BeaconChain<T>,
 ) -> Option<tokio::time::Sleep> {
-    if let Some((_, duration_to_epoch)) = beacon_chain.duration_to_next_digest() {
-        let duration_to_subscription = duration_to_epoch
-            .saturating_sub(beacon_chain.slot_clock.slot_duration() * SUBSCRIBE_DELAY_SLOTS as u32);
-        if !duration_to_subscription.is_zero() {
+    if let Some((digest_epoch, _)) = beacon_chain.duration_to_next_digest() {
+        let subscription_slot = digest_epoch
+            .start_slot(T::EthSpec::slots_per_epoch())
+            .saturating_sub(SUBSCRIBE_DELAY_SLOTS);
+        if let Some(duration_to_subscription) =
+            beacon_chain.slot_clock.duration_to_slot(subscription_slot)
+            && !duration_to_subscription.is_zero()
+        {
             return Some(tokio::time::sleep(duration_to_subscription));
         }
     }
