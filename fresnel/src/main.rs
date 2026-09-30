@@ -177,7 +177,7 @@ fn delete_feature(cli: &Cli, feature: &str) -> Result<(), Failure> {
 
     run(cli)?;
 
-    let remaining = uses(&name, &rust_files(cli)?);
+    let remaining = uses(feature, &name, &rust_files(cli)?);
     if remaining.is_empty() {
         println!("Deleted `{feature}`. No uses of `{name}` remain.");
     } else {
