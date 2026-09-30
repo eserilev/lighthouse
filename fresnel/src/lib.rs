@@ -3,6 +3,9 @@
 //! The generated file holds data only: feature identities and fork config keys. Feature logic
 //! stays hand-written behind feature gates.
 
+pub mod delete;
+pub mod footprint;
+
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write};

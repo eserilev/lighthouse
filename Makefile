@@ -276,13 +276,19 @@ cli:
 cli-local:
 	make && ./scripts/cli.sh
 
-# Generates the experimental feature code from `consensus/types/src/features/registry.toml`.
+# Generates the experimental feature code from `consensus/types/src/features/registry.toml`, and the
+# `FOOTPRINT.md` of each feature.
 features:
 	cargo run --release --quiet -p fresnel
 
-# Checks that the generated experimental feature code matches the registry.
+# Checks that the generated experimental feature code matches the registry, and that code outside
+# the feature directories names each feature only through its gates.
 features-check:
 	cargo run --release --quiet -p fresnel -- --check
+
+# Deletes an experimental feature, e.g. `make delete-feature FEATURE=eip1234`.
+delete-feature:
+	cargo run --release --quiet -p fresnel -- --delete $(FEATURE)
 
 # Check for markdown files
 mdlint:
