@@ -1,6 +1,7 @@
 use fresnel::{Registry, generate, read_forks, rustfmt, type_name};
 
 const TWO_FEATURES: &str = include_str!("fixtures/two_features.toml");
+const TEST_FEATURES: &str = include_str!("fixtures/test_features.toml");
 const FORK_NAME_SOURCE: &str = include_str!("../../types/src/fork/fork_name.rs");
 
 fn forks() -> Vec<String> {
@@ -76,11 +77,75 @@ fn empty_registry_generates_no_features() {
 }
 
 #[test]
-fn checked_in_file_matches_the_registry() {
+fn checked_in_files_match_the_registry() {
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../types/src/features");
-    let registry = std::fs::read_to_string(format!("{root}/registry.toml")).expect("registry");
-    let checked_in = std::fs::read_to_string(format!("{root}/generated.rs")).expect("generated");
-    assert_eq!(generated(&registry), checked_in, "run `make features`");
+    let read = |file: &str| std::fs::read_to_string(format!("{root}/{file}")).expect(file);
+    let registry = Registry::parse(&read("registry.toml"), &forks()).expect("valid registry");
+    let fixture = Registry::parse(TEST_FEATURES, &forks()).expect("valid fixture");
+    let with_fixture = registry
+        .with_fixture(&fixture, &forks())
+        .expect("valid registry and fixture");
+    let format = |registry: &Registry| rustfmt(&generate(registry).expect("generate")).unwrap();
+
+    assert_eq!(
+        format(&registry),
+        read("generated.rs"),
+        "run `make features`"
+    );
+    assert_eq!(
+        format(&with_fixture),
+        read("generated_fixture.rs"),
+        "run `make features`"
+    );
+}
+
+#[test]
+fn fixture_features_follow_the_registry_features() {
+    let registry = Registry::parse(TWO_FEATURES, &forks()).expect("valid registry");
+    let fixture = Registry::parse(TEST_FEATURES, &forks()).expect("valid fixture");
+    let with_fixture = registry
+        .with_fixture(&fixture, &forks())
+        .expect("valid registry and fixture");
+    let names: Vec<&str> = with_fixture
+        .features
+        .iter()
+        .map(|f| f.name.as_str())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "eip8198",
+            "eip_toy",
+            "heze_test_feature",
+            "gloas_test_feature"
+        ]
+    );
+
+    assert_eq!(
+        registry
+            .with_fixture(&registry, &forks())
+            .expect_err("duplicate features")
+            .id,
+        "F-R07"
+    );
+    let versions = r#"fork_version = { mainnet = "0x01000000", minimal = "0x01000001", gnosis = "0x01000064" }"#;
+    let clash = Registry::parse(
+        &format!("[eip_toy_2]\nmin_fork = \"Heze\"\n{versions}"),
+        &forks(),
+    )
+    .expect("valid fixture");
+    let clash_with = Registry::parse(
+        &format!("[eip1]\nmin_fork = \"Heze\"\n{versions}"),
+        &forks(),
+    )
+    .expect("valid registry");
+    assert_eq!(
+        clash_with
+            .with_fixture(&clash, &forks())
+            .expect_err("same fork version")
+            .id,
+        "F-R04"
+    );
 }
 
 #[test]
@@ -124,5 +189,11 @@ fn invalid_registries_are_rejected() {
             "[eip1]\nmin_fork = \"Heze\"\nnope = 1\n{versions}"
         )),
         "F-R05"
+    );
+    assert_eq!(
+        parse_error(&format!(
+            "[eip_1]\nmin_fork = \"Heze\"\n{versions}\n[eip1]\nmin_fork = \"Heze\"\nfork_version = {{ mainnet = \"0x02000000\", minimal = \"0x02000001\", gnosis = \"0x02000064\" }}"
+        )),
+        "F-R07"
     );
 }

@@ -10,6 +10,7 @@ build = "build.rs"
 bytes = { workspace = true }
 discv5 = { workspace = true }
 eth2_config = { workspace = true }
+ethereum_serde_utils = { workspace = true }
 fixed_bytes = { workspace = true }
 kzg = { workspace = true }
 pretty_reqwest_error = { workspace = true }
@@ -24,9 +25,11 @@ yaml_serde = { workspace = true }
 
 [build-dependencies]
 eth2_config = { workspace = true }
+ethereum_serde_utils = { workspace = true }
 zip = { workspace = true }
 
 [dev-dependencies]
 ethereum_ssz = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
+types = { workspace = true, features = ["fresnel-fixture"] }

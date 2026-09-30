@@ -20,6 +20,8 @@ arbitrary = [
     "swap_or_not_shuffle/arbitrary",
 ]
 portable = ["bls/supranational-portable"]
+# Add the test features of `consensus/fresnel/tests/fixtures/test_features.toml`.
+fresnel-fixture = []
 
 [dependencies]
 alloy-primitives = { workspace = true }
@@ -68,9 +70,10 @@ yaml_serde = { workspace = true }
 [dev-dependencies]
 beacon_chain = { workspace = true }
 criterion = { workspace = true }
+proptest = { workspace = true }
 state_processing = { workspace = true }
 tokio = { workspace = true }
-types = { path = ".", features = ["arbitrary"] }
+types = { path = ".", features = ["arbitrary", "fresnel-fixture"] }
 
 [lints.clippy]
 module_inception = "allow"

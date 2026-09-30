@@ -1,6 +1,10 @@
 //! Experimental consensus features.
 //!
-//! Features are listed in `registry.toml`. `make features` generates `generated.rs` from it.
+//! Features are listed in `registry.toml`. `make features` generates `generated.rs` from it, and
+//! `generated_fixture.rs` from it and `consensus/fresnel/tests/fixtures/test_features.toml`. The
+//! `fresnel-fixture` feature compiles `generated_fixture.rs` instead, so that tests have features
+//! to schedule.
+//!
 //! Feature logic is hand-written behind a gate:
 //!
 //! ```ignore
@@ -9,6 +13,7 @@
 //! }
 //! ```
 
+#[cfg_attr(feature = "fresnel-fixture", path = "generated_fixture.rs")]
 mod generated;
 
 use std::marker::PhantomData;
@@ -96,11 +101,10 @@ impl ChainSpec {
         scheduled
     }
 
-    /// Set the feature fork epochs and the fork versions that `config` has, then validate them.
-    pub fn apply_feature_config(mut self, config: &FeatureConfig) -> Result<Self, String> {
+    /// Set the feature fork epochs and the fork versions that `config` has.
+    pub fn with_feature_config(mut self, config: &FeatureConfig) -> Self {
         config.apply_to(&mut self.features);
-        self.validate_features()?;
-        Ok(self)
+        self
     }
 
     /// Check that each scheduled feature activates at or after the epoch of its `MIN_FORK`.
@@ -124,5 +128,107 @@ impl ChainSpec {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_utils::quoted_u64::MaybeQuoted;
+
+    fn spec() -> ChainSpec {
+        let mut spec = ForkName::Gloas.make_genesis_spec(ChainSpec::mainnet());
+        spec.heze_fork_epoch = Some(Epoch::new(5));
+        spec
+    }
+
+    #[test]
+    fn feature_gate() {
+        let mut spec = spec();
+        assert!(!spec.features_enabled());
+        assert!(
+            spec.feature_enabled::<HezeTestFeature>(Epoch::new(10))
+                .is_none()
+        );
+
+        spec.features.heze_test_feature_fork_epoch = Some(Epoch::new(10));
+        assert!(spec.features_enabled());
+        assert!(
+            spec.feature_enabled::<HezeTestFeature>(Epoch::new(9))
+                .is_none()
+        );
+        assert!(
+            spec.feature_enabled::<HezeTestFeature>(Epoch::new(10))
+                .is_some()
+        );
+
+        spec.features.heze_test_feature_fork_epoch = Some(spec.far_future_epoch);
+        assert!(!spec.features_enabled());
+        assert!(spec.scheduled_features().is_empty());
+    }
+
+    #[test]
+    fn scheduled_features_are_sorted_by_epoch_then_registry_order() {
+        let mut spec = spec();
+        spec.features.heze_test_feature_fork_epoch = Some(Epoch::new(5));
+        spec.features.gloas_test_feature_fork_epoch = Some(Epoch::new(5));
+        assert_eq!(
+            spec.scheduled_features(),
+            vec![
+                (FeatureId::HezeTestFeature, Epoch::new(5)),
+                (FeatureId::GloasTestFeature, Epoch::new(5)),
+            ]
+        );
+
+        spec.features.gloas_test_feature_fork_epoch = Some(Epoch::new(1));
+        assert_eq!(
+            spec.scheduled_features(),
+            vec![
+                (FeatureId::GloasTestFeature, Epoch::new(1)),
+                (FeatureId::HezeTestFeature, Epoch::new(5)),
+            ]
+        );
+    }
+
+    #[test]
+    fn validate_features_needs_the_min_fork() {
+        let mut spec = spec();
+        spec.features.heze_test_feature_fork_epoch = Some(Epoch::new(5));
+        assert_eq!(spec.validate_features(), Ok(()));
+
+        spec.features.heze_test_feature_fork_epoch = Some(Epoch::new(4));
+        let error = spec
+            .validate_features()
+            .expect_err("feature before its min fork");
+        assert!(error.contains("is before the"), "{error}");
+
+        spec.heze_fork_epoch = None;
+        let error = spec
+            .validate_features()
+            .expect_err("feature without its min fork");
+        assert!(error.contains("needs the"), "{error}");
+    }
+
+    #[test]
+    fn with_feature_config_keeps_fork_versions_that_the_config_omits() {
+        let spec = spec();
+        let mut config = FeatureConfig::from_spec(&spec.features);
+        config.heze_test_feature_fork_version = None;
+        config.heze_test_feature_fork_epoch = Some(MaybeQuoted {
+            value: Epoch::new(7),
+        });
+        config.gloas_test_feature_fork_version = Some([1, 2, 3, 4]);
+
+        let spec = spec.with_feature_config(&config);
+
+        assert_eq!(
+            spec.features.heze_test_feature_fork_version,
+            FeatureSpec::mainnet().heze_test_feature_fork_version
+        );
+        assert_eq!(
+            spec.features.heze_test_feature_fork_epoch,
+            Some(Epoch::new(7))
+        );
+        assert_eq!(spec.features.gloas_test_feature_fork_version, [1, 2, 3, 4]);
     }
 }

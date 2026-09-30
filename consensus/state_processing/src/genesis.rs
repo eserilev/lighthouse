@@ -5,8 +5,8 @@ use crate::GloasVerificationContext;
 use crate::common::DepositDataTree;
 use crate::upgrade::electra::upgrade_state_to_electra;
 use crate::upgrade::{
-    upgrade_to_altair, upgrade_to_bellatrix, upgrade_to_capella, upgrade_to_deneb, upgrade_to_fulu,
-    upgrade_to_gloas, upgrade_to_heze,
+    upgrade_to_altair, upgrade_to_bellatrix, upgrade_to_capella, upgrade_to_deneb,
+    upgrade_to_feature_fork, upgrade_to_fulu, upgrade_to_gloas, upgrade_to_heze,
 };
 use fixed_bytes::FixedBytesExtended;
 use safe_arith::{ArithError, SafeArith};
@@ -192,6 +192,13 @@ pub fn initialize_beacon_state_from_eth1<E: EthSpec>(
 
         // Remove intermediate Gloas fork from `state.fork`.
         state.fork_mut().previous_version = spec.heze_fork_version;
+    }
+
+    // Experimental feature forks scheduled at genesis, after the real forks.
+    for (feature, fork_epoch) in spec.scheduled_features() {
+        if fork_epoch == E::genesis_epoch() {
+            upgrade_to_feature_fork(&mut state, spec, feature);
+        }
     }
 
     // Now that we have our validators, initialize the caches (including the committees)

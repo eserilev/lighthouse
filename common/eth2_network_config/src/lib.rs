@@ -18,7 +18,7 @@ use kzg::trusted_setup::get_trusted_setup;
 use pretty_reqwest_error::PrettyReqwestError;
 use reqwest::{Client, Error};
 use sensitive_url::SensitiveUrl;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{File, create_dir_all};
 use std::io::{Read, Write};
@@ -199,14 +199,27 @@ impl Eth2NetworkConfig {
 
     /// Construct a consolidated `ChainSpec` from the YAML config.
     pub fn chain_spec<E: EthSpec>(&self) -> Result<ChainSpec, String> {
-        ChainSpec::from_config::<E>(&self.config)
+        let base_spec = E::default_spec().with_feature_config(&self.features);
+        let spec = self
+            .config
+            .apply_to_chain_spec::<E>(&base_spec)
             .ok_or_else(|| {
                 format!(
                     "YAML configuration incompatible with spec constants for {}",
                     E::spec_name()
                 )
-            })?
-            .apply_feature_config(&self.features)
+            })?;
+        spec.validate_features()?;
+        if spec.features_enabled()
+            && known_genesis_fork_versions()?.contains(&spec.genesis_fork_version)
+        {
+            return Err(format!(
+                "experimental features cannot run on a built-in network or a shadow fork of one \
+                 (genesis fork version {})",
+                serde_utils::hex::encode(spec.genesis_fork_version)
+            ));
+        }
+        Ok(spec)
     }
 
     /// Attempts to deserialize `self.beacon_state`, returning an error if it's missing or invalid.
@@ -406,6 +419,24 @@ impl Eth2NetworkConfig {
     }
 }
 
+/// The genesis fork versions of the built-in networks.
+fn known_genesis_fork_versions() -> Result<Vec<[u8; 4]>, String> {
+    HARDCODED_NETS
+        .iter()
+        .map(|net| {
+            yaml_serde::from_reader(net.config)
+                .map(|config: GenesisForkVersion| config.genesis_fork_version)
+                .map_err(|e| format!("Unable to parse yaml config of {}: {:?}", net.name, e))
+        })
+        .collect()
+}
+
+#[derive(Deserialize)]
+struct GenesisForkVersion {
+    #[serde(rename = "GENESIS_FORK_VERSION", with = "serde_utils::bytes_4_hex")]
+    genesis_fork_version: [u8; 4],
+}
+
 /// The contents of `config.yaml`: the config keys and the experimental feature keys.
 #[derive(Serialize)]
 struct ConfigFile<'a> {
@@ -503,7 +534,8 @@ mod tests {
     use fixed_bytes::FixedBytesExtended;
     use ssz::Encode;
     use tempfile::Builder as TempBuilder;
-    use types::{Eth1Data, GnosisEthSpec, MainnetEthSpec, MinimalEthSpec};
+    use types::features::HezeTestFeature;
+    use types::{Epoch, Eth1Data, GnosisEthSpec, MainnetEthSpec, MinimalEthSpec};
 
     type E = MainnetEthSpec;
 
@@ -525,6 +557,33 @@ mod tests {
         let config = Eth2NetworkConfig::from_hardcoded_net(&MAINNET).unwrap();
         let spec = ChainSpec::mainnet();
         assert_eq!(spec, config.chain_spec::<E>().unwrap());
+    }
+
+    #[test]
+    fn features_are_rejected_on_built_in_networks() {
+        let with_features = |mut spec: ChainSpec| {
+            spec.heze_fork_epoch = Some(Epoch::new(5));
+            let mut features = spec.features.clone();
+            features.heze_test_feature_fork_epoch = Some(Epoch::new(10));
+            (
+                Config::from_chain_spec::<E>(&spec),
+                FeatureConfig::from_spec(&features),
+            )
+        };
+
+        let mut net = Eth2NetworkConfig::from_hardcoded_net(&MAINNET).unwrap();
+        (net.config, net.features) = with_features(ChainSpec::mainnet());
+        let error = net.chain_spec::<E>().expect_err("mainnet rejects features");
+        assert!(error.contains("built-in network"), "{error}");
+
+        let mut spec = ChainSpec::mainnet();
+        spec.genesis_fork_version = [0x10, 0x00, 0x00, 0x38];
+        (net.config, net.features) = with_features(spec);
+        let spec = net.chain_spec::<E>().expect("a devnet accepts features");
+        assert!(
+            spec.feature_enabled::<HezeTestFeature>(Epoch::new(10))
+                .is_some()
+        );
     }
 
     #[test]

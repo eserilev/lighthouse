@@ -18,7 +18,7 @@ use crate::{
         APPLICATION_DOMAIN_BUILDER, Address, ApplicationDomain, EnrForkId, Epoch, EthSpec,
         EthSpecId, ExecutionBlockHash, Hash256, MainnetEthSpec, Slot, Uint256,
     },
-    features::FeatureSpec,
+    features::{FeatureId, FeatureSpec},
     fork::{Fork, ForkData, ForkName},
 };
 
@@ -396,9 +396,19 @@ impl ChainSpec {
     ///
     /// `next_fork_version = current_fork_version` if no future fork is planned,
     pub fn next_fork_version<E: EthSpec>(&self, slot: Slot) -> [u8; 4] {
-        match self.next_fork_epoch::<E>(slot) {
-            Some((fork, _)) => self.fork_version_for_name(fork),
-            None => self.fork_version_for_name(self.fork_name_at_slot::<E>(slot)),
+        let epoch = slot.epoch(E::slots_per_epoch());
+        let next_real_fork = self.next_fork_epoch::<E>(slot);
+        let next_feature_fork = self
+            .scheduled_features()
+            .into_iter()
+            .find(|(_, fork_epoch)| *fork_epoch > epoch);
+        match (next_real_fork, next_feature_fork) {
+            (Some((fork, fork_epoch)), Some((_, feature_epoch))) if fork_epoch < feature_epoch => {
+                self.fork_version_for_name(fork)
+            }
+            (_, Some((_, feature_epoch))) => self.fork_version_for_epoch(feature_epoch),
+            (Some((fork, _)), None) => self.fork_version_for_name(fork),
+            (None, None) => self.fork_version_for_epoch(epoch),
         }
     }
 
@@ -459,7 +469,21 @@ impl ChainSpec {
 
     // This is `compute_fork_version` in the spec
     pub fn fork_version_for_epoch(&self, epoch: Epoch) -> [u8; 4] {
-        self.fork_version_for_name(self.fork_name_at_epoch(epoch))
+        match self.feature_fork_at_epoch(epoch) {
+            Some((id, _)) => self.features.fork_version(id),
+            None => self.fork_version_for_name(self.fork_name_at_epoch(epoch)),
+        }
+    }
+
+    /// The last feature fork at or before `epoch`, unless a later real fork replaced it.
+    fn feature_fork_at_epoch(&self, epoch: Epoch) -> Option<(FeatureId, Epoch)> {
+        let real_fork_epoch = self
+            .fork_epoch(self.fork_name_at_epoch(epoch))
+            .unwrap_or(Epoch::new(0));
+        self.scheduled_features()
+            .into_iter()
+            .rev()
+            .find(|(_, fork_epoch)| *fork_epoch <= epoch && *fork_epoch >= real_fork_epoch)
     }
 
     /// For a given fork name, return the epoch at which it activates.
@@ -528,6 +552,23 @@ impl ChainSpec {
     pub fn fork_at_epoch(&self, epoch: Epoch) -> Fork {
         let current_fork_name = self.fork_name_at_epoch(epoch);
 
+        if let Some((id, feature_epoch)) = self.feature_fork_at_epoch(epoch) {
+            let current_fork_epoch = self.fork_epoch(current_fork_name).unwrap_or(Epoch::new(0));
+            let previous_version = self
+                .scheduled_features()
+                .into_iter()
+                .take_while(|(other, _)| *other != id)
+                .filter(|(_, other_epoch)| *other_epoch >= current_fork_epoch)
+                .last()
+                .map(|(other, _)| self.features.fork_version(other))
+                .unwrap_or_else(|| self.fork_version_for_name(current_fork_name));
+            return Fork {
+                previous_version,
+                current_version: self.features.fork_version(id),
+                epoch: feature_epoch,
+            };
+        }
+
         let fork_epoch = self
             .fork_epoch(current_fork_name)
             .unwrap_or_else(|| Epoch::new(0));
@@ -541,7 +582,9 @@ impl ChainSpec {
         };
 
         Fork {
-            previous_version: self.fork_version_for_name(previous_fork_name),
+            previous_version: self
+                .feature_fork_version_before(current_fork_name)
+                .unwrap_or_else(|| self.fork_version_for_name(previous_fork_name)),
             current_version: self.fork_version_for_name(current_fork_name),
             epoch: fork_epoch,
         }
@@ -554,10 +597,24 @@ impl ChainSpec {
         let epoch = self.fork_epoch(fork_name)?;
 
         Some(Fork {
-            previous_version: self.fork_version_for_name(previous_fork_name),
+            previous_version: self
+                .feature_fork_version_before(fork_name)
+                .unwrap_or_else(|| self.fork_version_for_name(previous_fork_name)),
             current_version: self.fork_version_for_name(fork_name),
             epoch,
         })
+    }
+
+    /// The version of the feature fork that the real fork `fork_name` replaces, if a feature fork
+    /// is active in the epoch before it.
+    fn feature_fork_version_before(&self, fork_name: ForkName) -> Option<[u8; 4]> {
+        let fork_epoch = self.fork_epoch(fork_name)?;
+        let previous_fork_epoch = self.fork_epoch(fork_name.previous_fork()?)?;
+        if previous_fork_epoch >= fork_epoch {
+            return None;
+        }
+        let (id, _) = self.feature_fork_at_epoch(fork_epoch.saturating_sub(1u64))?;
+        Some(self.features.fork_version(id))
     }
 
     /// Get the domain number, unmodified by the fork.
@@ -703,6 +760,9 @@ impl ChainSpec {
             for blob_parameters in &self.blob_schedule {
                 relevant_epochs.insert(blob_parameters.epoch);
             }
+        }
+        for (_, feature_epoch) in self.scheduled_features() {
+            relevant_epochs.insert(feature_epoch);
         }
         let mut vec = relevant_epochs.into_iter().collect::<Vec<_>>();
         vec.sort();
@@ -4709,5 +4769,161 @@ mod yaml_tests {
     fn minimal_config_consistent() {
         let spec = ChainSpec::minimal();
         config_test::<MinimalEthSpec>(&spec, "minimal");
+    }
+}
+
+#[cfg(test)]
+mod feature_fork_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn spec(heze_epoch: u64) -> ChainSpec {
+        let mut spec = ForkName::Gloas.make_genesis_spec(ChainSpec::mainnet());
+        spec.heze_fork_epoch = Some(Epoch::new(heze_epoch));
+        spec
+    }
+
+    #[test]
+    fn feature_fork_versions_and_digests() {
+        let mut spec = spec(5);
+        spec.features.heze_test_feature_fork_epoch = Some(Epoch::new(10));
+        let feature_version = spec.features.heze_test_feature_fork_version;
+        let genesis_validators_root = Hash256::repeat_byte(1);
+
+        assert_eq!(
+            spec.fork_version_for_epoch(Epoch::new(9)),
+            spec.heze_fork_version
+        );
+        assert_eq!(spec.fork_version_for_epoch(Epoch::new(10)), feature_version);
+        assert_eq!(
+            spec.fork_at_epoch(Epoch::new(12)),
+            Fork {
+                previous_version: spec.heze_fork_version,
+                current_version: feature_version,
+                epoch: Epoch::new(10),
+            }
+        );
+        assert_eq!(spec.next_digest_epoch(Epoch::new(7)), Some(Epoch::new(10)));
+        assert_ne!(
+            spec.compute_fork_digest(genesis_validators_root, Epoch::new(9)),
+            spec.compute_fork_digest(genesis_validators_root, Epoch::new(10))
+        );
+        assert_eq!(
+            spec.next_fork_version::<MainnetEthSpec>(Epoch::new(7).start_slot(32)),
+            feature_version
+        );
+        assert_eq!(
+            spec.next_fork_version::<MainnetEthSpec>(Epoch::new(12).start_slot(32)),
+            feature_version
+        );
+    }
+
+    #[test]
+    fn feature_fork_at_the_heze_fork_epoch() {
+        let mut spec = spec(5);
+        spec.features.heze_test_feature_fork_epoch = Some(Epoch::new(5));
+
+        assert_eq!(
+            spec.fork_version_for_epoch(Epoch::new(4)),
+            spec.gloas_fork_version
+        );
+        assert_eq!(
+            spec.fork_at_epoch(Epoch::new(5)),
+            Fork {
+                previous_version: spec.heze_fork_version,
+                current_version: spec.features.heze_test_feature_fork_version,
+                epoch: Epoch::new(5),
+            }
+        );
+        assert_eq!(
+            spec.next_fork_version::<MainnetEthSpec>(Epoch::new(4).start_slot(32)),
+            spec.features.heze_test_feature_fork_version
+        );
+        assert_eq!(spec.all_digest_epochs().filter(|e| *e == 5).count(), 1);
+    }
+
+    #[test]
+    fn real_fork_replaces_the_feature_fork_version() {
+        let mut spec = spec(5);
+        spec.features.gloas_test_feature_fork_epoch = Some(Epoch::new(2));
+        let fork = Fork {
+            previous_version: spec.features.gloas_test_feature_fork_version,
+            current_version: spec.heze_fork_version,
+            epoch: Epoch::new(5),
+        };
+
+        assert_eq!(spec.fork_at_epoch(Epoch::new(5)), fork);
+        assert_eq!(spec.fork_for_name(ForkName::Heze), Some(fork));
+        assert!(
+            spec.feature_enabled::<crate::features::GloasTestFeature>(Epoch::new(5))
+                .is_some()
+        );
+    }
+
+    /// Apply the forks at each epoch in the order of `per_slot_processing`: the real forks, then
+    /// the feature forks.
+    fn state_forks(spec: &ChainSpec, epochs: u64) -> Vec<Fork> {
+        let genesis_version = spec.fork_version_for_name(spec.fork_name_at_epoch(Epoch::new(0)));
+        let mut fork = Fork {
+            previous_version: genesis_version,
+            current_version: genesis_version,
+            epoch: Epoch::new(0),
+        };
+        let mut forks = vec![];
+        for epoch in (0..epochs).map(Epoch::new) {
+            let real_versions = ForkName::list_all()
+                .into_iter()
+                .filter(|fork_name| epoch > 0 && spec.fork_epoch(*fork_name) == Some(epoch))
+                .map(|fork_name| spec.fork_version_for_name(fork_name));
+            let feature_versions = spec
+                .scheduled_features()
+                .into_iter()
+                .filter(|(_, fork_epoch)| *fork_epoch == epoch)
+                .map(|(id, _)| spec.features.fork_version(id));
+            for version in real_versions.chain(feature_versions) {
+                fork = Fork {
+                    previous_version: fork.current_version,
+                    current_version: version,
+                    epoch,
+                };
+            }
+            forks.push(fork);
+        }
+        forks
+    }
+
+    proptest! {
+        #[test]
+        fn version_schedule_matches_the_state_forks(
+            heze_epoch in 0u64..40,
+            heze_feature_delay in proptest::option::of(0u64..40),
+            gloas_feature_epoch in proptest::option::of(0u64..80),
+        ) {
+            const EPOCHS: u64 = 100;
+            let mut spec = spec(heze_epoch);
+            spec.features.heze_test_feature_fork_epoch =
+                heze_feature_delay.map(|delay| Epoch::new(heze_epoch + delay));
+            spec.features.gloas_test_feature_fork_epoch = gloas_feature_epoch.map(Epoch::new);
+            let digest_epochs: Vec<Epoch> = spec.all_digest_epochs().collect();
+
+            for (epoch, state_fork) in (0..EPOCHS).map(Epoch::new).zip(state_forks(&spec, EPOCHS)) {
+                let version = spec.fork_version_for_epoch(epoch);
+                prop_assert_eq!(spec.fork_at_epoch(epoch), state_fork);
+                prop_assert_eq!(version, state_fork.current_version);
+
+                if epoch > 0 && version != spec.fork_version_for_epoch(epoch - 1) {
+                    prop_assert!(digest_epochs.contains(&epoch));
+                }
+
+                let next_version = digest_epochs
+                    .iter()
+                    .find(|digest_epoch| **digest_epoch > epoch)
+                    .map_or(version, |digest_epoch| spec.fork_version_for_epoch(*digest_epoch));
+                prop_assert_eq!(
+                    spec.next_fork_version::<MainnetEthSpec>(epoch.start_slot(32)),
+                    next_version
+                );
+            }
+        }
     }
 }
