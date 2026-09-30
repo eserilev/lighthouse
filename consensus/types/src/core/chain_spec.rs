@@ -982,10 +982,11 @@ impl ChainSpec {
             && blob_retention_epoch >= fulu_fork_epoch
         {
             if self.is_eip8198_active_at_epoch(current_epoch) {
-                Some(
+                Some(std::cmp::max(
+                    fulu_fork_epoch,
                     self.compute_blob_data_retention_start_epoch::<E>(current_epoch)
                         .unwrap_or(data_column_retention_epoch),
-                )
+                ))
             } else {
                 Some(data_column_retention_epoch)
             }
@@ -1775,7 +1776,6 @@ impl ChainSpec {
             eip8198_fork_version: [0xe8, 0x19, 0x80, 0x01],
             eip8198_fork_epoch: None,
             features: FeatureSpec::minimal(),
-            min_blob_data_retention_ms: 196608000,
 
             /*
              * Derived time values (set by `compute_derived_values()`)
@@ -1794,6 +1794,7 @@ impl ChainSpec {
 
             // Networking Fulu
             blob_schedule: BlobSchedule::default(),
+            min_blob_data_retention_ms: 196608000,
 
             // Other
             network_id: 2, // lighthouse testnet network id
@@ -2718,9 +2719,9 @@ pub struct Config {
     #[serde(default = "default_min_epochs_for_data_column_sidecars_requests")]
     #[serde(with = "serde_utils::quoted_u64")]
     min_epochs_for_data_column_sidecars_requests: u64,
-    #[serde(default = "default_min_blob_data_retention_ms")]
-    #[serde(with = "serde_utils::quoted_u64")]
-    min_blob_data_retention_ms: u64,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    min_blob_data_retention_ms: Option<MaybeQuoted<u64>>,
 
     #[serde(default = "default_proposer_reorg_cutoff_bps")]
     #[serde(with = "serde_utils::quoted_u64")]
@@ -3355,7 +3356,9 @@ impl Config {
             balance_per_additional_custody_group: spec.balance_per_additional_custody_group,
             min_epochs_for_data_column_sidecars_requests: spec
                 .min_epochs_for_data_column_sidecars_requests,
-            min_blob_data_retention_ms: spec.min_blob_data_retention_ms,
+            min_blob_data_retention_ms: Some(MaybeQuoted {
+                value: spec.min_blob_data_retention_ms,
+            }),
 
             proposer_reorg_cutoff_bps: spec.proposer_reorg_cutoff_bps,
             attestation_due_bps: spec.attestation_due_bps,
@@ -3523,6 +3526,12 @@ impl Config {
         let seconds_per_slot = seconds_per_slot
             .map(|q| q.value)
             .or_else(|| slot_duration_ms.checked_div(1000))?;
+        let min_blob_data_retention_ms = match min_blob_data_retention_ms {
+            Some(q) => q.value,
+            None => min_epochs_for_data_column_sidecars_requests
+                .checked_mul(E::slots_per_epoch())?
+                .checked_mul(slot_duration_ms)?,
+        };
         if let Some(eip8198_fork_epoch) = eip8198_fork_epoch.map(|q| q.value)
             && heze_fork_epoch
                 .map(|q| q.value)
@@ -5249,6 +5258,18 @@ mod yaml_tests {
     }
 
     #[test]
+    fn min_blob_data_retention_ms_defaults_to_the_data_column_retention_window() {
+        let mainnet = ChainSpec::mainnet();
+        let mut config = Config::from_chain_spec::<MainnetEthSpec>(&mainnet);
+        config.min_blob_data_retention_ms = None;
+        config.min_epochs_for_data_column_sidecars_requests = 100;
+        let spec = config
+            .apply_to_chain_spec::<MainnetEthSpec>(&mainnet)
+            .unwrap();
+        assert_eq!(spec.min_blob_data_retention_ms, 100 * 32 * 12000);
+    }
+
+    #[test]
     fn data_retention_window_keeps_its_length_in_ms_after_eip8198() {
         type E = MainnetEthSpec;
         let mut spec = ForkName::Fulu
@@ -5271,6 +5292,16 @@ mod yaml_tests {
         assert_eq!(
             spec.compute_blob_data_retention_start_epoch::<E>(Epoch::new(100)),
             Ok(Epoch::new(0))
+        );
+
+        spec.fulu_fork_epoch = Some(Epoch::new(6000));
+        assert_eq!(
+            spec.compute_blob_data_retention_start_epoch::<E>(Epoch::new(10096)),
+            Ok(Epoch::new(5952))
+        );
+        assert_eq!(
+            spec.min_epoch_data_availability_boundary::<E>(Epoch::new(10096)),
+            Some(Epoch::new(6000))
         );
     }
 
