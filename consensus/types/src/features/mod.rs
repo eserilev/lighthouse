@@ -21,7 +21,6 @@ pub use generated::*;
 /// An experimental feature from the registry.
 pub trait Feature: 'static {
     const ID: FeatureId;
-    const NAME: &'static str;
     /// The first fork that the feature can run on.
     const MIN_FORK: ForkName;
 }
@@ -39,7 +38,29 @@ impl<F: Feature> Copy for Active<F> {}
 
 impl<F: Feature> std::fmt::Debug for Active<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Active<{}>", F::NAME)
+        write!(f, "Active<{}>", F::ID.name())
+    }
+}
+
+/// `serde_utils::bytes_4_hex` for a fork version that a config can omit.
+#[allow(dead_code, reason = "used by the generated feature config")]
+mod optional_fork_version {
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(
+        version: &Option<[u8; 4]>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match version {
+            Some(version) => serde_utils::bytes_4_hex::serialize(version, serializer),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<[u8; 4]>, D::Error> {
+        serde_utils::bytes_4_hex::deserialize(deserializer).map(Some)
     }
 }
 
@@ -75,9 +96,9 @@ impl ChainSpec {
         scheduled
     }
 
-    /// Set the feature fork versions and epochs from `config`, then validate them.
+    /// Set the feature fork epochs and the fork versions that `config` has, then validate them.
     pub fn apply_feature_config(mut self, config: &FeatureConfig) -> Result<Self, String> {
-        self.features = config.to_spec();
+        config.apply_to(&mut self.features);
         self.validate_features()?;
         Ok(self)
     }
@@ -88,9 +109,15 @@ impl ChainSpec {
             let min_fork = id.min_fork();
             match self.fork_epoch(min_fork) {
                 Some(min_fork_epoch) if epoch >= min_fork_epoch => {}
-                _ => {
+                Some(_) => {
                     return Err(format!(
                         "the {} fork epoch {epoch} is before the {min_fork} fork epoch",
+                        id.name()
+                    ));
+                }
+                None => {
+                    return Err(format!(
+                        "the {} fork needs the {min_fork} fork to be scheduled",
                         id.name()
                     ));
                 }

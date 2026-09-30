@@ -48,7 +48,7 @@ impl FeatureSpec {
     }
 }
 
-/// The config keys of each feature. `Config` flattens this struct.
+/// The config keys of each feature.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct FeatureConfig {}
 
@@ -57,13 +57,6 @@ impl FeatureConfig {
         Self {}
     }
 
-    pub fn to_spec(&self) -> FeatureSpec {
-        FeatureSpec {}
-    }
-}
-
-/// Calls `$m!(FeatureType)` once for each feature, in registry order.
-#[macro_export]
-macro_rules! for_each_feature {
-    ($m:ident) => {};
+    /// Set the fork epochs of `spec`, and each fork version that the config has.
+    pub fn apply_to(&self, _spec: &mut FeatureSpec) {}
 }

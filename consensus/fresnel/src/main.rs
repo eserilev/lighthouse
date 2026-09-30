@@ -21,55 +21,40 @@ struct Cli {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    match run(&Cli::parse()) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err((message, code)) => {
+            eprintln!("{message}");
+            ExitCode::from(code)
+        }
+    }
+}
 
-    let source = match std::fs::read_to_string(&cli.registry) {
-        Ok(source) => source,
-        Err(e) => {
-            eprintln!("cannot read {}: {e}", cli.registry.display());
-            return ExitCode::from(1);
-        }
-    };
-    let forks = match std::fs::read_to_string(&cli.forks)
-        .map_err(|e| format!("cannot read {}: {e}", cli.forks.display()))
-        .and_then(|fork_source| read_forks(&fork_source).map_err(|e| e.to_string()))
-    {
-        Ok(forks) => forks,
-        Err(e) => {
-            eprintln!("{e}");
-            return ExitCode::from(1);
-        }
-    };
-    let registry = match Registry::parse(&source, &forks) {
-        Ok(registry) => registry,
-        Err(e) => {
-            eprintln!("{}: {e}", cli.registry.display());
-            return ExitCode::from(1);
-        }
-    };
-    let generated = match generate(&registry)
+/// Returns the error message and the exit code: 4 if `--check` finds a difference, 1 otherwise.
+fn run(cli: &Cli) -> Result<(), (String, u8)> {
+    let source = std::fs::read_to_string(&cli.registry)
+        .map_err(|e| (format!("cannot read {}: {e}", cli.registry.display()), 1))?;
+    let fork_source = std::fs::read_to_string(&cli.forks)
+        .map_err(|e| (format!("cannot read {}: {e}", cli.forks.display()), 1))?;
+    let forks = read_forks(&fork_source).map_err(|e| (e.to_string(), 1))?;
+    let registry = Registry::parse(&source, &forks)
+        .map_err(|e| (format!("{}: {e}", cli.registry.display()), 1))?;
+    let generated = generate(&registry)
         .map_err(|e| e.to_string())
         .and_then(|code| rustfmt(&code))
-    {
-        Ok(generated) => generated,
-        Err(e) => {
-            eprintln!("{e}");
-            return ExitCode::from(1);
-        }
-    };
+        .map_err(|e| (e, 1))?;
 
     if cli.check {
         let current = std::fs::read_to_string(&cli.out).unwrap_or_default();
         if current != generated {
-            eprintln!("{} is out of date. Run `make features`.", cli.out.display());
-            return ExitCode::from(4);
+            return Err((
+                format!("{} is out of date. Run `make features`.", cli.out.display()),
+                4,
+            ));
         }
-        return ExitCode::SUCCESS;
+        return Ok(());
     }
 
-    if let Err(e) = std::fs::write(&cli.out, generated) {
-        eprintln!("cannot write {}: {e}", cli.out.display());
-        return ExitCode::from(1);
-    }
-    ExitCode::SUCCESS
+    std::fs::write(&cli.out, generated)
+        .map_err(|e| (format!("cannot write {}: {e}", cli.out.display()), 1))
 }

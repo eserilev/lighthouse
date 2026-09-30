@@ -503,7 +503,7 @@ mod tests {
     use fixed_bytes::FixedBytesExtended;
     use ssz::Encode;
     use tempfile::Builder as TempBuilder;
-    use types::{Eth1Data, GnosisEthSpec, MainnetEthSpec};
+    use types::{Eth1Data, GnosisEthSpec, MainnetEthSpec, MinimalEthSpec};
 
     type E = MainnetEthSpec;
 
@@ -579,6 +579,29 @@ mod tests {
             }
 
             assert_eq!(config.config.config_name, Some(net.config_dir.to_string()));
+        }
+    }
+
+    #[test]
+    fn hard_coded_nets_keep_the_preset_feature_fork_versions() {
+        for net in HARDCODED_NETS {
+            let config = Eth2NetworkConfig::from_hardcoded_net(net)
+                .unwrap_or_else(|e| panic!("{:?}: {:?}", net.name, e));
+            let (features, preset_features) = match config.eth_spec_id().unwrap() {
+                EthSpecId::Mainnet => (
+                    config.chain_spec::<MainnetEthSpec>().unwrap().features,
+                    MainnetEthSpec::default_spec().features,
+                ),
+                EthSpecId::Minimal => (
+                    config.chain_spec::<MinimalEthSpec>().unwrap().features,
+                    MinimalEthSpec::default_spec().features,
+                ),
+                EthSpecId::Gnosis => (
+                    config.chain_spec::<GnosisEthSpec>().unwrap().features,
+                    GnosisEthSpec::default_spec().features,
+                ),
+            };
+            assert_eq!(features, preset_features, "{:?}", net.name);
         }
     }
 

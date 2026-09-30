@@ -1,7 +1,7 @@
 //! Fresnel generates the Rust code of experimental consensus features from `registry.toml`.
 //!
-//! The generated file holds data only: feature identities, fork config keys and the
-//! `for_each_feature!` macro. Feature logic stays hand-written behind feature gates.
+//! The generated file holds data only: feature identities and fork config keys. Feature logic
+//! stays hand-written behind feature gates.
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -221,7 +221,7 @@ pub fn generate(registry: &Registry) -> Result<String, fmt::Error> {
         writeln!(out, "use crate::fork::ForkName;")?;
         writeln!(out, "use serde::{{Deserialize, Serialize}};")?;
     } else {
-        writeln!(out, "use super::Feature;")?;
+        writeln!(out, "use super::{{Feature, optional_fork_version}};")?;
         writeln!(
             out,
             "use crate::core::{{Epoch, deserialize_fork_epoch, serialize_fork_epoch}};"
@@ -290,7 +290,6 @@ pub fn generate(registry: &Registry) -> Result<String, fmt::Error> {
         writeln!(out)?;
         writeln!(out, "impl Feature for {ty} {{")?;
         writeln!(out, "const ID: FeatureId = FeatureId::{ty};")?;
-        writeln!(out, "const NAME: &'static str = \"{}\";", feature.name)?;
         writeln!(
             out,
             "const MIN_FORK: ForkName = ForkName::{};",
@@ -320,12 +319,12 @@ pub fn generate(registry: &Registry) -> Result<String, fmt::Error> {
         writeln!(out, "pub fn {network}() -> Self {{")?;
         writeln!(out, "Self {{")?;
         for feature in features {
-            let version = feature
-                .fork_versions
-                .get(*network)
-                .map(version_literal)
-                .unwrap_or_default();
-            writeln!(out, "{}_fork_version: {version},", feature.name)?;
+            writeln!(
+                out,
+                "{}_fork_version: {},",
+                feature.name,
+                version_literal(&feature.fork_versions[*network])
+            )?;
             writeln!(out, "{}_fork_epoch: None,", feature.name)?;
         }
         writeln!(out, "}}")?;
@@ -368,10 +367,7 @@ pub fn generate(registry: &Registry) -> Result<String, fmt::Error> {
     writeln!(out, "}}")?;
     writeln!(out)?;
 
-    writeln!(
-        out,
-        "/// The config keys of each feature. `Config` flattens this struct."
-    )?;
+    writeln!(out, "/// The config keys of each feature.")?;
     writeln!(
         out,
         "#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]"
@@ -381,9 +377,9 @@ pub fn generate(registry: &Registry) -> Result<String, fmt::Error> {
         let key = feature.name.to_ascii_uppercase();
         writeln!(
             out,
-            "#[serde(rename = \"{key}_FORK_VERSION\", default = \"default_fork_version\", with = \"serde_utils::bytes_4_hex\")]"
+            "#[serde(rename = \"{key}_FORK_VERSION\", default, skip_serializing_if = \"Option::is_none\", with = \"optional_fork_version\")]"
         )?;
-        writeln!(out, "pub {}_fork_version: [u8; 4],", feature.name)?;
+        writeln!(out, "pub {}_fork_version: Option<[u8; 4]>,", feature.name)?;
         writeln!(
             out,
             "#[serde(rename = \"{key}_FORK_EPOCH\", default, serialize_with = \"serialize_fork_epoch\", deserialize_with = \"deserialize_fork_epoch\")]"
@@ -404,7 +400,7 @@ pub fn generate(registry: &Registry) -> Result<String, fmt::Error> {
     for feature in features {
         writeln!(
             out,
-            "{name}_fork_version: spec.{name}_fork_version,",
+            "{name}_fork_version: Some(spec.{name}_fork_version),",
             name = feature.name
         )?;
         writeln!(
@@ -416,43 +412,33 @@ pub fn generate(registry: &Registry) -> Result<String, fmt::Error> {
     writeln!(out, "}}")?;
     writeln!(out, "}}")?;
     writeln!(out)?;
-    writeln!(out, "pub fn to_spec(&self) -> FeatureSpec {{")?;
-    writeln!(out, "FeatureSpec {{")?;
-    for feature in features {
-        writeln!(
-            out,
-            "{name}_fork_version: self.{name}_fork_version,",
-            name = feature.name
-        )?;
-        writeln!(
-            out,
-            "{name}_fork_epoch: self.{name}_fork_epoch.map(|epoch| epoch.value),",
-            name = feature.name
-        )?;
-    }
-    writeln!(out, "}}")?;
-    writeln!(out, "}}")?;
-    writeln!(out, "}}")?;
-    writeln!(out)?;
-
-    if !features.is_empty() {
-        writeln!(out, "fn default_fork_version() -> [u8; 4] {{")?;
-        writeln!(out, "[0xff, 0xff, 0xff, 0xff]")?;
-        writeln!(out, "}}")?;
-        writeln!(out)?;
-    }
-
     writeln!(
         out,
-        "/// Calls `$m!(FeatureType)` once for each feature, in registry order."
+        "/// Set the fork epochs of `spec`, and each fork version that the config has."
     )?;
-    writeln!(out, "#[macro_export]")?;
-    writeln!(out, "macro_rules! for_each_feature {{")?;
-    writeln!(out, "($m:ident) => {{")?;
+    writeln!(
+        out,
+        "pub fn apply_to(&self, {spec_arg}: &mut FeatureSpec) {{"
+    )?;
     for feature in features {
-        writeln!(out, "$m!($crate::features::{});", type_name(&feature.name))?;
+        writeln!(
+            out,
+            "if let Some(version) = self.{name}_fork_version {{",
+            name = feature.name
+        )?;
+        writeln!(
+            out,
+            "spec.{name}_fork_version = version;",
+            name = feature.name
+        )?;
+        writeln!(out, "}}")?;
+        writeln!(
+            out,
+            "spec.{name}_fork_epoch = self.{name}_fork_epoch.map(|epoch| epoch.value);",
+            name = feature.name
+        )?;
     }
-    writeln!(out, "}};")?;
+    writeln!(out, "}}")?;
     writeln!(out, "}}")?;
 
     Ok(out)

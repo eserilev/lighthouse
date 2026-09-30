@@ -59,7 +59,7 @@ fn output_lists_each_feature() {
         "eip8198_fork_version: [0xe8, 0x19, 0x80, 0x64],",
         "rename = \"EIP8198_FORK_VERSION\"",
         "rename = \"EIP_TOY_FORK_EPOCH\"",
-        "$m!($crate::features::Eip8198);\n        $m!($crate::features::EipToy);",
+        "pub eip8198_fork_version: Option<[u8; 4]>,",
     ] {
         assert!(code.contains(expected), "missing `{expected}` in:\n{code}");
     }

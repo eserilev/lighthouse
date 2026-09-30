@@ -2850,7 +2850,10 @@ impl Default for Config {
 
 /// Util function to serialize a `None` fork epoch value
 /// as `Epoch::max_value()`.
-pub fn serialize_fork_epoch<S>(val: &Option<MaybeQuoted<Epoch>>, s: S) -> Result<S::Ok, S::Error>
+pub(crate) fn serialize_fork_epoch<S>(
+    val: &Option<MaybeQuoted<Epoch>>,
+    s: S,
+) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
@@ -2864,7 +2867,7 @@ where
 }
 
 /// Util function to deserialize a u64::max() fork epoch as `None`.
-pub fn deserialize_fork_epoch<'de, D>(
+pub(crate) fn deserialize_fork_epoch<'de, D>(
     deserializer: D,
 ) -> Result<Option<MaybeQuoted<Epoch>>, D::Error>
 where
