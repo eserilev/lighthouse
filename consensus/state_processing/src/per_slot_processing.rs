@@ -1,6 +1,7 @@
 use crate::upgrade::{
     upgrade_to_altair, upgrade_to_bellatrix, upgrade_to_capella, upgrade_to_deneb,
-    upgrade_to_eip8198, upgrade_to_electra, upgrade_to_fulu, upgrade_to_gloas, upgrade_to_heze,
+    upgrade_to_electra, upgrade_to_feature_fork, upgrade_to_fulu, upgrade_to_gloas,
+    upgrade_to_heze,
 };
 use crate::{per_epoch_processing::EpochProcessingSummary, *};
 use fixed_bytes::FixedBytesExtended;
@@ -109,8 +110,11 @@ pub fn per_slot_processing<E: EthSpec>(
             upgrade_to_heze(state, spec)?;
         }
 
-        if spec.eip8198_fork_epoch == Some(state.current_epoch()) {
-            upgrade_to_eip8198(state, spec);
+        // Experimental feature forks, after the real forks.
+        for (feature, fork_epoch) in spec.scheduled_features() {
+            if fork_epoch == state.current_epoch() {
+                upgrade_to_feature_fork(state, spec, feature);
+            }
         }
 
         // Additionally build all caches so that all valid states that are advanced always have

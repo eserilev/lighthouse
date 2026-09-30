@@ -96,11 +96,10 @@ impl ChainSpec {
         scheduled
     }
 
-    /// Set the feature fork epochs and the fork versions that `config` has, then validate them.
-    pub fn apply_feature_config(mut self, config: &FeatureConfig) -> Result<Self, String> {
+    /// Set the feature fork epochs and the fork versions that `config` has.
+    pub fn with_feature_config(mut self, config: &FeatureConfig) -> Self {
         config.apply_to(&mut self.features);
-        self.validate_features()?;
-        Ok(self)
+        self
     }
 
     /// Check that each scheduled feature activates at or after the epoch of its `MIN_FORK`.

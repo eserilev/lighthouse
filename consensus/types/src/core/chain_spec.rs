@@ -18,7 +18,7 @@ use crate::{
         APPLICATION_DOMAIN_BUILDER, Address, ApplicationDomain, EnrForkId, Epoch, EthSpec,
         EthSpecId, ExecutionBlockHash, Hash256, MainnetEthSpec, Slot, Uint256,
     },
-    features::FeatureSpec,
+    features::{Eip8198, FeatureId, FeatureSpec},
     fork::{Fork, ForkData, ForkName},
 };
 
@@ -286,8 +286,6 @@ pub struct ChainSpec {
     pub heze_fork_version: [u8; 4],
     /// The Heze fork epoch is optional, with `None` representing "Heze never happens".
     pub heze_fork_epoch: Option<Epoch>,
-    pub eip8198_fork_version: [u8; 4],
-    pub eip8198_fork_epoch: Option<Epoch>,
 
     /*
      * Experimental features, generated from `features/registry.toml`
@@ -401,12 +399,18 @@ impl ChainSpec {
     /// `next_fork_version = current_fork_version` if no future fork is planned,
     pub fn next_fork_version<E: EthSpec>(&self, slot: Slot) -> [u8; 4] {
         let epoch = slot.epoch(E::slots_per_epoch());
-        match self.next_fork_epoch::<E>(slot) {
-            Some((fork, _)) => self.fork_version_for_name(fork),
-            None => match self.eip8198_fork_epoch {
-                Some(eip8198_fork_epoch) if epoch < eip8198_fork_epoch => self.eip8198_fork_version,
-                _ => self.fork_version_for_epoch(epoch),
-            },
+        let next_real_fork = self.next_fork_epoch::<E>(slot);
+        let next_feature_fork = self
+            .scheduled_features()
+            .into_iter()
+            .find(|(_, fork_epoch)| *fork_epoch > epoch);
+        match (next_real_fork, next_feature_fork) {
+            (Some((fork, fork_epoch)), Some((_, feature_epoch))) if fork_epoch <= feature_epoch => {
+                self.fork_version_for_name(fork)
+            }
+            (_, Some((_, feature_epoch))) => self.fork_version_for_epoch(feature_epoch),
+            (Some((fork, _)), None) => self.fork_version_for_name(fork),
+            (None, None) => self.fork_version_for_epoch(epoch),
         }
     }
 
@@ -467,15 +471,21 @@ impl ChainSpec {
 
     // This is `compute_fork_version` in the spec
     pub fn fork_version_for_epoch(&self, epoch: Epoch) -> [u8; 4] {
-        if self.is_eip8198_active_at_epoch(epoch) {
-            return self.eip8198_fork_version;
+        match self.feature_fork_at_epoch(epoch) {
+            Some((id, _)) => self.features.fork_version(id),
+            None => self.fork_version_for_name(self.fork_name_at_epoch(epoch)),
         }
-        self.fork_version_for_name(self.fork_name_at_epoch(epoch))
     }
 
-    pub fn is_eip8198_active_at_epoch(&self, epoch: Epoch) -> bool {
-        self.eip8198_fork_epoch
-            .is_some_and(|eip8198_fork_epoch| epoch >= eip8198_fork_epoch)
+    /// The last feature fork at or before `epoch`, unless a later real fork replaced it.
+    fn feature_fork_at_epoch(&self, epoch: Epoch) -> Option<(FeatureId, Epoch)> {
+        let real_fork_epoch = self
+            .fork_epoch(self.fork_name_at_epoch(epoch))
+            .unwrap_or(Epoch::new(0));
+        self.scheduled_features()
+            .into_iter()
+            .rev()
+            .find(|(_, fork_epoch)| *fork_epoch <= epoch && *fork_epoch >= real_fork_epoch)
     }
 
     /// For a given fork name, return the epoch at which it activates.
@@ -544,14 +554,21 @@ impl ChainSpec {
     pub fn fork_at_epoch(&self, epoch: Epoch) -> Fork {
         let current_fork_name = self.fork_name_at_epoch(epoch);
 
-        if let Some(eip8198_fork_epoch) = self
-            .eip8198_fork_epoch
-            .filter(|eip8198_fork_epoch| epoch >= *eip8198_fork_epoch)
-        {
+        if let Some((id, feature_epoch)) = self.feature_fork_at_epoch(epoch) {
+            let previous_version = self
+                .scheduled_features()
+                .into_iter()
+                .take_while(|(other, _)| *other != id)
+                .filter(|(_, other_epoch)| {
+                    *other_epoch >= self.fork_epoch(current_fork_name).unwrap_or(Epoch::new(0))
+                })
+                .last()
+                .map(|(other, _)| self.features.fork_version(other))
+                .unwrap_or_else(|| self.fork_version_for_name(current_fork_name));
             return Fork {
-                previous_version: self.fork_version_for_name(current_fork_name),
-                current_version: self.eip8198_fork_version,
-                epoch: eip8198_fork_epoch,
+                previous_version,
+                current_version: self.features.fork_version(id),
+                epoch: feature_epoch,
             };
         }
 
@@ -731,8 +748,8 @@ impl ChainSpec {
                 relevant_epochs.insert(blob_parameters.epoch);
             }
         }
-        if let Some(eip8198_fork_epoch) = self.eip8198_fork_epoch {
-            relevant_epochs.insert(eip8198_fork_epoch);
+        for (_, feature_epoch) in self.scheduled_features() {
+            relevant_epochs.insert(feature_epoch);
         }
         let mut vec = relevant_epochs.into_iter().collect::<Vec<_>>();
         vec.sort();
@@ -981,7 +998,7 @@ impl ChainSpec {
         if let Some(fulu_fork_epoch) = self.fulu_fork_epoch
             && blob_retention_epoch >= fulu_fork_epoch
         {
-            if self.is_eip8198_active_at_epoch(current_epoch) {
+            if self.feature_enabled::<Eip8198>(current_epoch).is_some() {
                 Some(std::cmp::max(
                     fulu_fork_epoch,
                     self.compute_blob_data_retention_start_epoch::<E>(current_epoch)
@@ -1108,7 +1125,7 @@ impl ChainSpec {
         component_basis_points: u64,
         slot: Slot,
     ) -> Option<Duration> {
-        let fork_epoch = self.eip8198_fork_epoch?;
+        let fork_epoch = self.feature_fork_epoch(FeatureId::Eip8198)?;
         if slot.epoch(E::slots_per_epoch()) < fork_epoch {
             return None;
         }
@@ -1608,8 +1625,6 @@ impl ChainSpec {
              */
             heze_fork_version: [0x08, 0x00, 0x00, 0x00],
             heze_fork_epoch: None,
-            eip8198_fork_version: [0xe8, 0x19, 0x80, 0x00],
-            eip8198_fork_epoch: None,
             features: FeatureSpec::mainnet(),
             max_transactions_bytes_per_inclusion_list: 8192,
             max_request_inclusion_list: 16,
@@ -1773,8 +1788,6 @@ impl ChainSpec {
             // Heze
             heze_fork_version: [0x08, 0x00, 0x00, 0x01],
             heze_fork_epoch: None,
-            eip8198_fork_version: [0xe8, 0x19, 0x80, 0x01],
-            eip8198_fork_epoch: None,
             features: FeatureSpec::minimal(),
 
             /*
@@ -2076,8 +2089,6 @@ impl ChainSpec {
              */
             heze_fork_version: [0x08, 0x00, 0x00, 0x64],
             heze_fork_epoch: None,
-            eip8198_fork_version: [0xe8, 0x19, 0x80, 0x64],
-            eip8198_fork_epoch: None,
             features: FeatureSpec::gnosis(),
             max_transactions_bytes_per_inclusion_list: 8192,
             max_request_inclusion_list: 16,
@@ -2557,14 +2568,6 @@ pub struct Config {
     #[serde(deserialize_with = "deserialize_fork_epoch")]
     pub heze_fork_epoch: Option<MaybeQuoted<Epoch>>,
 
-    #[serde(default = "default_eip8198_fork_version")]
-    #[serde(with = "serde_utils::bytes_4_hex")]
-    eip8198_fork_version: [u8; 4],
-    #[serde(default)]
-    #[serde(serialize_with = "serialize_fork_epoch")]
-    #[serde(deserialize_with = "deserialize_fork_epoch")]
-    pub eip8198_fork_epoch: Option<MaybeQuoted<Epoch>>,
-
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     seconds_per_slot: Option<MaybeQuoted<u64>>,
@@ -2825,10 +2828,6 @@ fn default_gloas_fork_version() -> [u8; 4] {
 
 fn default_heze_fork_version() -> [u8; 4] {
     // This value shouldn't be used.
-    [0xff, 0xff, 0xff, 0xff]
-}
-
-fn default_eip8198_fork_version() -> [u8; 4] {
     [0xff, 0xff, 0xff, 0xff]
 }
 
@@ -3282,11 +3281,6 @@ impl Config {
                 .heze_fork_epoch
                 .map(|epoch| MaybeQuoted { value: epoch }),
 
-            eip8198_fork_version: spec.eip8198_fork_version,
-            eip8198_fork_epoch: spec
-                .eip8198_fork_epoch
-                .map(|epoch| MaybeQuoted { value: epoch }),
-
             seconds_per_slot: Some(MaybeQuoted {
                 value: spec.seconds_per_slot,
             }),
@@ -3424,8 +3418,6 @@ impl Config {
             gloas_fork_epoch,
             heze_fork_version,
             heze_fork_epoch,
-            eip8198_fork_version,
-            eip8198_fork_epoch,
             seconds_per_slot,
             slot_duration_ms,
             seconds_per_eth1_block,
@@ -3532,21 +3524,10 @@ impl Config {
                 .checked_mul(E::slots_per_epoch())?
                 .checked_mul(slot_duration_ms)?,
         };
-        if let Some(eip8198_fork_epoch) = eip8198_fork_epoch.map(|q| q.value)
-            && heze_fork_epoch
-                .map(|q| q.value)
-                .is_none_or(|heze_fork_epoch| eip8198_fork_epoch < heze_fork_epoch)
-        {
-            error!(
-                eip8198_fork_epoch = %eip8198_fork_epoch,
-                "EIP8198_FORK_EPOCH is before HEZE_FORK_EPOCH"
-            );
-            return None;
-        }
         if let Err(e) = slot_duration_schedule.validate(
             slot_duration_ms,
             E::slots_per_epoch(),
-            eip8198_fork_epoch.map(|q| q.value),
+            chain_spec.feature_fork_epoch(FeatureId::Eip8198),
         ) {
             error!(error = %e, "Invalid SLOT_DURATION_SCHEDULE");
             return None;
@@ -3602,8 +3583,6 @@ impl Config {
             gloas_fork_epoch: gloas_fork_epoch.map(|q| q.value),
             heze_fork_version,
             heze_fork_epoch: heze_fork_epoch.map(|q| q.value),
-            eip8198_fork_version,
-            eip8198_fork_epoch: eip8198_fork_epoch.map(|q| q.value),
             seconds_per_slot,
             slot_duration_ms,
             slot_duration_schedule: slot_duration_schedule.clone(),
@@ -3864,6 +3843,7 @@ mod tests {
 mod yaml_tests {
     use super::*;
     use crate::core::MinimalEthSpec;
+    use crate::features::FeatureConfig;
     use paste::paste;
     use std::collections::BTreeSet;
     use std::env;
@@ -4814,7 +4794,7 @@ mod yaml_tests {
         let mut spec = ChainSpec::mainnet().set_slot_duration_schedule::<MainnetEthSpec>(
             slot_duration_schedule(&[(0, 12000), (10, 10000), (20, 6000)]),
         );
-        spec.eip8198_fork_epoch = Some(Epoch::new(10));
+        spec.features.eip8198_fork_epoch = Some(Epoch::new(10));
         let pre_fork_slot = Slot::new(319);
         let fork_slot = Slot::new(320);
         let later_slot = Slot::new(700);
@@ -5185,17 +5165,78 @@ mod yaml_tests {
         config.heze_fork_epoch = Some(MaybeQuoted {
             value: Epoch::new(5),
         });
-        config.eip8198_fork_epoch = Some(MaybeQuoted {
-            value: Epoch::new(10),
-        });
         config.slot_duration_schedule = schedule;
-        let spec = ChainSpec::from_config::<MainnetEthSpec>(&config).expect("valid config");
+        let mut base = ChainSpec::mainnet();
+        base.features.eip8198_fork_epoch = Some(Epoch::new(10));
+        let spec = config
+            .apply_to_chain_spec::<MainnetEthSpec>(&base)
+            .expect("valid config");
         assert_eq!(spec.get_slot_duration_ms(Epoch::new(10)), 10000);
+        assert_eq!(spec.validate_features(), Ok(()));
 
-        config.eip8198_fork_epoch = Some(MaybeQuoted {
-            value: Epoch::new(4),
-        });
-        assert!(ChainSpec::from_config::<MainnetEthSpec>(&config).is_none());
+        base.features.eip8198_fork_epoch = Some(Epoch::new(11));
+        assert!(
+            config
+                .apply_to_chain_spec::<MainnetEthSpec>(&base)
+                .is_none()
+        );
+
+        config.slot_duration_schedule = SlotDurationSchedule::default();
+        base.features.eip8198_fork_epoch = Some(Epoch::new(4));
+        let spec = config
+            .apply_to_chain_spec::<MainnetEthSpec>(&base)
+            .expect("valid config");
+        assert!(spec.validate_features().is_err());
+    }
+
+    #[test]
+    fn eip8198_gate() {
+        let mut spec = ChainSpec::mainnet();
+        spec.fulu_fork_epoch = Some(Epoch::new(0));
+        spec.gloas_fork_epoch = Some(Epoch::new(0));
+        spec.heze_fork_epoch = Some(Epoch::new(5));
+        assert!(!spec.features_enabled());
+        assert!(spec.feature_enabled::<Eip8198>(Epoch::new(10)).is_none());
+
+        spec.features.eip8198_fork_epoch = Some(Epoch::new(10));
+        assert!(spec.features_enabled());
+        assert!(spec.feature_enabled::<Eip8198>(Epoch::new(9)).is_none());
+        assert!(spec.feature_enabled::<Eip8198>(Epoch::new(10)).is_some());
+        assert_eq!(
+            spec.scheduled_features(),
+            vec![(FeatureId::Eip8198, Epoch::new(10))]
+        );
+
+        spec.features.eip8198_fork_epoch = Some(spec.far_future_epoch);
+        assert!(!spec.features_enabled());
+        assert!(spec.scheduled_features().is_empty());
+    }
+
+    #[test]
+    fn eip8198_fork_at_the_heze_fork_epoch() {
+        let mut spec = ChainSpec::mainnet();
+        spec.fulu_fork_epoch = Some(Epoch::new(0));
+        spec.gloas_fork_epoch = Some(Epoch::new(0));
+        spec.heze_fork_epoch = Some(Epoch::new(5));
+        spec.features.eip8198_fork_epoch = Some(Epoch::new(5));
+
+        assert_eq!(
+            spec.fork_version_for_epoch(Epoch::new(4)),
+            spec.gloas_fork_version
+        );
+        assert_eq!(
+            spec.fork_at_epoch(Epoch::new(5)),
+            Fork {
+                previous_version: spec.heze_fork_version,
+                current_version: spec.features.eip8198_fork_version,
+                epoch: Epoch::new(5),
+            }
+        );
+        assert_eq!(
+            spec.next_fork_version::<MainnetEthSpec>(Epoch::new(4).start_slot(32)),
+            spec.heze_fork_version
+        );
+        assert_eq!(spec.all_digest_epochs().filter(|e| *e == 5).count(), 1);
     }
 
     #[test]
@@ -5204,7 +5245,7 @@ mod yaml_tests {
         spec.fulu_fork_epoch = Some(Epoch::new(0));
         spec.gloas_fork_epoch = Some(Epoch::new(0));
         spec.heze_fork_epoch = Some(Epoch::new(5));
-        spec.eip8198_fork_epoch = Some(Epoch::new(10));
+        spec.features.eip8198_fork_epoch = Some(Epoch::new(10));
         let genesis_validators_root = Hash256::repeat_byte(1);
 
         assert_eq!(
@@ -5213,13 +5254,13 @@ mod yaml_tests {
         );
         assert_eq!(
             spec.fork_version_for_epoch(Epoch::new(10)),
-            spec.eip8198_fork_version
+            spec.features.eip8198_fork_version
         );
         assert_eq!(
             spec.fork_at_epoch(Epoch::new(12)),
             Fork {
                 previous_version: spec.heze_fork_version,
-                current_version: spec.eip8198_fork_version,
+                current_version: spec.features.eip8198_fork_version,
                 epoch: Epoch::new(10),
             }
         );
@@ -5230,11 +5271,11 @@ mod yaml_tests {
         );
         assert_eq!(
             spec.next_fork_version::<MainnetEthSpec>(Epoch::new(7).start_slot(32)),
-            spec.eip8198_fork_version
+            spec.features.eip8198_fork_version
         );
         assert_eq!(
             spec.next_fork_version::<MainnetEthSpec>(Epoch::new(12).start_slot(32)),
-            spec.eip8198_fork_version
+            spec.features.eip8198_fork_version
         );
     }
 
@@ -5272,10 +5313,10 @@ mod yaml_tests {
     #[test]
     fn data_retention_window_keeps_its_length_in_ms_after_eip8198() {
         type E = MainnetEthSpec;
-        let mut spec = ForkName::Fulu
+        let mut spec = ForkName::Heze
             .make_genesis_spec(E::default_spec())
             .set_slot_duration_schedule::<E>(slot_duration_schedule(&[(0, 12000), (10000, 6000)]));
-        spec.eip8198_fork_epoch = Some(Epoch::new(10000));
+        spec.features.eip8198_fork_epoch = Some(Epoch::new(10000));
 
         assert_eq!(
             spec.min_epoch_data_availability_boundary::<E>(Epoch::new(9999)),
@@ -5466,6 +5507,16 @@ mod yaml_tests {
             .collect();
         // Fields that Config knows but may skip during serialization.
         known_keys.insert("CONFIG_NAME".to_string());
+        let our_features = FeatureConfig::from_spec(&spec.features);
+        let features_yaml =
+            yaml_serde::to_string(&our_features).expect("failed to serialize FeatureConfig");
+        let features_mapping: yaml_serde::Mapping =
+            yaml_serde::from_str(&features_yaml).expect("failed to re-parse our FeatureConfig");
+        known_keys.extend(
+            features_mapping
+                .keys()
+                .filter_map(|k| k.as_str().map(String::from)),
+        );
 
         // Check for upstream keys that our Config doesn't know about.
         let mut missing_keys: Vec<&String> = upstream_keys
@@ -5498,6 +5549,13 @@ mod yaml_tests {
         assert_eq!(
             upstream_config, our_config,
             "Config mismatch for {config_name}"
+        );
+
+        let upstream_features: FeatureConfig = yaml_serde::from_str(&upstream_yaml)
+            .unwrap_or_else(|e| panic!("failed to parse {config_name} as FeatureConfig: {e}"));
+        assert_eq!(
+            upstream_features, our_features,
+            "FeatureConfig mismatch for {config_name}"
         );
     }
 
