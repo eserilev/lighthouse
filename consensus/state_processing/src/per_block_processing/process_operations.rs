@@ -10,6 +10,7 @@ use ssz_types::FixedVector;
 use typenum::U33;
 use types::consts::altair::{PARTICIPATION_FLAG_WEIGHTS, PROPOSER_WEIGHT, WEIGHT_DENOMINATOR};
 use types::consts::gloas::PAYLOAD_BUILDER_VERSION;
+use types::features::{self, Eip8198};
 use types::is_builder_withdrawal_credential;
 
 pub fn process_operations<E: EthSpec, Payload: AbstractExecPayload<E>>(
@@ -386,6 +387,8 @@ pub mod gloas {
             .withdrawal
             .amount;
 
+        let eip8198_active = spec.feature_enabled::<Eip8198>(current_epoch);
+
         // Update epoch participation flags.
         let mut proposer_reward_numerator = 0;
         for index in indexed_att.attesting_indices_iter() {
@@ -419,8 +422,17 @@ pub mod gloas {
 
                     if !validator_participation.has_flag(flag_index)? {
                         validator_participation.add_flag(flag_index)?;
-                        proposer_reward_numerator
-                            .safe_add_assign(state.get_base_reward(index)?.safe_mul(weight)?)?;
+                        let base_reward = if let Some(on) = eip8198_active {
+                            features::eip8198::get_base_reward_for_epoch(
+                                state.epoch_cache(),
+                                index,
+                                data.target.epoch,
+                                on,
+                            )?
+                        } else {
+                            state.get_base_reward(index)?
+                        };
+                        proposer_reward_numerator.safe_add_assign(base_reward.safe_mul(weight)?)?;
                         will_set_new_flag = true;
 
                         update_progressive_balances_on_attestation(

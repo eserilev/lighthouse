@@ -23,6 +23,7 @@ pub mod common;
 pub mod consensus_context;
 pub mod envelope_processing;
 pub mod epoch_cache;
+pub mod features;
 pub mod genesis;
 pub mod per_block_processing;
 pub mod per_epoch_processing;

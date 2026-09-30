@@ -4,9 +4,11 @@ use crate::{
         update_progressive_balances_cache::initialize_progressive_balances_cache,
     },
     epoch_cache::{PreEpochCache, initialize_epoch_cache},
+    features,
     per_block_processing::is_valid_deposit_signature,
     per_epoch_processing::{Delta, Error, ParticipationEpochSummary},
 };
+use feature_dispatch::feature_dispatch;
 use itertools::izip;
 use milhouse::{Cow, List, Vector};
 use safe_arith::{SafeArith, SafeArithIter};
@@ -15,6 +17,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use tracing::instrument;
 use typenum::Unsigned;
+use types::features::Eip8198;
 use types::{
     ActivationQueue, BeaconState, BeaconStateError, BuilderPendingPayment, ChainSpec, Checkpoint,
     CommitteeCache, DepositData, Epoch, EthSpec, ExitCache, ForkName, ParticipationFlags,
@@ -77,12 +80,12 @@ impl SinglePassConfig {
 }
 
 /// Values from the state that are immutable throughout epoch processing.
-struct StateContext {
-    current_epoch: Epoch,
+pub(crate) struct StateContext {
+    pub(crate) current_epoch: Epoch,
     next_epoch: Epoch,
     finalized_checkpoint: Checkpoint,
     is_in_inactivity_leak: bool,
-    total_active_balance: u64,
+    pub(crate) total_active_balance: u64,
     churn_limit: u64,
     fork_name: ForkName,
 }
@@ -90,6 +93,7 @@ struct StateContext {
 struct RewardsAndPenaltiesContext {
     unslashed_participating_increments_array: [u64; NUM_FLAG_INDICES],
     active_increments: u64,
+    inactivity_penalty_denominator: u64,
 }
 
 struct SlashingsContext {
@@ -238,6 +242,7 @@ pub fn process_epoch_single_pass<E: EthSpec>(
         None
     };
     let effective_balances_ctxt = &EffectiveBalancesContext::new(spec)?;
+    let eip8198_active = spec.feature_enabled::<Eip8198>(current_epoch);
 
     // Iterate over the validators and related fields in one pass.
     let mut validators_iter = validators.iter_cow();
@@ -265,7 +270,16 @@ pub fn process_epoch_single_pass<E: EthSpec>(
             || (validator.slashed && previous_epoch.safe_add(1)? < validator.withdrawable_epoch);
 
         let base_reward = if is_eligible {
-            epoch_cache.get_base_reward(index)?
+            if let Some(on) = eip8198_active {
+                types::features::eip8198::get_base_reward_for_epoch(
+                    epoch_cache,
+                    index,
+                    previous_epoch,
+                    on,
+                )?
+            } else {
+                epoch_cache.get_base_reward(index)?
+            }
         } else {
             0
         };
@@ -301,7 +315,6 @@ pub fn process_epoch_single_pass<E: EthSpec>(
                     validator_info,
                     rewards_ctxt,
                     state_ctxt,
-                    spec,
                 )?;
             }
         }
@@ -670,7 +683,6 @@ fn process_single_reward_and_penalty(
     validator_info: &ValidatorInfo,
     rewards_ctxt: &RewardsAndPenaltiesContext,
     state_ctxt: &StateContext,
-    spec: &ChainSpec,
 ) -> Result<(), Error> {
     if !validator_info.is_eligible {
         return Ok(());
@@ -686,13 +698,7 @@ fn process_single_reward_and_penalty(
             state_ctxt,
         )?;
     }
-    get_inactivity_penalty_delta(
-        &mut delta,
-        validator_info,
-        inactivity_score,
-        state_ctxt,
-        spec,
-    )?;
+    get_inactivity_penalty_delta(&mut delta, validator_info, inactivity_score, rewards_ctxt)?;
 
     if delta.rewards != 0 || delta.penalties != 0 {
         let balance = balance.make_mut()?;
@@ -746,17 +752,13 @@ fn get_inactivity_penalty_delta(
     delta: &mut Delta,
     validator_info: &ValidatorInfo,
     inactivity_score: &u64,
-    state_ctxt: &StateContext,
-    spec: &ChainSpec,
+    rewards_ctxt: &RewardsAndPenaltiesContext,
 ) -> Result<(), Error> {
     if !validator_info.is_unslashed_participating_index(TIMELY_TARGET_FLAG_INDEX)? {
         let penalty_numerator = validator_info
             .effective_balance
             .safe_mul(*inactivity_score)?;
-        let penalty_denominator = spec
-            .inactivity_score_bias
-            .safe_mul(spec.inactivity_penalty_quotient_for_fork(state_ctxt.fork_name))?;
-        delta.penalize(penalty_numerator.safe_div(penalty_denominator)?)?;
+        delta.penalize(penalty_numerator.safe_div(rewards_ctxt.inactivity_penalty_denominator)?)?;
     }
     Ok(())
 }
@@ -781,10 +783,23 @@ impl RewardsAndPenaltiesContext {
         let active_increments = state_ctxt
             .total_active_balance
             .safe_div(spec.effective_balance_increment)?;
+        let inactivity_penalty_denominator =
+            if let Some(on) = spec.feature_enabled::<Eip8198>(state_ctxt.current_epoch) {
+                features::eip8198::inactivity_penalty_denominator(
+                    state_ctxt.fork_name,
+                    state_ctxt.current_epoch.saturating_sub(1u64),
+                    spec,
+                    on,
+                )?
+            } else {
+                spec.inactivity_score_bias
+                    .safe_mul(spec.inactivity_penalty_quotient_for_fork(state_ctxt.fork_name))?
+            };
 
         Ok(Self {
             unslashed_participating_increments_array,
             active_increments,
+            inactivity_penalty_denominator,
         })
     }
 
@@ -990,6 +1005,11 @@ fn compute_exit_epoch_and_update_churn(
     Ok(earliest_exit_epoch)
 }
 
+#[feature_dispatch(
+    Eip8198 => features::eip8198::get_activation_exit_churn_limit,
+    spec = spec,
+    epoch = state_ctxt.current_epoch
+)]
 fn get_activation_exit_churn_limit(
     state_ctxt: &StateContext,
     spec: &ChainSpec,
@@ -1005,6 +1025,11 @@ fn get_activation_exit_churn_limit(
     ))
 }
 
+#[feature_dispatch(
+    Eip8198 => features::eip8198::get_balance_churn_limit,
+    spec = spec,
+    epoch = state_ctxt.current_epoch
+)]
 fn get_balance_churn_limit(state_ctxt: &StateContext, spec: &ChainSpec) -> Result<u64, Error> {
     let total_active_balance = state_ctxt.total_active_balance;
     let quotient = if state_ctxt.fork_name.gloas_enabled() {

@@ -4,7 +4,36 @@
 
 The lines outside the `features/eip8198/` directories that name `Eip8198` or `features::eip8198`:
 
+- `beacon_node/beacon_chain/src/attestation_rewards.rs`: `spec.feature_enabled::<Eip8198>(state.current_epoch())`
+- `beacon_node/beacon_chain/src/attestation_rewards.rs`: `use state_processing::features::eip8198;`
+- `beacon_node/beacon_chain/src/attestation_rewards.rs`: `use types::features::Eip8198;`
+- `beacon_node/beacon_chain/src/beacon_block_reward.rs`: `let eip8198_active = self.spec.feature_enabled::<Eip8198>(state.current_epoch());`
+- `beacon_node/beacon_chain/src/beacon_block_reward.rs`: `use types::features::{Eip8198, eip8198};`
+- `beacon_node/operation_pool/src/attestation.rs`: `let eip8198_active = spec.feature_enabled::<Eip8198>(state.current_epoch());`
+- `beacon_node/operation_pool/src/attestation.rs`: `use types::features::{Eip8198, eip8198};`
+- `consensus/state_processing/src/common/altair.rs`: `Eip8198 => features::eip8198::get_base_reward_per_increment,`
+- `consensus/state_processing/src/common/altair.rs`: `use types::features::Eip8198;`
+- `consensus/state_processing/src/epoch_cache.rs`: `Some(features::eip8198::previous_epoch_base_rewards(`
+- `consensus/state_processing/src/epoch_cache.rs`: `let previous_epoch_base_rewards = if let Some(on) = spec.feature_enabled::<Eip8198>(epoch) {`
+- `consensus/state_processing/src/epoch_cache.rs`: `use types::features::Eip8198;`
+- `consensus/state_processing/src/per_block_processing.rs`: `Eip8198 => features::eip8198::compute_timestamp_at_slot,`
+- `consensus/state_processing/src/per_block_processing.rs`: `use types::features::Eip8198;`
+- `consensus/state_processing/src/per_block_processing/process_operations.rs`: `features::eip8198::get_base_reward_for_epoch(`
+- `consensus/state_processing/src/per_block_processing/process_operations.rs`: `let eip8198_active = spec.feature_enabled::<Eip8198>(current_epoch);`
+- `consensus/state_processing/src/per_block_processing/process_operations.rs`: `use types::features::{self, Eip8198};`
+- `consensus/state_processing/src/per_epoch_processing/single_pass.rs`: `Eip8198 => features::eip8198::get_activation_exit_churn_limit,`
+- `consensus/state_processing/src/per_epoch_processing/single_pass.rs`: `Eip8198 => features::eip8198::get_balance_churn_limit,`
+- `consensus/state_processing/src/per_epoch_processing/single_pass.rs`: `features::eip8198::inactivity_penalty_denominator(`
+- `consensus/state_processing/src/per_epoch_processing/single_pass.rs`: `if let Some(on) = spec.feature_enabled::<Eip8198>(state_ctxt.current_epoch) {`
+- `consensus/state_processing/src/per_epoch_processing/single_pass.rs`: `let eip8198_active = spec.feature_enabled::<Eip8198>(current_epoch);`
+- `consensus/state_processing/src/per_epoch_processing/single_pass.rs`: `types::features::eip8198::get_base_reward_for_epoch(`
+- `consensus/state_processing/src/per_epoch_processing/single_pass.rs`: `use types::features::Eip8198;`
 - `consensus/types/src/core/chain_spec.rs`: `features::eip8198::slot_duration_schedule(self)`
 - `consensus/types/src/core/chain_spec.rs`: `features::eip8198::validate_slot_duration_schedule(&spec, E::slots_per_epoch())`
 - `consensus/types/src/core/chain_spec.rs`: `if spec.feature_fork_epoch(FeatureId::Eip8198).is_some()`
 - `consensus/types/src/core/chain_spec.rs`: `self.feature_fork_epoch(FeatureId::Eip8198)?;`
+- `consensus/types/src/state/beacon_state.rs`: `Eip8198 => features::eip8198::get_activation_exit_churn_limit,`
+- `consensus/types/src/state/beacon_state.rs`: `Eip8198 => features::eip8198::get_balance_churn_limit,`
+- `consensus/types/src/state/beacon_state.rs`: `Eip8198 => features::eip8198::get_consolidation_churn_limit,`
+- `consensus/types/src/state/beacon_state.rs`: `features::{self, Eip8198},`
+- `consensus/types/src/state/epoch_cache.rs`: `features::eip8198::PreviousEpochBaseRewards,`

@@ -5,6 +5,7 @@ use eth2::types::{
 use safe_arith::SafeArith;
 use serde_utils::quoted_u64::Quoted;
 use state_processing::common::base::{self, SqrtTotalActiveBalance};
+use state_processing::features::eip8198;
 use state_processing::per_epoch_processing::altair::{
     process_inactivity_updates_slow, process_justification_and_finalization,
 };
@@ -30,6 +31,7 @@ use store::consts::altair::{
 };
 use tracing::debug;
 use types::consts::altair::WEIGHT_DENOMINATOR;
+use types::features::Eip8198;
 use types::{BeaconState, Epoch, EthSpec, RelativeEpoch};
 
 impl<T: BeaconChainTypes> BeaconChain<T> {
@@ -179,7 +181,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 total_active_balance.safe_div(spec.effective_balance_increment)?;
 
             let base_reward_per_increment =
-                BaseRewardPerIncrement::new(total_active_balance, spec)?;
+                BaseRewardPerIncrement::new(total_active_balance, previous_epoch, spec)?;
 
             for effective_balance_eth in
                 1..=self.max_effective_balance_increment_steps(previous_epoch)?
@@ -268,9 +270,22 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
 
                         let penalty_numerator = effective_balance
                             .safe_mul(state.get_inactivity_score(validator_index)?)?;
-                        let penalty_denominator = spec.inactivity_score_bias.safe_mul(
-                            spec.inactivity_penalty_quotient_for_fork(state.fork_name_unchecked()),
-                        )?;
+                        let penalty_denominator = if let Some(on) =
+                            spec.feature_enabled::<Eip8198>(state.current_epoch())
+                        {
+                            eip8198::inactivity_penalty_denominator(
+                                state.fork_name_unchecked(),
+                                previous_epoch,
+                                spec,
+                                on,
+                            )?
+                        } else {
+                            spec.inactivity_score_bias.safe_mul(
+                                spec.inactivity_penalty_quotient_for_fork(
+                                    state.fork_name_unchecked(),
+                                ),
+                            )?
+                        };
                         inactivity_penalty =
                             -(penalty_numerator.safe_div(penalty_denominator)? as i64);
                     } else if flag_index == TIMELY_SOURCE_FLAG_INDEX {

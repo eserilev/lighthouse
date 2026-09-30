@@ -1,14 +1,18 @@
 //! EIP-8198: a slot duration schedule, so that the slot duration can change at the EIP-8198 fork.
 //!
 //! The schedule type and its time functions are generic (`crate::core::SlotDurationSchedule`).
-//! This feature owns the `SLOT_DURATION_SCHEDULE` config key and the rule that the slot duration
-//! changes only at the EIP-8198 fork epoch.
+//! This feature owns the `SLOT_DURATION_SCHEDULE` config key, the rule that the slot duration
+//! changes only at the EIP-8198 fork epoch, and the spec functions that scale with the slot
+//! duration.
 
 use crate::core::{ChainSpec, Epoch, SlotDurationSchedule, SlotDurationScheduleEntry};
 use crate::features::FeatureId;
 
+mod rescaling;
 #[cfg(test)]
 mod tests;
+
+pub use rescaling::*;
 
 /// The `SLOT_DURATION_SCHEDULE` of the config, if the config has one.
 pub fn slot_duration_schedule(spec: &ChainSpec) -> Option<&SlotDurationSchedule> {

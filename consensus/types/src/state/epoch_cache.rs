@@ -4,6 +4,7 @@ use safe_arith::{ArithError, SafeArith};
 
 use crate::{
     core::{ChainSpec, Epoch, Hash256, Slot},
+    features::eip8198::PreviousEpochBaseRewards,
     state::{ActivationQueue, BeaconStateError},
 };
 
@@ -35,6 +36,8 @@ struct Inner {
     ///
     /// Keyed by `effective_balance / effective_balance_increment`.
     base_rewards: Vec<u64>,
+    /// Base rewards of the epoch before, if the EIP-8198 feature is active.
+    previous_epoch_base_rewards: Option<PreviousEpochBaseRewards>,
     /// Validator activation queue.
     activation_queue: ActivationQueue,
     /// Effective balance increment.
@@ -77,6 +80,7 @@ impl EpochCache {
         key: EpochCacheKey,
         effective_balances: Vec<u64>,
         base_rewards: Vec<u64>,
+        previous_epoch_base_rewards: Option<PreviousEpochBaseRewards>,
         activation_queue: ActivationQueue,
         spec: &ChainSpec,
     ) -> EpochCache {
@@ -85,6 +89,7 @@ impl EpochCache {
                 key,
                 effective_balances,
                 base_rewards,
+                previous_epoch_base_rewards,
                 activation_queue,
                 effective_balance_increment: spec.effective_balance_increment,
             })),
@@ -142,6 +147,16 @@ impl EpochCache {
             .ok_or(EpochCacheError::EffectiveBalanceOutOfBounds {
                 effective_balance_eth,
             })
+    }
+
+    pub fn previous_epoch_base_rewards(
+        &self,
+    ) -> Result<Option<&PreviousEpochBaseRewards>, EpochCacheError> {
+        let inner = self
+            .inner
+            .as_ref()
+            .ok_or(EpochCacheError::CacheNotInitialized)?;
+        Ok(inner.previous_epoch_base_rewards.as_ref())
     }
 
     pub fn activation_queue(&self) -> Result<&ActivationQueue, EpochCacheError> {
