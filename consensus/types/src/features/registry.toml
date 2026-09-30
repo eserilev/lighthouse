@@ -3,3 +3,6 @@
 # [eip1234]
 # min_fork = "Heze"
 # fork_version = { mainnet = "0x12340000", minimal = "0x12340001", gnosis = "0x12340064" }
+# # Optional. The type is relative to `generated.rs` and implements `Default`, `Clone`, `Debug`,
+# # `PartialEq` and serde.
+# config = [{ name = "EIP1234_LIMIT", type = "u64" }]

@@ -22,6 +22,22 @@ pub struct FeatureEntry {
     pub name: String,
     pub min_fork: String,
     pub fork_versions: BTreeMap<String, [u8; 4]>,
+    pub config: Vec<ConfigKey>,
+}
+
+/// A config key of a feature, with the Rust type of its value.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConfigKey {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: String,
+}
+
+impl ConfigKey {
+    fn field(&self) -> String {
+        self.name.to_ascii_lowercase()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -29,6 +45,8 @@ pub struct FeatureEntry {
 struct RawFeature {
     min_fork: String,
     fork_version: BTreeMap<String, String>,
+    #[serde(default)]
+    config: Vec<ConfigKey>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,6 +113,7 @@ impl Registry {
                 name,
                 min_fork: raw.min_fork,
                 fork_versions,
+                config: raw.config,
             });
         }
         let registry = Registry { features };
@@ -122,6 +141,7 @@ impl Registry {
 
     fn validate(&self, forks: &[String]) -> Result<(), RegistryError> {
         let mut type_names = BTreeSet::new();
+        let mut config_keys = BTreeSet::new();
         let mut versions: BTreeMap<(&str, [u8; 4]), &str> = BTreeMap::new();
 
         for feature in &self.features {
@@ -141,6 +161,44 @@ impl Registry {
                     format!(
                         "feature `{}` has the same type name as another feature",
                         feature.name
+                    ),
+                ));
+            }
+            let key = feature.name.to_ascii_uppercase();
+            for name in [format!("{key}_FORK_VERSION"), format!("{key}_FORK_EPOCH")]
+                .into_iter()
+                .chain(feature.config.iter().map(|config| config.name.clone()))
+            {
+                if !is_config_key(&name) {
+                    return Err(error(
+                        "F-R08",
+                        format!(
+                            "feature `{}`: config key `{name}` must be upper case ASCII letters, \
+                             digits and `_`, and start with a letter",
+                            feature.name
+                        ),
+                    ));
+                }
+                if !config_keys.insert(name.clone()) {
+                    return Err(error(
+                        "F-R08",
+                        format!(
+                            "feature `{}`: config key `{name}` is not unique",
+                            feature.name
+                        ),
+                    ));
+                }
+            }
+            if let Some(config) = feature
+                .config
+                .iter()
+                .find(|config| config.ty.trim().is_empty())
+            {
+                return Err(error(
+                    "F-R08",
+                    format!(
+                        "feature `{}`: config key `{}` has no type",
+                        feature.name, config.name
                     ),
                 ));
             }
@@ -193,6 +251,12 @@ fn is_feature_name(name: &str) -> bool {
     let mut chars = name.chars();
     chars.next().is_some_and(|c| c.is_ascii_lowercase())
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+fn is_config_key(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_uppercase())
+        && chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
 }
 
 fn parse_fork_version(feature: &str, version: &str) -> Result<[u8; 4], RegistryError> {
@@ -327,7 +391,10 @@ pub fn generate(registry: &Registry) -> Result<String, fmt::Error> {
     }
 
     writeln!(out)?;
-    writeln!(out, "/// The fork version and fork epoch of each feature.")?;
+    writeln!(
+        out,
+        "/// The fork version, fork epoch and config values of each feature."
+    )?;
     writeln!(
         out,
         "#[cfg_attr(feature = \"arbitrary\", derive(arbitrary::Arbitrary))]"
@@ -338,6 +405,9 @@ pub fn generate(registry: &Registry) -> Result<String, fmt::Error> {
         writeln!(out, "pub {}_fork_version: [u8; 4],", feature.name)?;
         writeln!(out, "/// `None` means that the feature never activates.")?;
         writeln!(out, "pub {}_fork_epoch: Option<Epoch>,", feature.name)?;
+        for config in &feature.config {
+            writeln!(out, "pub {}: {},", config.field(), config.ty)?;
+        }
     }
     writeln!(out, "}}")?;
     writeln!(out)?;
@@ -354,6 +424,9 @@ pub fn generate(registry: &Registry) -> Result<String, fmt::Error> {
                 version_literal(&feature.fork_versions[*network])
             )?;
             writeln!(out, "{}_fork_epoch: None,", feature.name)?;
+            for config in &feature.config {
+                writeln!(out, "{}: Default::default(),", config.field())?;
+            }
         }
         writeln!(out, "}}")?;
         writeln!(out, "}}")?;
@@ -417,6 +490,14 @@ pub fn generate(registry: &Registry) -> Result<String, fmt::Error> {
             "pub {}_fork_epoch: Option<MaybeQuoted<Epoch>>,",
             feature.name
         )?;
+        for config in &feature.config {
+            writeln!(
+                out,
+                "#[serde(rename = \"{}\", default, skip_serializing_if = \"Option::is_none\")]",
+                config.name
+            )?;
+            writeln!(out, "pub {}: Option<{}>,", config.field(), config.ty)?;
+        }
     }
     writeln!(out, "}}")?;
     writeln!(out)?;
@@ -436,13 +517,20 @@ pub fn generate(registry: &Registry) -> Result<String, fmt::Error> {
             "{name}_fork_epoch: spec.{name}_fork_epoch.map(|value| MaybeQuoted {{ value }}),",
             name = feature.name
         )?;
+        for config in &feature.config {
+            writeln!(
+                out,
+                "{field}: Some(Clone::clone(&spec.{field})),",
+                field = config.field()
+            )?;
+        }
     }
     writeln!(out, "}}")?;
     writeln!(out, "}}")?;
     writeln!(out)?;
     writeln!(
         out,
-        "/// Set the fork epochs of `spec`, and each fork version that the config has."
+        "/// Set the fork epochs of `spec`, and each fork version and config value that the config has."
     )?;
     writeln!(
         out,
@@ -465,6 +553,13 @@ pub fn generate(registry: &Registry) -> Result<String, fmt::Error> {
             "spec.{name}_fork_epoch = self.{name}_fork_epoch.map(|epoch| epoch.value);",
             name = feature.name
         )?;
+        for config in &feature.config {
+            writeln!(
+                out,
+                "if let Some(value) = &self.{field} {{ spec.{field}.clone_from(value); }}",
+                field = config.field()
+            )?;
+        }
     }
     writeln!(out, "}}")?;
     writeln!(out, "}}")?;
