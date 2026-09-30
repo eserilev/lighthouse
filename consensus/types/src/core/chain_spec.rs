@@ -405,7 +405,7 @@ impl ChainSpec {
             .into_iter()
             .find(|(_, fork_epoch)| *fork_epoch > epoch);
         match (next_real_fork, next_feature_fork) {
-            (Some((fork, fork_epoch)), Some((_, feature_epoch))) if fork_epoch <= feature_epoch => {
+            (Some((fork, fork_epoch)), Some((_, feature_epoch))) if fork_epoch < feature_epoch => {
                 self.fork_version_for_name(fork)
             }
             (_, Some((_, feature_epoch))) => self.fork_version_for_epoch(feature_epoch),
@@ -5234,7 +5234,7 @@ mod yaml_tests {
         );
         assert_eq!(
             spec.next_fork_version::<MainnetEthSpec>(Epoch::new(4).start_slot(32)),
-            spec.heze_fork_version
+            spec.features.eip8198_fork_version
         );
         assert_eq!(spec.all_digest_epochs().filter(|e| *e == 5).count(), 1);
     }
@@ -5718,6 +5718,62 @@ mod slot_duration_schedule_properties {
                     .compute_slot_at_time_ms(SLOTS_PER_EPOCH, genesis_time_ms, genesis_time_ms - 1)
                     .is_err()
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod feature_fork_schedule_properties {
+    use super::*;
+    use proptest::prelude::*;
+
+    const EPOCHS: u64 = 150;
+
+    fn spec(heze_epoch: u64, eip8198_epoch: Option<u64>) -> ChainSpec {
+        let mut spec = ForkName::Gloas.make_genesis_spec(ChainSpec::mainnet());
+        spec.heze_fork_epoch = Some(Epoch::new(heze_epoch));
+        spec.features.eip8198_fork_epoch = eip8198_epoch.map(Epoch::new);
+        spec
+    }
+
+    proptest! {
+        #[test]
+        fn version_schedule_is_consistent(
+            heze_epoch in 0u64..50,
+            eip8198_delay in proptest::option::of(0u64..50),
+        ) {
+            let spec = spec(heze_epoch, eip8198_delay.map(|delay| heze_epoch + delay));
+            let digest_epochs: Vec<Epoch> = spec.all_digest_epochs().collect();
+            let eip8198_version = spec.features.eip8198_fork_version;
+
+            for epoch in (0..EPOCHS).map(Epoch::new) {
+                let version = spec.fork_version_for_epoch(epoch);
+                let fork = spec.fork_at_epoch(epoch);
+
+                prop_assert_eq!(fork.current_version, version);
+                prop_assert!(fork.epoch <= epoch);
+
+                if epoch > 0 && version != spec.fork_version_for_epoch(epoch - 1) {
+                    prop_assert!(digest_epochs.contains(&epoch));
+                    prop_assert_eq!(fork.epoch, epoch);
+                }
+
+                if version == eip8198_version {
+                    prop_assert!(spec.feature_enabled::<Eip8198>(epoch).is_some());
+                    prop_assert_eq!(fork.previous_version, spec.heze_fork_version);
+                } else {
+                    prop_assert!(spec.feature_enabled::<Eip8198>(epoch).is_none());
+                }
+
+                let next_version = digest_epochs
+                    .iter()
+                    .find(|digest_epoch| **digest_epoch > epoch)
+                    .map_or(version, |digest_epoch| spec.fork_version_for_epoch(*digest_epoch));
+                prop_assert_eq!(
+                    spec.next_fork_version::<MainnetEthSpec>(epoch.start_slot(32)),
+                    next_version
+                );
+            }
         }
     }
 }
