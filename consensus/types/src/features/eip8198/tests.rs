@@ -1,5 +1,5 @@
 use super::*;
-use crate::core::{Config, EthSpec, MainnetEthSpec, Slot};
+use crate::core::{Config, Epoch, EthSpec, MainnetEthSpec, Slot, SlotDurationScheduleEntry};
 use crate::features::{Eip8198, FeatureConfig};
 use crate::fork::ForkName;
 use std::time::Duration;
