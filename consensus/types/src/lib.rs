@@ -21,6 +21,7 @@ pub mod data;
 pub mod deposit;
 pub mod execution;
 pub mod exit;
+pub mod features;
 pub mod fork;
 pub mod kzg_ext;
 pub mod light_client;

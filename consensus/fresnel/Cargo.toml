@@ -1,0 +1,11 @@
+[package]
+name = "fresnel"
+version = "0.1.0"
+authors = ["Eitan Seri-Levi <eitan@sigmaprime.io>"]
+edition = { workspace = true }
+publish = false
+
+[dependencies]
+clap = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }

@@ -1,0 +1,7 @@
+[eip8198]
+min_fork = "Heze"
+fork_version = { mainnet = "0xe8198000", minimal = "0xe8198001", gnosis = "0xe8198064" }
+
+[eip_toy]
+min_fork = "Gloas"
+fork_version = { mainnet = "0xe0000000", minimal = "0xe0000001", gnosis = "0xe0000064" }

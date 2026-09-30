@@ -8,6 +8,7 @@ use crate::core::{
     AltairPreset, BasePreset, BellatrixPreset, CapellaPreset, ChainSpec, Config, DenebPreset,
     ElectraPreset, EthSpec, FuluPreset, GloasPreset, HezePreset, consts,
 };
+use crate::features::FeatureConfig;
 
 /// Fusion of a runtime-config with the compile-time preset values.
 ///
@@ -21,6 +22,9 @@ use crate::core::{
 pub struct ConfigAndPreset {
     #[serde(flatten)]
     pub config: Config,
+
+    #[serde(flatten)]
+    pub features: FeatureConfig,
 
     #[serde(flatten)]
     pub base_preset: BasePreset,
@@ -58,6 +62,7 @@ impl ConfigAndPreset {
         let capella_preset = CapellaPreset::from_chain_spec::<E>(spec);
         let deneb_preset = DenebPreset::from_chain_spec::<E>(spec);
         let extra_fields = get_extra_fields(spec);
+        let features = FeatureConfig::from_spec(&spec.features);
 
         if !spec.is_gloas_scheduled() {
             // Remove gas limit schedule for backwards-compatibility.
@@ -72,6 +77,7 @@ impl ConfigAndPreset {
 
             ConfigAndPreset::Heze(ConfigAndPresetHeze {
                 config,
+                features,
                 base_preset,
                 altair_preset,
                 bellatrix_preset,
@@ -90,6 +96,7 @@ impl ConfigAndPreset {
 
             ConfigAndPreset::Gloas(ConfigAndPresetGloas {
                 config,
+                features,
                 base_preset,
                 altair_preset,
                 bellatrix_preset,
@@ -106,6 +113,7 @@ impl ConfigAndPreset {
 
             ConfigAndPreset::Fulu(ConfigAndPresetFulu {
                 config,
+                features,
                 base_preset,
                 altair_preset,
                 bellatrix_preset,
@@ -123,6 +131,7 @@ impl ConfigAndPreset {
 
             ConfigAndPreset::Electra(ConfigAndPresetElectra {
                 config,
+                features,
                 base_preset,
                 altair_preset,
                 bellatrix_preset,
