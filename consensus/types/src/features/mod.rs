@@ -252,4 +252,27 @@ mod tests {
             .expect("serialize the config");
         assert!(yaml.contains("HEZE_TEST_FEATURE_LIMIT: 7"), "{yaml}");
     }
+
+    #[test]
+    fn optional_config_values_stay_unset_until_a_config_sets_them() {
+        let spec = spec();
+        assert_eq!(spec.features.heze_test_feature_cap, None);
+        let yaml = yaml_serde::to_string(&FeatureConfig::from_spec(&spec.features))
+            .expect("serialize the config");
+        assert!(!yaml.contains("HEZE_TEST_FEATURE_CAP"), "{yaml}");
+
+        let config: FeatureConfig =
+            yaml_serde::from_str("HEZE_TEST_FEATURE_CAP: 7").expect("config with the cap");
+        let spec = spec.with_feature_config(&config);
+        assert_eq!(spec.features.heze_test_feature_cap, Some(7));
+
+        let config: FeatureConfig = yaml_serde::from_str("HEZE_TEST_FEATURE_FORK_EPOCH: 5")
+            .expect("config without the cap");
+        let spec = spec.with_feature_config(&config);
+        assert_eq!(spec.features.heze_test_feature_cap, Some(7));
+
+        let yaml = yaml_serde::to_string(&FeatureConfig::from_spec(&spec.features))
+            .expect("serialize the config");
+        assert!(yaml.contains("HEZE_TEST_FEATURE_CAP: 7"), "{yaml}");
+    }
 }

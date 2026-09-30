@@ -55,6 +55,7 @@ pub struct FeatureSpec {
     /// `None` means that the feature never activates.
     pub heze_test_feature_fork_epoch: Option<Epoch>,
     pub heze_test_feature_limit: u64,
+    pub heze_test_feature_cap: Option<u64>,
     pub gloas_test_feature_fork_version: [u8; 4],
     /// `None` means that the feature never activates.
     pub gloas_test_feature_fork_epoch: Option<Epoch>,
@@ -66,6 +67,7 @@ impl FeatureSpec {
             heze_test_feature_fork_version: [0xf0, 0x00, 0x00, 0x00],
             heze_test_feature_fork_epoch: None,
             heze_test_feature_limit: Default::default(),
+            heze_test_feature_cap: None,
             gloas_test_feature_fork_version: [0xf1, 0x00, 0x00, 0x00],
             gloas_test_feature_fork_epoch: None,
         }
@@ -76,6 +78,7 @@ impl FeatureSpec {
             heze_test_feature_fork_version: [0xf0, 0x00, 0x00, 0x01],
             heze_test_feature_fork_epoch: None,
             heze_test_feature_limit: Default::default(),
+            heze_test_feature_cap: None,
             gloas_test_feature_fork_version: [0xf1, 0x00, 0x00, 0x01],
             gloas_test_feature_fork_epoch: None,
         }
@@ -86,6 +89,7 @@ impl FeatureSpec {
             heze_test_feature_fork_version: [0xf0, 0x00, 0x00, 0x64],
             heze_test_feature_fork_epoch: None,
             heze_test_feature_limit: Default::default(),
+            heze_test_feature_cap: None,
             gloas_test_feature_fork_version: [0xf1, 0x00, 0x00, 0x64],
             gloas_test_feature_fork_epoch: None,
         }
@@ -130,6 +134,12 @@ pub struct FeatureConfig {
     )]
     pub heze_test_feature_limit: Option<u64>,
     #[serde(
+        rename = "HEZE_TEST_FEATURE_CAP",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub heze_test_feature_cap: Option<u64>,
+    #[serde(
         rename = "GLOAS_TEST_FEATURE_FORK_VERSION",
         default,
         skip_serializing_if = "Option::is_none",
@@ -153,6 +163,7 @@ impl FeatureConfig {
                 .heze_test_feature_fork_epoch
                 .map(|value| MaybeQuoted { value }),
             heze_test_feature_limit: Some(Clone::clone(&spec.heze_test_feature_limit)),
+            heze_test_feature_cap: Clone::clone(&spec.heze_test_feature_cap),
             gloas_test_feature_fork_version: Some(spec.gloas_test_feature_fork_version),
             gloas_test_feature_fork_epoch: spec
                 .gloas_test_feature_fork_epoch
@@ -169,6 +180,9 @@ impl FeatureConfig {
             self.heze_test_feature_fork_epoch.map(|epoch| epoch.value);
         if let Some(value) = &self.heze_test_feature_limit {
             spec.heze_test_feature_limit.clone_from(value);
+        }
+        if let Some(value) = &self.heze_test_feature_cap {
+            spec.heze_test_feature_cap = Some(Clone::clone(value));
         }
         if let Some(version) = self.gloas_test_feature_fork_version {
             spec.gloas_test_feature_fork_version = version;

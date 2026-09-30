@@ -67,6 +67,11 @@ fn output_lists_each_feature() {
         "pub slot_duration_schedule: Option<crate::core::SlotDurationSchedule>,",
         "slot_duration_schedule: Some(Clone::clone(&spec.slot_duration_schedule)),",
         "if let Some(value) = &self.slot_duration_schedule {\n            spec.slot_duration_schedule.clone_from(value);\n        }",
+        "pub min_blob_data_retention_ms: Option<u64>,",
+        "min_blob_data_retention_ms: None,",
+        "rename = \"MIN_BLOB_DATA_RETENTION_MS\"",
+        "min_blob_data_retention_ms: Clone::clone(&spec.min_blob_data_retention_ms),",
+        "if let Some(value) = &self.min_blob_data_retention_ms {\n            spec.min_blob_data_retention_ms = Some(Clone::clone(value));\n        }",
     ] {
         assert!(code.contains(expected), "missing `{expected}` in:\n{code}");
     }
