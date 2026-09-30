@@ -18,6 +18,7 @@ use crate::{
         APPLICATION_DOMAIN_BUILDER, Address, ApplicationDomain, EnrForkId, Epoch, EthSpec,
         EthSpecId, ExecutionBlockHash, Hash256, MainnetEthSpec, Slot, Uint256,
     },
+    features::FeatureSpec,
     fork::{Fork, ForkData, ForkName},
 };
 
@@ -284,6 +285,11 @@ pub struct ChainSpec {
     pub heze_fork_version: [u8; 4],
     /// The Heze fork epoch is optional, with `None` representing "Heze never happens".
     pub heze_fork_epoch: Option<Epoch>,
+
+    /*
+     * Experimental features, generated from `features/registry.toml`
+     */
+    pub features: FeatureSpec,
 
     /*
      * Networking
@@ -1455,6 +1461,7 @@ impl ChainSpec {
              */
             heze_fork_version: [0x08, 0x00, 0x00, 0x00],
             heze_fork_epoch: None,
+            features: FeatureSpec::mainnet(),
             max_transactions_bytes_per_inclusion_list: 8192,
             max_request_inclusion_list: 16,
             min_slots_for_inclusion_lists_requests: 1,
@@ -1615,6 +1622,7 @@ impl ChainSpec {
             // Heze
             heze_fork_version: [0x08, 0x00, 0x00, 0x01],
             heze_fork_epoch: None,
+            features: FeatureSpec::minimal(),
 
             /*
              * Derived time values (set by `compute_derived_values()`)
@@ -1913,6 +1921,7 @@ impl ChainSpec {
              */
             heze_fork_version: [0x08, 0x00, 0x00, 0x64],
             heze_fork_epoch: None,
+            features: FeatureSpec::gnosis(),
             max_transactions_bytes_per_inclusion_list: 8192,
             max_request_inclusion_list: 16,
             min_slots_for_inclusion_lists_requests: 1,
@@ -2841,7 +2850,7 @@ impl Default for Config {
 
 /// Util function to serialize a `None` fork epoch value
 /// as `Epoch::max_value()`.
-fn serialize_fork_epoch<S>(val: &Option<MaybeQuoted<Epoch>>, s: S) -> Result<S::Ok, S::Error>
+pub fn serialize_fork_epoch<S>(val: &Option<MaybeQuoted<Epoch>>, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
@@ -2855,7 +2864,9 @@ where
 }
 
 /// Util function to deserialize a u64::max() fork epoch as `None`.
-fn deserialize_fork_epoch<'de, D>(deserializer: D) -> Result<Option<MaybeQuoted<Epoch>>, D::Error>
+pub fn deserialize_fork_epoch<'de, D>(
+    deserializer: D,
+) -> Result<Option<MaybeQuoted<Epoch>>, D::Error>
 where
     D: Deserializer<'de>,
 {

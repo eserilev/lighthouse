@@ -24,6 +24,7 @@ pub use chain_spec::{
     BlobParameters, BlobSchedule, ChainSpec, Config, DEFAULT_GAS_LIMIT, Domain, EpochSchedule,
     GasLimitSchedule, GasLimitScheduleEntry,
 };
+pub use chain_spec::{deserialize_fork_epoch, serialize_fork_epoch};
 pub use config_and_preset::{
     ConfigAndPreset, ConfigAndPresetDeneb, ConfigAndPresetElectra, ConfigAndPresetFulu,
     ConfigAndPresetGloas, ConfigAndPresetHeze, get_extra_fields,

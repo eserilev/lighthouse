@@ -475,6 +475,21 @@ jobs:
         cache-target: release
     - name: Run Makefile to trigger the bash script
       run: make cli-local
+  features-check:
+    name: features-check
+    needs: [check-labels]
+    if: needs.check-labels.outputs.skip_ci != 'true'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+    - name: Get latest version of stable Rust
+      uses: moonrepo/setup-rust@v1
+      with:
+        channel: stable
+        cache-target: release
+        components: rustfmt
+    - name: Check the generated experimental feature code
+      run: make features-check
   cargo-hack:
     name: cargo-hack
     needs: [check-labels]
@@ -534,6 +549,7 @@ jobs:
       'cargo-udeps',
       'compile-with-beta-compiler',
       'cli-check',
+      'features-check',
       'lockbud',
       'cargo-hack',
       'cargo-sort',

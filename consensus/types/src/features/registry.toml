@@ -1,0 +1,5 @@
+# Experimental consensus features. Run `make features` after each change.
+#
+# [eip1234]
+# min_fork = "Heze"
+# fork_version = { mainnet = "0x12340000", minimal = "0x12340001", gnosis = "0x12340064" }

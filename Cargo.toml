@@ -52,6 +52,7 @@ members = [
     "consensus/fast_confirmation",
     "consensus/fixed_bytes",
     "consensus/fork_choice",
+    "consensus/fresnel",
     "consensus/int_to_bytes",
     "consensus/merkle_proof",
     "consensus/proto_array",
