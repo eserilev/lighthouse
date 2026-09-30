@@ -28,8 +28,16 @@ The lines outside the `features/eip8198/` directories that name `Eip8198` or `fe
 - `consensus/state_processing/src/per_epoch_processing/single_pass.rs`: `let eip8198_active = spec.feature_enabled::<Eip8198>(current_epoch);`
 - `consensus/state_processing/src/per_epoch_processing/single_pass.rs`: `types::features::eip8198::get_base_reward_for_epoch(`
 - `consensus/state_processing/src/per_epoch_processing/single_pass.rs`: `use types::features::Eip8198;`
+- `consensus/types/src/core/chain_spec.rs`: `Eip8198 => features::eip8198::compute_slot_component_duration_at::<E>,`
+- `consensus/types/src/core/chain_spec.rs`: `Eip8198 => features::eip8198::get_aggregate_attestation_due::<E>,`
+- `consensus/types/src/core/chain_spec.rs`: `Eip8198 => features::eip8198::get_attestation_due::<E>,`
+- `consensus/types/src/core/chain_spec.rs`: `Eip8198 => features::eip8198::get_contribution_message_due::<E>,`
+- `consensus/types/src/core/chain_spec.rs`: `Eip8198 => features::eip8198::get_payload_attestation_due::<E>,`
+- `consensus/types/src/core/chain_spec.rs`: `Eip8198 => features::eip8198::get_payload_due::<E>,`
+- `consensus/types/src/core/chain_spec.rs`: `Eip8198 => features::eip8198::get_sync_message_due::<E>,`
 - `consensus/types/src/core/chain_spec.rs`: `features::eip8198::slot_duration_schedule(self)`
 - `consensus/types/src/core/chain_spec.rs`: `features::eip8198::validate_slot_duration_schedule(&spec, E::slots_per_epoch())`
+- `consensus/types/src/core/chain_spec.rs`: `features::{self, Eip8198, FeatureId, FeatureSpec},`
 - `consensus/types/src/core/chain_spec.rs`: `if spec.feature_fork_epoch(FeatureId::Eip8198).is_some()`
 - `consensus/types/src/core/chain_spec.rs`: `self.feature_fork_epoch(FeatureId::Eip8198)?;`
 - `consensus/types/src/state/beacon_state.rs`: `Eip8198 => features::eip8198::get_activation_exit_churn_limit,`

@@ -2,6 +2,7 @@ use super::*;
 use crate::core::{Config, EthSpec, MainnetEthSpec, Slot};
 use crate::features::{Eip8198, FeatureConfig};
 use crate::fork::ForkName;
+use std::time::Duration;
 
 type E = MainnetEthSpec;
 
@@ -201,5 +202,58 @@ fn slot_time_mapping_across_slot_duration_changes() {
         );
         assert_eq!(slot_at(time_at(slot)), slot, "slot {slot}");
         assert_eq!(slot_at(time_at(slot + 1) - 1), slot, "slot {slot}");
+    }
+}
+
+#[test]
+fn deadlines_use_the_slot_duration_at_the_fork() {
+    let mut spec = heze_spec();
+    spec.features.eip8198_fork_epoch = Some(Epoch::new(10));
+    spec.features.slot_duration_schedule = Some(schedule(&[(0, 12000), (10, 6000)]));
+    let pre_fork_slot = Slot::new(319);
+    let at_fork = |basis_points: u64| Duration::from_millis(basis_points * 6000 / 10000);
+
+    assert_eq!(
+        spec.get_attestation_due::<E>(pre_fork_slot),
+        Duration::from_millis(3000)
+    );
+    assert_eq!(
+        spec.get_payload_due::<E>(pre_fork_slot),
+        Duration::from_millis(6000)
+    );
+    assert_eq!(
+        spec.compute_slot_component_duration_at::<E>(spec.proposer_reorg_cutoff_bps, pre_fork_slot),
+        spec.compute_slot_component_duration(spec.proposer_reorg_cutoff_bps)
+    );
+
+    for slot in [Slot::new(320), Slot::new(700)] {
+        assert_eq!(
+            spec.get_attestation_due::<E>(slot),
+            at_fork(spec.attestation_due_bps_gloas)
+        );
+        assert_eq!(
+            spec.get_aggregate_attestation_due::<E>(slot),
+            at_fork(spec.aggregate_due_bps_gloas)
+        );
+        assert_eq!(
+            spec.get_sync_message_due::<E>(slot),
+            at_fork(spec.sync_message_due_bps_gloas)
+        );
+        assert_eq!(
+            spec.get_contribution_message_due::<E>(slot),
+            at_fork(spec.contribution_due_bps_gloas)
+        );
+        assert_eq!(
+            spec.get_payload_due::<E>(slot),
+            at_fork(spec.payload_due_bps)
+        );
+        assert_eq!(
+            spec.get_payload_attestation_due::<E>(slot),
+            at_fork(spec.payload_attestation_due_bps)
+        );
+        assert_eq!(
+            spec.compute_slot_component_duration_at::<E>(spec.proposer_reorg_cutoff_bps, slot),
+            Ok(at_fork(spec.proposer_reorg_cutoff_bps))
+        );
     }
 }
