@@ -102,8 +102,11 @@ impl ChainSpec {
         self
     }
 
-    /// Check that each scheduled feature activates at or after the epoch of its `MIN_FORK`.
+    /// Check that each scheduled feature activates at or after the epoch of its `MIN_FORK`, and
+    /// that each slot duration change is at the EIP-8198 fork epoch.
     pub fn validate_features(&self) -> Result<(), String> {
+        self.slot_duration_schedule()
+            .validate_changes(self.feature_fork_epoch(FeatureId::Eip8198))?;
         for (id, epoch) in self.scheduled_features() {
             let min_fork = id.min_fork();
             match self.fork_epoch(min_fork) {

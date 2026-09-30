@@ -191,7 +191,7 @@ pub fn get_extra_fields(spec: &ChainSpec) -> HashMap<String, Value> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{Epoch, GasLimitSchedule, GasLimitScheduleEntry, MainnetEthSpec};
+    use crate::{Epoch, ForkName, GasLimitSchedule, GasLimitScheduleEntry, MainnetEthSpec};
     use std::fs::File;
     use tempfile::NamedTempFile;
 
@@ -227,6 +227,25 @@ mod test {
         let from: ConfigAndPresetGloas =
             yaml_serde::from_reader(reader).expect("error while deserializing");
         assert_eq!(ConfigAndPreset::Gloas(from), yamlconfig);
+    }
+
+    #[test]
+    fn scheduled_feature_fork_epoch_json_round_trip() {
+        let mut spec = ForkName::Heze.make_genesis_spec(ChainSpec::mainnet());
+        spec.features.eip8198_fork_epoch = Some(Epoch::new(10));
+        let config = ConfigAndPreset::from_chain_spec::<MainnetEthSpec>(&spec);
+        let json = serde_json::to_value(&config).expect("should serialize");
+        assert_eq!(
+            json.get("EIP8198_FORK_EPOCH"),
+            Some(&Value::String("10".to_string()))
+        );
+
+        let from: ConfigAndPresetHeze = serde_json::from_value(json).expect("should deserialize");
+        assert_eq!(
+            from.features.eip8198_fork_epoch.map(|epoch| epoch.value),
+            Some(Epoch::new(10))
+        );
+        assert_eq!(ConfigAndPreset::Heze(from), config);
     }
 
     #[test]

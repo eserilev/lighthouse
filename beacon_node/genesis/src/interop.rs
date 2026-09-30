@@ -259,6 +259,28 @@ mod test {
         );
     }
 
+    #[test]
+    fn feature_fork_at_genesis() {
+        let mut spec = types::ForkName::Heze.make_genesis_spec(TestEthSpec::default_spec());
+        spec.features.eip8198_fork_epoch = Some(types::Epoch::new(0));
+        let keypairs = generate_deterministic_keypairs(16);
+
+        let state = interop_genesis_state::<TestEthSpec>(
+            &keypairs,
+            42,
+            Hash256::from_slice(DEFAULT_ETH1_BLOCK_HASH),
+            None,
+            &spec,
+        )
+        .expect("should build state");
+
+        assert_eq!(state.fork(), spec.fork_at_epoch(types::Epoch::new(0)));
+        assert_eq!(
+            state.fork().current_version,
+            spec.features.eip8198_fork_version
+        );
+    }
+
     /// Verify the derived `progressive_container` root of a Gloas `BeaconState` against a manual
     /// computation from its 46 field roots (EIP-7688).
     ///

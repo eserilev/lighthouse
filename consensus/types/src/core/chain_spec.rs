@@ -555,13 +555,12 @@ impl ChainSpec {
         let current_fork_name = self.fork_name_at_epoch(epoch);
 
         if let Some((id, feature_epoch)) = self.feature_fork_at_epoch(epoch) {
+            let current_fork_epoch = self.fork_epoch(current_fork_name).unwrap_or(Epoch::new(0));
             let previous_version = self
                 .scheduled_features()
                 .into_iter()
                 .take_while(|(other, _)| *other != id)
-                .filter(|(_, other_epoch)| {
-                    *other_epoch >= self.fork_epoch(current_fork_name).unwrap_or(Epoch::new(0))
-                })
+                .filter(|(_, other_epoch)| *other_epoch >= current_fork_epoch)
                 .last()
                 .map(|(other, _)| self.features.fork_version(other))
                 .unwrap_or_else(|| self.fork_version_for_name(current_fork_name));
@@ -2383,12 +2382,7 @@ impl SlotDurationSchedule {
         start_slot.safe_add(slots)
     }
 
-    fn validate(
-        &self,
-        genesis_slot_duration_ms: u64,
-        slots_per_epoch: u64,
-        eip8198_fork_epoch: Option<Epoch>,
-    ) -> Result<(), String> {
+    fn validate(&self, genesis_slot_duration_ms: u64, slots_per_epoch: u64) -> Result<(), String> {
         if self.is_empty() {
             return Ok(());
         }
@@ -2430,6 +2424,11 @@ impl SlotDurationSchedule {
             }
             _ => return Err("the first entry must be at the genesis epoch".to_string()),
         }
+        Ok(())
+    }
+
+    /// Check that each slot duration change after genesis is at the EIP-8198 fork epoch.
+    pub(crate) fn validate_changes(&self, eip8198_fork_epoch: Option<Epoch>) -> Result<(), String> {
         if let Some(entry) = self
             .as_vec()
             .iter()
@@ -3524,11 +3523,7 @@ impl Config {
                 .checked_mul(E::slots_per_epoch())?
                 .checked_mul(slot_duration_ms)?,
         };
-        if let Err(e) = slot_duration_schedule.validate(
-            slot_duration_ms,
-            E::slots_per_epoch(),
-            chain_spec.feature_fork_epoch(FeatureId::Eip8198),
-        ) {
+        if let Err(e) = slot_duration_schedule.validate(slot_duration_ms, E::slots_per_epoch()) {
             error!(error = %e, "Invalid SLOT_DURATION_SCHEDULE");
             return None;
         }
@@ -5113,49 +5108,35 @@ mod yaml_tests {
                 12000,
                 &[(0, 12000), (u64::MAX, 6000)],
             ),
-            (
-                "is not at the EIP-8198 fork epoch",
-                12000,
-                &[(0, 12000), (10, 10000)],
-            ),
         ];
         for (expected, genesis_slot_duration_ms, entries) in invalid {
             let error = slot_duration_schedule(entries)
-                .validate(
-                    genesis_slot_duration_ms,
-                    MainnetEthSpec::slots_per_epoch(),
-                    None,
-                )
+                .validate(genesis_slot_duration_ms, MainnetEthSpec::slots_per_epoch())
                 .expect_err(expected);
             assert!(
                 error.contains(expected),
                 "expected {expected:?}, got {error:?}"
             );
         }
-        assert!(
-            spec_with_slot_config(None, slot_duration_schedule(&[(0, 12000), (10, 10000)]))
-                .is_none()
-        );
     }
 
     #[test]
     fn slot_duration_change_at_the_eip8198_fork_epoch() {
         let schedule = slot_duration_schedule(&[(0, 12000), (10, 10000)]);
-        assert_eq!(
-            schedule.validate(
-                12000,
-                MainnetEthSpec::slots_per_epoch(),
-                Some(Epoch::new(10))
-            ),
-            Ok(())
-        );
+        assert_eq!(schedule.validate_changes(Some(Epoch::new(10))), Ok(()));
         let error = schedule
-            .validate(
-                12000,
-                MainnetEthSpec::slots_per_epoch(),
-                Some(Epoch::new(11)),
-            )
+            .validate_changes(Some(Epoch::new(11)))
             .expect_err("change is not at the fork epoch");
+        assert!(
+            error.contains("is not at the EIP-8198 fork epoch"),
+            "{error}"
+        );
+
+        let spec = spec_with_slot_config(None, schedule.clone())
+            .expect("from_config accepts a change without the feature config");
+        let error = spec
+            .validate_features()
+            .expect_err("change without the EIP-8198 fork");
         assert!(
             error.contains("is not at the EIP-8198 fork epoch"),
             "{error}"
@@ -5175,11 +5156,10 @@ mod yaml_tests {
         assert_eq!(spec.validate_features(), Ok(()));
 
         base.features.eip8198_fork_epoch = Some(Epoch::new(11));
-        assert!(
-            config
-                .apply_to_chain_spec::<MainnetEthSpec>(&base)
-                .is_none()
-        );
+        let spec = config
+            .apply_to_chain_spec::<MainnetEthSpec>(&base)
+            .expect("valid config");
+        assert!(spec.validate_features().is_err());
 
         config.slot_duration_schedule = SlotDurationSchedule::default();
         base.features.eip8198_fork_epoch = Some(Epoch::new(4));
@@ -5210,6 +5190,24 @@ mod yaml_tests {
         spec.features.eip8198_fork_epoch = Some(spec.far_future_epoch);
         assert!(!spec.features_enabled());
         assert!(spec.scheduled_features().is_empty());
+    }
+
+    #[test]
+    fn validate_features_needs_eip8198_at_or_after_heze() {
+        let mut spec = ChainSpec::mainnet();
+        spec.fulu_fork_epoch = Some(Epoch::new(0));
+        spec.gloas_fork_epoch = Some(Epoch::new(0));
+        spec.heze_fork_epoch = Some(Epoch::new(5));
+        spec.features.eip8198_fork_epoch = Some(Epoch::new(5));
+        assert_eq!(spec.validate_features(), Ok(()));
+
+        spec.features.eip8198_fork_epoch = Some(Epoch::new(4));
+        let error = spec.validate_features().expect_err("EIP-8198 before Heze");
+        assert!(error.contains("is before the"), "{error}");
+
+        spec.heze_fork_epoch = None;
+        let error = spec.validate_features().expect_err("EIP-8198 without Heze");
+        assert!(error.contains("needs the"), "{error}");
     }
 
     #[test]
