@@ -1,0 +1,13 @@
+[package]
+name = "feature_dispatch"
+version = "0.1.0"
+authors = ["Eitan Seri-Levi <eitan@sigmaprime.io>"]
+edition = { workspace = true }
+publish = false
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = { workspace = true }
+syn = { workspace = true, features = ["full"] }
