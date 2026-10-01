@@ -47,13 +47,14 @@ impl Feature for GloasTestFeature {
     const MIN_FORK: ForkName = ForkName::Gloas;
 }
 
-/// The fork version and fork epoch of each feature.
+/// The fork version, fork epoch and config values of each feature.
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureSpec {
     pub heze_test_feature_fork_version: [u8; 4],
     /// `None` means that the feature never activates.
     pub heze_test_feature_fork_epoch: Option<Epoch>,
+    pub heze_test_feature_limit: u64,
     pub gloas_test_feature_fork_version: [u8; 4],
     /// `None` means that the feature never activates.
     pub gloas_test_feature_fork_epoch: Option<Epoch>,
@@ -64,6 +65,7 @@ impl FeatureSpec {
         Self {
             heze_test_feature_fork_version: [0xf0, 0x00, 0x00, 0x00],
             heze_test_feature_fork_epoch: None,
+            heze_test_feature_limit: Default::default(),
             gloas_test_feature_fork_version: [0xf1, 0x00, 0x00, 0x00],
             gloas_test_feature_fork_epoch: None,
         }
@@ -73,6 +75,7 @@ impl FeatureSpec {
         Self {
             heze_test_feature_fork_version: [0xf0, 0x00, 0x00, 0x01],
             heze_test_feature_fork_epoch: None,
+            heze_test_feature_limit: Default::default(),
             gloas_test_feature_fork_version: [0xf1, 0x00, 0x00, 0x01],
             gloas_test_feature_fork_epoch: None,
         }
@@ -82,6 +85,7 @@ impl FeatureSpec {
         Self {
             heze_test_feature_fork_version: [0xf0, 0x00, 0x00, 0x64],
             heze_test_feature_fork_epoch: None,
+            heze_test_feature_limit: Default::default(),
             gloas_test_feature_fork_version: [0xf1, 0x00, 0x00, 0x64],
             gloas_test_feature_fork_epoch: None,
         }
@@ -120,6 +124,12 @@ pub struct FeatureConfig {
     )]
     pub heze_test_feature_fork_epoch: Option<MaybeQuoted<Epoch>>,
     #[serde(
+        rename = "HEZE_TEST_FEATURE_LIMIT",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub heze_test_feature_limit: Option<u64>,
+    #[serde(
         rename = "GLOAS_TEST_FEATURE_FORK_VERSION",
         default,
         skip_serializing_if = "Option::is_none",
@@ -142,6 +152,7 @@ impl FeatureConfig {
             heze_test_feature_fork_epoch: spec
                 .heze_test_feature_fork_epoch
                 .map(|value| MaybeQuoted { value }),
+            heze_test_feature_limit: Some(Clone::clone(&spec.heze_test_feature_limit)),
             gloas_test_feature_fork_version: Some(spec.gloas_test_feature_fork_version),
             gloas_test_feature_fork_epoch: spec
                 .gloas_test_feature_fork_epoch
@@ -149,13 +160,16 @@ impl FeatureConfig {
         }
     }
 
-    /// Set the fork epochs of `spec`, and each fork version that the config has.
+    /// Set the fork epochs of `spec`, and each fork version and config value that the config has.
     pub fn apply_to(&self, spec: &mut FeatureSpec) {
         if let Some(version) = self.heze_test_feature_fork_version {
             spec.heze_test_feature_fork_version = version;
         }
         spec.heze_test_feature_fork_epoch =
             self.heze_test_feature_fork_epoch.map(|epoch| epoch.value);
+        if let Some(value) = &self.heze_test_feature_limit {
+            spec.heze_test_feature_limit.clone_from(value);
+        }
         if let Some(version) = self.gloas_test_feature_fork_version {
             spec.gloas_test_feature_fork_version = version;
         }

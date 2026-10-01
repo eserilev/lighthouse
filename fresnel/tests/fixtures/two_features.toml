@@ -1,6 +1,7 @@
 [eip8198]
 min_fork = "Heze"
 fork_version = { mainnet = "0xe8198000", minimal = "0xe8198001", gnosis = "0xe8198064" }
+config = [{ name = "SLOT_DURATION_SCHEDULE", type = "crate::core::SlotDurationSchedule" }]
 
 [eip_toy]
 min_fork = "Gloas"

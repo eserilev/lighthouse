@@ -21,7 +21,7 @@ impl FeatureId {
     }
 }
 
-/// The fork version and fork epoch of each feature.
+/// The fork version, fork epoch and config values of each feature.
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureSpec {}
@@ -57,6 +57,6 @@ impl FeatureConfig {
         Self {}
     }
 
-    /// Set the fork epochs of `spec`, and each fork version that the config has.
+    /// Set the fork epochs of `spec`, and each fork version and config value that the config has.
     pub fn apply_to(&self, _spec: &mut FeatureSpec) {}
 }

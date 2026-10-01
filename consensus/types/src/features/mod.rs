@@ -231,4 +231,25 @@ mod tests {
         );
         assert_eq!(spec.features.gloas_test_feature_fork_version, [1, 2, 3, 4]);
     }
+
+    #[test]
+    fn with_feature_config_sets_only_the_config_values_that_the_config_has() {
+        let mut spec = spec();
+        spec.features.heze_test_feature_limit = 3;
+
+        let config: FeatureConfig = yaml_serde::from_str("HEZE_TEST_FEATURE_FORK_EPOCH: 5")
+            .expect("config without the limit");
+        assert_eq!(config.heze_test_feature_limit, None);
+        let spec = spec.with_feature_config(&config);
+        assert_eq!(spec.features.heze_test_feature_limit, 3);
+
+        let config: FeatureConfig =
+            yaml_serde::from_str("HEZE_TEST_FEATURE_LIMIT: 7").expect("config with the limit");
+        let spec = spec.with_feature_config(&config);
+        assert_eq!(spec.features.heze_test_feature_limit, 7);
+
+        let yaml = yaml_serde::to_string(&FeatureConfig::from_spec(&spec.features))
+            .expect("serialize the config");
+        assert!(yaml.contains("HEZE_TEST_FEATURE_LIMIT: 7"), "{yaml}");
+    }
 }

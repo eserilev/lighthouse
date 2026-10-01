@@ -61,6 +61,12 @@ fn output_lists_each_feature() {
         "rename = \"EIP8198_FORK_VERSION\"",
         "rename = \"EIP_TOY_FORK_EPOCH\"",
         "pub eip8198_fork_version: Option<[u8; 4]>,",
+        "pub slot_duration_schedule: crate::core::SlotDurationSchedule,",
+        "slot_duration_schedule: Default::default(),",
+        "rename = \"SLOT_DURATION_SCHEDULE\"",
+        "pub slot_duration_schedule: Option<crate::core::SlotDurationSchedule>,",
+        "slot_duration_schedule: Some(Clone::clone(&spec.slot_duration_schedule)),",
+        "if let Some(value) = &self.slot_duration_schedule {\n            spec.slot_duration_schedule.clone_from(value);\n        }",
     ] {
         assert!(code.contains(expected), "missing `{expected}` in:\n{code}");
     }
@@ -198,5 +204,25 @@ fn invalid_registries_are_rejected() {
             "[eip_1]\nmin_fork = \"Heze\"\n{versions}\n[eip1]\nmin_fork = \"Heze\"\nfork_version = {{ mainnet = \"0x02000000\", minimal = \"0x02000001\", gnosis = \"0x02000064\" }}"
         )),
         "F-R07"
+    );
+    for config in [
+        r#"[{ name = "eip1_limit", type = "u64" }]"#,
+        r#"[{ name = "EIP1_LIMIT", type = "" }]"#,
+        r#"[{ name = "EIP1_LIMIT", type = "u64" }, { name = "EIP1_LIMIT", type = "u64" }]"#,
+        r#"[{ name = "EIP1_FORK_EPOCH", type = "u64" }]"#,
+    ] {
+        assert_eq!(
+            parse_error(&format!(
+                "[eip1]\nmin_fork = \"Heze\"\n{versions}\nconfig = {config}"
+            )),
+            "F-R08",
+            "{config}"
+        );
+    }
+    assert_eq!(
+        parse_error(&format!(
+            "[eip1]\nmin_fork = \"Heze\"\n{versions}\nconfig = [{{ name = \"EIP1_LIMIT\", ty = \"u64\" }}]"
+        )),
+        "F-R05"
     );
 }
