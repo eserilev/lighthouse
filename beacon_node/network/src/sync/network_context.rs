@@ -815,6 +815,19 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
         Ok(LookupRequestResult::RequestSent(id.req_id))
     }
 
+    /// Returns `true` if the payload envelope for `block_root` is already imported, or if its
+    /// slot is prior to finalization and it can no longer be imported.
+    pub fn payload_not_required(&self, block_root: Hash256, slot: Slot) -> bool {
+        let finalized_slot = self
+            .chain
+            .canonical_head
+            .cached_head()
+            .finalized_checkpoint()
+            .epoch
+            .start_slot(T::EthSpec::slots_per_epoch());
+        slot < finalized_slot || self.chain.envelope_is_known_to_fork_choice(&block_root)
+    }
+
     /// Request a payload envelope for a block root via PayloadEnvelopesByRoot RPC.
     pub fn payload_lookup_request(
         &mut self,
@@ -826,17 +839,6 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
         LookupRequestResult<Arc<SignedExecutionPayloadEnvelope<T::EthSpec>>>,
         RpcRequestSendError,
     > {
-        // Skip the download if fork-choice already saw this envelope (e.g. imported via gossip
-        // before the lookup got here). Return the cached envelope so the request completes.
-        if self.chain.envelope_is_known_to_fork_choice(&block_root)
-            && let Ok(Some(envelope)) = self.chain.get_payload_envelope(&block_root)
-        {
-            return Ok(LookupRequestResult::NoRequestNeeded(
-                "envelope already known to fork-choice",
-                Arc::new(envelope),
-            ));
-        }
-
         let payload_envelopes_by_root_per_peer =
             ActiveRequestsPerPeer::new(&self.payload_envelopes_by_root_requests);
         let Some(peer_id) = lookup_peers
