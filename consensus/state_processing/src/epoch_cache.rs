@@ -1,10 +1,12 @@
 use crate::common::altair::BaseRewardPerIncrement;
 use crate::common::base::SqrtTotalActiveBalance;
 use crate::common::{altair, base};
+use crate::features;
 use crate::metrics;
 use fixed_bytes::FixedBytesExtended;
 use safe_arith::SafeArith;
 use tracing::instrument;
+use types::features::Eip8198;
 use types::state::{EpochCache, EpochCacheError, EpochCacheKey};
 use types::{ActivationQueue, BeaconState, ChainSpec, EthSpec, ForkName, Hash256};
 
@@ -93,7 +95,8 @@ impl PreEpochCache {
         let total_active_balance =
             std::cmp::max(self.total_active_balance, spec.effective_balance_increment);
         let sqrt_total_active_balance = SqrtTotalActiveBalance::new(total_active_balance);
-        let base_reward_per_increment = BaseRewardPerIncrement::new(total_active_balance, spec)?;
+        let base_reward_per_increment =
+            BaseRewardPerIncrement::new(total_active_balance, epoch, spec)?;
 
         let effective_balance_increment = spec.effective_balance_increment;
         let max_effective_balance =
@@ -113,10 +116,23 @@ impl PreEpochCache {
             base_rewards.push(base_reward);
         }
 
+        let previous_epoch_base_rewards = if let Some(on) = spec.feature_enabled::<Eip8198>(epoch) {
+            Some(features::eip8198::previous_epoch_base_rewards(
+                total_active_balance,
+                epoch,
+                max_effective_balance_eth,
+                spec,
+                on,
+            )?)
+        } else {
+            None
+        };
+
         Ok(EpochCache::new(
             self.epoch_key,
             self.effective_balances,
             base_rewards,
+            previous_epoch_base_rewards,
             activation_queue,
             spec,
         ))

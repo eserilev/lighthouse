@@ -6,6 +6,7 @@ use state_processing::common::{
     attesting_indices_base::get_attesting_indices, base, get_attestation_participation_flag_indices,
 };
 use std::collections::HashMap;
+use types::features::{Eip8198, eip8198};
 use types::{
     Attestation, BeaconState, ChainSpec, EthSpec,
     consts::altair::{PARTICIPATION_FLAG_WEIGHTS, PROPOSER_WEIGHT, WEIGHT_DENOMINATOR},
@@ -95,6 +96,7 @@ impl<'a, E: EthSpec> AttMaxCover<'a, E> {
         )
         .ok()?;
 
+        let eip8198_active = spec.feature_enabled::<Eip8198>(state.current_epoch());
         let fresh_validators_rewards = att
             .indexed
             .attesting_indices()
@@ -109,7 +111,17 @@ impl<'a, E: EthSpec> AttMaxCover<'a, E> {
 
                 let mut proposer_reward_numerator = 0;
 
-                let base_reward = state.get_base_reward(index as usize).ok()?;
+                let base_reward = if let Some(on) = eip8198_active {
+                    eip8198::get_base_reward_for_epoch(
+                        state.epoch_cache(),
+                        index as usize,
+                        att_data.target.epoch,
+                        on,
+                    )
+                    .ok()?
+                } else {
+                    state.get_base_reward(index as usize).ok()?
+                };
 
                 for (flag_index, weight) in PARTICIPATION_FLAG_WEIGHTS.iter().enumerate() {
                     if att_participation_flags.contains(&flag_index) {
