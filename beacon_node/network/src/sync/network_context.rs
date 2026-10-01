@@ -815,9 +815,9 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
         Ok(LookupRequestResult::RequestSent(id.req_id))
     }
 
-    /// Returns `true` if the payload envelope for `block_root` is already imported, or if its
-    /// slot is prior to finalization and it can no longer be imported.
-    pub fn payload_not_required(&self, block_root: Hash256, slot: Slot) -> bool {
+    /// Returns `true` if a payload envelope at `slot` is prior to finalization. Lookups can no
+    /// longer import such an envelope.
+    pub fn is_payload_prior_to_finalization(&self, slot: Slot) -> bool {
         let finalized_slot = self
             .chain
             .canonical_head
@@ -825,7 +825,7 @@ impl<T: BeaconChainTypes> SyncNetworkContext<T> {
             .finalized_checkpoint()
             .epoch
             .start_slot(T::EthSpec::slots_per_epoch());
-        slot < finalized_slot || self.chain.envelope_is_known_to_fork_choice(&block_root)
+        slot < finalized_slot
     }
 
     /// Request a payload envelope for a block root via PayloadEnvelopesByRoot RPC.

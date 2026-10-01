@@ -141,7 +141,7 @@ enum PayloadRequest<E: EthSpec> {
         peers: PeerSet,
         state: SingleLookupRequestState<Arc<SignedExecutionPayloadEnvelope<E>>>,
     },
-    /// Post-Gloas block whose payload envelope is already imported or prior to finalization.
+    /// Post-Gloas block whose payload envelope is already imported.
     NotRequired,
     /// Pre-Gloas block: no payload envelope exists, nothing to fetch.
     PreGloas,
@@ -471,11 +471,16 @@ impl<T: BeaconChainTypes> SingleBlockLookup<T> {
                     }
                 }
                 PayloadRequest::Request { slot, peers, state } => {
-                    if state.is_awaiting_download()
-                        && cx.payload_not_required(self.block_root, *slot)
-                    {
-                        self.payload_request = PayloadRequest::NotRequired;
-                        continue;
+                    if state.is_awaiting_download() {
+                        if cx.chain.envelope_is_known_to_fork_choice(&self.block_root) {
+                            self.payload_request = PayloadRequest::NotRequired;
+                            continue;
+                        }
+                        if cx.is_payload_prior_to_finalization(*slot) {
+                            return Err(LookupRequestError::Failed(
+                                "payload prior to finalization".to_owned(),
+                            ));
+                        }
                     }
                     state.maybe_start_downloading(|failed_peers| {
                         cx.payload_lookup_request(
