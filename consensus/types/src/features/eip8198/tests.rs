@@ -257,3 +257,62 @@ fn deadlines_use_the_slot_duration_at_the_fork() {
         );
     }
 }
+
+#[test]
+fn min_blob_data_retention_ms_defaults_to_the_data_column_retention_window() {
+    assert_eq!(
+        min_blob_data_retention_ms::<E>(&ChainSpec::mainnet()),
+        Ok(1_572_864_000)
+    );
+    assert_eq!(
+        min_blob_data_retention_ms::<crate::core::MinimalEthSpec>(&ChainSpec::minimal()),
+        Ok(196_608_000)
+    );
+    assert_eq!(
+        min_blob_data_retention_ms::<crate::core::GnosisEthSpec>(&ChainSpec::gnosis()),
+        Ok(1_310_720_000)
+    );
+
+    let mut spec = ChainSpec::mainnet();
+    spec.min_epochs_for_data_column_sidecars_requests = 100;
+    assert_eq!(min_blob_data_retention_ms::<E>(&spec), Ok(100 * 32 * 12000));
+
+    let config: FeatureConfig =
+        yaml_serde::from_str("MIN_BLOB_DATA_RETENTION_MS: 7").expect("valid feature config");
+    let spec = spec.with_feature_config(&config);
+    assert_eq!(min_blob_data_retention_ms::<E>(&spec), Ok(7));
+}
+
+#[test]
+fn data_retention_window_keeps_its_length_in_ms() {
+    let mut spec = ForkName::Heze.make_genesis_spec(E::default_spec());
+    spec.features.eip8198_fork_epoch = Some(Epoch::new(10000));
+    spec.features.slot_duration_schedule = Some(schedule(&[(0, 12000), (10000, 6000)]));
+
+    assert_eq!(
+        spec.min_epoch_data_availability_boundary::<E>(Epoch::new(9999)),
+        Some(Epoch::new(5903))
+    );
+    assert_eq!(
+        spec.min_epoch_data_availability_boundary::<E>(Epoch::new(10000)),
+        Some(Epoch::new(5904))
+    );
+    assert_eq!(
+        spec.min_epoch_data_availability_boundary::<E>(Epoch::new(14096)),
+        Some(Epoch::new(7952))
+    );
+    assert_eq!(
+        compute_blob_data_retention_start_epoch::<E>(&spec, Epoch::new(100)),
+        Ok(Epoch::new(0))
+    );
+
+    spec.fulu_fork_epoch = Some(Epoch::new(6000));
+    assert_eq!(
+        compute_blob_data_retention_start_epoch::<E>(&spec, Epoch::new(10096)),
+        Ok(Epoch::new(5952))
+    );
+    assert_eq!(
+        spec.min_epoch_data_availability_boundary::<E>(Epoch::new(10096)),
+        Some(Epoch::new(6000))
+    );
+}

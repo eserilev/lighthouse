@@ -10,11 +10,13 @@ use crate::features::FeatureId;
 
 mod deadlines;
 mod rescaling;
+mod retention;
 #[cfg(test)]
 mod tests;
 
 pub use deadlines::*;
 pub use rescaling::*;
+pub use retention::*;
 
 /// The `SLOT_DURATION_SCHEDULE` of the config, if the config has one.
 pub fn slot_duration_schedule(spec: &ChainSpec) -> Option<&SlotDurationSchedule> {
