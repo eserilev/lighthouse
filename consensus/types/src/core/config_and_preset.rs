@@ -8,6 +8,7 @@ use crate::core::{
     AltairPreset, BasePreset, BellatrixPreset, CapellaPreset, ChainSpec, Config, DenebPreset,
     ElectraPreset, EthSpec, FuluPreset, GloasPreset, HezePreset, consts,
 };
+use crate::features::FeatureConfig;
 
 /// Fusion of a runtime-config with the compile-time preset values.
 ///
@@ -21,6 +22,9 @@ use crate::core::{
 pub struct ConfigAndPreset {
     #[serde(flatten)]
     pub config: Config,
+
+    #[serde(flatten)]
+    pub features: FeatureConfig,
 
     #[serde(flatten)]
     pub base_preset: BasePreset,
@@ -58,6 +62,7 @@ impl ConfigAndPreset {
         let capella_preset = CapellaPreset::from_chain_spec::<E>(spec);
         let deneb_preset = DenebPreset::from_chain_spec::<E>(spec);
         let extra_fields = get_extra_fields(spec);
+        let features = FeatureConfig::from_spec(&spec.features);
 
         if !spec.is_gloas_scheduled() {
             // Remove gas limit schedule for backwards-compatibility.
@@ -72,6 +77,7 @@ impl ConfigAndPreset {
 
             ConfigAndPreset::Heze(ConfigAndPresetHeze {
                 config,
+                features,
                 base_preset,
                 altair_preset,
                 bellatrix_preset,
@@ -90,6 +96,7 @@ impl ConfigAndPreset {
 
             ConfigAndPreset::Gloas(ConfigAndPresetGloas {
                 config,
+                features,
                 base_preset,
                 altair_preset,
                 bellatrix_preset,
@@ -106,6 +113,7 @@ impl ConfigAndPreset {
 
             ConfigAndPreset::Fulu(ConfigAndPresetFulu {
                 config,
+                features,
                 base_preset,
                 altair_preset,
                 bellatrix_preset,
@@ -123,6 +131,7 @@ impl ConfigAndPreset {
 
             ConfigAndPreset::Electra(ConfigAndPresetElectra {
                 config,
+                features,
                 base_preset,
                 altair_preset,
                 bellatrix_preset,
@@ -182,7 +191,7 @@ pub fn get_extra_fields(spec: &ChainSpec) -> HashMap<String, Value> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{Epoch, GasLimitSchedule, GasLimitScheduleEntry, MainnetEthSpec};
+    use crate::{Epoch, ForkName, GasLimitSchedule, GasLimitScheduleEntry, MainnetEthSpec};
     use std::fs::File;
     use tempfile::NamedTempFile;
 
@@ -218,6 +227,27 @@ mod test {
         let from: ConfigAndPresetGloas =
             yaml_serde::from_reader(reader).expect("error while deserializing");
         assert_eq!(ConfigAndPreset::Gloas(from), yamlconfig);
+    }
+
+    #[test]
+    fn scheduled_feature_fork_epoch_json_round_trip() {
+        let mut spec = ForkName::Heze.make_genesis_spec(ChainSpec::mainnet());
+        spec.features.heze_test_feature_fork_epoch = Some(Epoch::new(10));
+        let config = ConfigAndPreset::from_chain_spec::<MainnetEthSpec>(&spec);
+        let json = serde_json::to_value(&config).expect("should serialize");
+        assert_eq!(
+            json.get("HEZE_TEST_FEATURE_FORK_EPOCH"),
+            Some(&Value::String("10".to_string()))
+        );
+
+        let from: ConfigAndPresetHeze = serde_json::from_value(json).expect("should deserialize");
+        assert_eq!(
+            from.features
+                .heze_test_feature_fork_epoch
+                .map(|epoch| epoch.value),
+            Some(Epoch::new(10))
+        );
+        assert_eq!(ConfigAndPreset::Heze(from), config);
     }
 
     #[test]

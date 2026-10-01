@@ -1,0 +1,10 @@
+# Test features. `make features` adds them to the registry in `generated_fixture.rs`, which `types`
+# compiles in its tests and with its `fresnel-fixture` feature.
+
+[heze_test_feature]
+min_fork = "Heze"
+fork_version = { mainnet = "0xf0000000", minimal = "0xf0000001", gnosis = "0xf0000064" }
+
+[gloas_test_feature]
+min_fork = "Gloas"
+fork_version = { mainnet = "0xf1000000", minimal = "0xf1000001", gnosis = "0xf1000064" }

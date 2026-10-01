@@ -18,6 +18,7 @@ use kzg::trusted_setup::get_trusted_setup;
 use pretty_reqwest_error::PrettyReqwestError;
 use reqwest::{Client, Error};
 use sensitive_url::SensitiveUrl;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{File, create_dir_all};
 use std::io::{Read, Write};
@@ -25,6 +26,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 use tracing::{info, warn};
+use types::features::FeatureConfig;
 use types::{BeaconState, ChainSpec, Config, EthSpec, EthSpecId, Hash256};
 use url::Url;
 
@@ -85,6 +87,8 @@ pub struct Eth2NetworkConfig {
     pub genesis_state_source: GenesisStateSource,
     pub genesis_state_bytes: Option<GenesisStateBytes>,
     pub config: Config,
+    /// The experimental feature keys of `config.yaml`.
+    pub features: FeatureConfig,
     pub kzg_trusted_setup: Vec<u8>,
 }
 
@@ -103,6 +107,8 @@ impl Eth2NetworkConfig {
     fn from_hardcoded_net(net: &HardcodedNet) -> Result<Self, String> {
         let config: Config = yaml_serde::from_reader(net.config)
             .map_err(|e| format!("Unable to parse yaml config: {:?}", e))?;
+        let features: FeatureConfig = yaml_serde::from_reader(net.config)
+            .map_err(|e| format!("Unable to parse yaml config features: {:?}", e))?;
         let kzg_trusted_setup = get_trusted_setup();
         Ok(Self {
             deposit_contract_deploy_block: yaml_serde::from_reader(net.deploy_block)
@@ -116,6 +122,7 @@ impl Eth2NetworkConfig {
                 .filter(|bytes| !bytes.is_empty())
                 .map(Into::into),
             config,
+            features,
             kzg_trusted_setup,
         })
     }
@@ -192,12 +199,27 @@ impl Eth2NetworkConfig {
 
     /// Construct a consolidated `ChainSpec` from the YAML config.
     pub fn chain_spec<E: EthSpec>(&self) -> Result<ChainSpec, String> {
-        ChainSpec::from_config::<E>(&self.config).ok_or_else(|| {
-            format!(
-                "YAML configuration incompatible with spec constants for {}",
-                E::spec_name()
-            )
-        })
+        let base_spec = E::default_spec().with_feature_config(&self.features);
+        let spec = self
+            .config
+            .apply_to_chain_spec::<E>(&base_spec)
+            .ok_or_else(|| {
+                format!(
+                    "YAML configuration incompatible with spec constants for {}",
+                    E::spec_name()
+                )
+            })?;
+        spec.validate_features()?;
+        if spec.features_enabled()
+            && known_genesis_fork_versions()?.contains(&spec.genesis_fork_version)
+        {
+            return Err(format!(
+                "experimental features cannot run on a built-in network or a shadow fork of one \
+                 (genesis fork version {})",
+                serde_utils::hex::encode(spec.genesis_fork_version)
+            ));
+        }
+        Ok(spec)
     }
 
     /// Attempts to deserialize `self.beacon_state`, returning an error if it's missing or invalid.
@@ -311,7 +333,13 @@ impl Eth2NetworkConfig {
             write_to_yaml_file!(BOOT_ENR_FILE, boot_enr);
         }
 
-        write_to_yaml_file!(BASE_CONFIG_FILE, &self.config);
+        write_to_yaml_file!(
+            BASE_CONFIG_FILE,
+            ConfigFile {
+                config: &self.config,
+                features: &self.features,
+            }
+        );
 
         // The genesis state is a special case because it uses SSZ, not YAML.
         if let Some(genesis_state_bytes) = &self.genesis_state_bytes {
@@ -353,6 +381,7 @@ impl Eth2NetworkConfig {
         let deposit_contract_deploy_block = load_from_file!(DEPLOY_BLOCK_FILE);
         let boot_enr = optional_load_from_file!(BOOT_ENR_FILE);
         let config = load_from_file!(BASE_CONFIG_FILE);
+        let features = load_from_file!(BASE_CONFIG_FILE);
 
         // The genesis state is a special case because it uses SSZ, not YAML.
         let genesis_file_path = base_dir.join(GENESIS_STATE_FILE);
@@ -384,9 +413,37 @@ impl Eth2NetworkConfig {
             genesis_state_source,
             genesis_state_bytes: genesis_state_bytes.map(Into::into),
             config,
+            features,
             kzg_trusted_setup,
         })
     }
+}
+
+/// The genesis fork versions of the built-in networks.
+fn known_genesis_fork_versions() -> Result<Vec<[u8; 4]>, String> {
+    HARDCODED_NETS
+        .iter()
+        .map(|net| {
+            yaml_serde::from_reader(net.config)
+                .map(|config: GenesisForkVersion| config.genesis_fork_version)
+                .map_err(|e| format!("Unable to parse yaml config of {}: {:?}", net.name, e))
+        })
+        .collect()
+}
+
+#[derive(Deserialize)]
+struct GenesisForkVersion {
+    #[serde(rename = "GENESIS_FORK_VERSION", with = "serde_utils::bytes_4_hex")]
+    genesis_fork_version: [u8; 4],
+}
+
+/// The contents of `config.yaml`: the config keys and the experimental feature keys.
+#[derive(Serialize)]
+struct ConfigFile<'a> {
+    #[serde(flatten)]
+    config: &'a Config,
+    #[serde(flatten)]
+    features: &'a FeatureConfig,
 }
 
 /// Try to download a genesis state from each of the `urls` in the order they
@@ -477,7 +534,8 @@ mod tests {
     use fixed_bytes::FixedBytesExtended;
     use ssz::Encode;
     use tempfile::Builder as TempBuilder;
-    use types::{Eth1Data, GnosisEthSpec, MainnetEthSpec};
+    use types::features::HezeTestFeature;
+    use types::{Epoch, Eth1Data, GnosisEthSpec, MainnetEthSpec, MinimalEthSpec};
 
     type E = MainnetEthSpec;
 
@@ -499,6 +557,33 @@ mod tests {
         let config = Eth2NetworkConfig::from_hardcoded_net(&MAINNET).unwrap();
         let spec = ChainSpec::mainnet();
         assert_eq!(spec, config.chain_spec::<E>().unwrap());
+    }
+
+    #[test]
+    fn features_are_rejected_on_built_in_networks() {
+        let with_features = |mut spec: ChainSpec| {
+            spec.heze_fork_epoch = Some(Epoch::new(5));
+            let mut features = spec.features.clone();
+            features.heze_test_feature_fork_epoch = Some(Epoch::new(10));
+            (
+                Config::from_chain_spec::<E>(&spec),
+                FeatureConfig::from_spec(&features),
+            )
+        };
+
+        let mut net = Eth2NetworkConfig::from_hardcoded_net(&MAINNET).unwrap();
+        (net.config, net.features) = with_features(ChainSpec::mainnet());
+        let error = net.chain_spec::<E>().expect_err("mainnet rejects features");
+        assert!(error.contains("built-in network"), "{error}");
+
+        let mut spec = ChainSpec::mainnet();
+        spec.genesis_fork_version = [0x10, 0x00, 0x00, 0x38];
+        (net.config, net.features) = with_features(spec);
+        let spec = net.chain_spec::<E>().expect("a devnet accepts features");
+        assert!(
+            spec.feature_enabled::<HezeTestFeature>(Epoch::new(10))
+                .is_some()
+        );
     }
 
     #[test]
@@ -557,6 +642,29 @@ mod tests {
     }
 
     #[test]
+    fn hard_coded_nets_keep_the_preset_feature_fork_versions() {
+        for net in HARDCODED_NETS {
+            let config = Eth2NetworkConfig::from_hardcoded_net(net)
+                .unwrap_or_else(|e| panic!("{:?}: {:?}", net.name, e));
+            let (features, preset_features) = match config.eth_spec_id().unwrap() {
+                EthSpecId::Mainnet => (
+                    config.chain_spec::<MainnetEthSpec>().unwrap().features,
+                    MainnetEthSpec::default_spec().features,
+                ),
+                EthSpecId::Minimal => (
+                    config.chain_spec::<MinimalEthSpec>().unwrap().features,
+                    MinimalEthSpec::default_spec().features,
+                ),
+                EthSpecId::Gnosis => (
+                    config.chain_spec::<GnosisEthSpec>().unwrap().features,
+                    GnosisEthSpec::default_spec().features,
+                ),
+            };
+            assert_eq!(features, preset_features, "{:?}", net.name);
+        }
+    }
+
+    #[test]
     fn round_trip() {
         let spec = &E::default_spec();
 
@@ -570,15 +678,17 @@ mod tests {
         let boot_enr = None;
         let genesis_state = Some(BeaconState::new(42, eth1_data, spec));
         let config = Config::from_chain_spec::<E>(spec);
+        let features = FeatureConfig::from_spec(&spec.features);
 
-        do_test::<E>(boot_enr, genesis_state, config.clone());
-        do_test::<E>(None, None, config);
+        do_test::<E>(boot_enr, genesis_state, config.clone(), features.clone());
+        do_test::<E>(None, None, config, features);
     }
 
     fn do_test<E: EthSpec>(
         boot_enr: Option<Vec<Enr<CombinedKey>>>,
         genesis_state: Option<BeaconState<E>>,
         config: Config,
+        features: FeatureConfig,
     ) {
         let temp_dir = TempBuilder::new()
             .prefix("eth2_testnet_test")
@@ -604,6 +714,7 @@ mod tests {
                 .map(Encode::as_ssz_bytes)
                 .map(Into::into),
             config,
+            features,
             kzg_trusted_setup,
         };
 

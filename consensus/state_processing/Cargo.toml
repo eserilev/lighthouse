@@ -48,3 +48,4 @@ types = { workspace = true }
 beacon_chain = { workspace = true }
 state_processing = { path = ".", features = ["arbitrary"] }
 tokio = { workspace = true }
+types = { workspace = true, features = ["fresnel-fixture"] }

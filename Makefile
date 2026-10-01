@@ -276,6 +276,14 @@ cli:
 cli-local:
 	make && ./scripts/cli.sh
 
+# Generates the experimental feature code from `consensus/types/src/features/registry.toml`.
+features:
+	cargo run --release --quiet -p fresnel
+
+# Checks that the generated experimental feature code matches the registry.
+features-check:
+	cargo run --release --quiet -p fresnel -- --check
+
 # Check for markdown files
 mdlint:
 	./scripts/mdlint.sh
