@@ -1,9 +1,7 @@
 use crate::consensus_context::ConsensusContext;
-use crate::features;
 use errors::{
     BlockOperationError, BlockProcessingError, ExecutionPayloadBidInvalid, HeaderInvalid,
 };
-use feature_dispatch::feature_dispatch;
 use rayon::prelude::*;
 use safe_arith::{ArithError, SafeArith};
 use signature_sets::{
@@ -13,7 +11,6 @@ use signature_sets::{
 use std::borrow::Cow;
 use tree_hash::TreeHash;
 use typenum::Unsigned;
-use types::features::Eip8198;
 use types::{
     consts::gloas::{BUILDER_INDEX_SELF_BUILD, PAYLOAD_BUILDER_VERSION},
     *,
@@ -542,11 +539,6 @@ pub fn is_execution_enabled<E: EthSpec, Payload: AbstractExecPayload<E>>(
 }
 
 /// https://github.com/ethereum/consensus-specs/blob/dev/specs/bellatrix/beacon-chain.md#compute_timestamp_at_slot
-#[feature_dispatch(
-    Eip8198 => features::eip8198::compute_timestamp_at_slot,
-    spec = spec,
-    epoch = block_slot.epoch(E::slots_per_epoch())
-)]
 pub fn compute_timestamp_at_slot<E: EthSpec>(
     state: &BeaconState<E>,
     block_slot: Slot,

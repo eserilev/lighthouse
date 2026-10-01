@@ -2,7 +2,6 @@ use std::{fs::File, path::Path, time::Duration};
 
 use educe::Educe;
 use ethereum_hashing::hash;
-use feature_dispatch::feature_dispatch;
 use fixed_bytes::FixedBytesExtended;
 use int_to_bytes::int_to_bytes4;
 use safe_arith::{ArithError, SafeArith};
@@ -20,7 +19,7 @@ use crate::{
         EthSpecId, ExecutionBlockHash, Hash256, MainnetEthSpec, Slot, SlotDurationSchedule,
         SlotDurationScheduleEntry, Uint256,
     },
-    features::{self, Eip8198, FeatureId, FeatureSpec},
+    features::{FeatureId, FeatureSpec},
     fork::{Fork, ForkData, ForkName},
 };
 
@@ -1001,11 +1000,6 @@ impl ChainSpec {
     /// Returns the min epoch for blob / data column sidecar requests based on the current epoch.
     /// Switch to use the column sidecar config once the `blob_retention_epoch` has passed Fulu fork epoch.
     /// Never uses the `blob_retention_epoch` for networks that started with Fulu enabled.
-    #[feature_dispatch(
-        Eip8198 => features::eip8198::min_epoch_data_availability_boundary::<E>,
-        spec = self,
-        epoch = current_epoch
-    )]
     pub fn min_epoch_data_availability_boundary<E: EthSpec>(
         &self,
         current_epoch: Epoch,
@@ -1052,11 +1046,6 @@ impl ChainSpec {
     }
 
     /// Spec: `get_attestation_due_ms`. Returns the epoch-appropriate threshold.
-    #[feature_dispatch(
-        Eip8198 => features::eip8198::get_attestation_due::<E>,
-        spec = self,
-        epoch = slot.epoch(E::slots_per_epoch())
-    )]
     pub fn get_attestation_due<E: EthSpec>(&self, slot: Slot) -> Duration {
         if self.fork_name_at_slot::<E>(slot).gloas_enabled() {
             self.unaggregated_attestation_due_gloas
@@ -1066,31 +1055,16 @@ impl ChainSpec {
     }
 
     /// Spec: `get_payload_due_ms`.
-    #[feature_dispatch(
-        Eip8198 => features::eip8198::get_payload_due::<E>,
-        spec = self,
-        epoch = slot.epoch(E::slots_per_epoch())
-    )]
-    pub fn get_payload_due<E: EthSpec>(&self, slot: Slot) -> Duration {
+    pub fn get_payload_due<E: EthSpec>(&self, _slot: Slot) -> Duration {
         self.payload_due
     }
 
     /// Spec: `get_payload_attestation_due_ms`.
-    #[feature_dispatch(
-        Eip8198 => features::eip8198::get_payload_attestation_due::<E>,
-        spec = self,
-        epoch = slot.epoch(E::slots_per_epoch())
-    )]
-    pub fn get_payload_attestation_due<E: EthSpec>(&self, slot: Slot) -> Duration {
+    pub fn get_payload_attestation_due<E: EthSpec>(&self, _slot: Slot) -> Duration {
         self.payload_attestation_due
     }
 
     /// Spec: `get_aggregate_attestation_due_ms`. Returns the epoch-appropriate threshold.
-    #[feature_dispatch(
-        Eip8198 => features::eip8198::get_aggregate_attestation_due::<E>,
-        spec = self,
-        epoch = slot.epoch(E::slots_per_epoch())
-    )]
     pub fn get_aggregate_attestation_due<E: EthSpec>(&self, slot: Slot) -> Duration {
         if self.fork_name_at_slot::<E>(slot).gloas_enabled() {
             self.aggregate_attestation_due_gloas
@@ -1100,11 +1074,6 @@ impl ChainSpec {
     }
 
     /// Spec: `get_contribution_due_ms`. Returns the epoch-appropriate threshold.
-    #[feature_dispatch(
-        Eip8198 => features::eip8198::get_contribution_message_due::<E>,
-        spec = self,
-        epoch = slot.epoch(E::slots_per_epoch())
-    )]
     pub fn get_contribution_message_due<E: EthSpec>(&self, slot: Slot) -> Duration {
         if self.fork_name_at_slot::<E>(slot).gloas_enabled() {
             self.contribution_and_proof_due_gloas
@@ -1114,11 +1083,6 @@ impl ChainSpec {
     }
 
     /// Spec: `get_sync_message_due_ms`. Returns the epoch-appropriate threshold.
-    #[feature_dispatch(
-        Eip8198 => features::eip8198::get_sync_message_due::<E>,
-        spec = self,
-        epoch = slot.epoch(E::slots_per_epoch())
-    )]
     pub fn get_sync_message_due<E: EthSpec>(&self, slot: Slot) -> Duration {
         if self.fork_name_at_slot::<E>(slot).gloas_enabled() {
             self.sync_message_due_gloas
@@ -1140,15 +1104,10 @@ impl ChainSpec {
     }
 
     /// Calculate the duration into `slot` for a given slot component.
-    #[feature_dispatch(
-        Eip8198 => features::eip8198::compute_slot_component_duration_at::<E>,
-        spec = self,
-        epoch = slot.epoch(E::slots_per_epoch())
-    )]
     pub fn compute_slot_component_duration_at<E: EthSpec>(
         &self,
         component_basis_points: u64,
-        slot: Slot,
+        _slot: Slot,
     ) -> Result<Duration, ArithError> {
         self.compute_slot_component_duration(component_basis_points)
     }
@@ -1168,26 +1127,15 @@ impl ChainSpec {
     /// The slot duration schedule. Without a configured schedule, it is one genesis entry of
     /// `SLOT_DURATION_MS`, which gives slots of a fixed length.
     pub fn slot_duration_schedule(&self) -> SlotDurationSchedule {
-        self.configured_slot_duration_schedule()
-            .cloned()
-            .unwrap_or_else(|| {
-                SlotDurationSchedule::new(vec![SlotDurationScheduleEntry {
-                    epoch: Epoch::new(0),
-                    slot_duration_ms: self.slot_duration_ms,
-                }])
-            })
+        SlotDurationSchedule::new(vec![SlotDurationScheduleEntry {
+            epoch: Epoch::new(0),
+            slot_duration_ms: self.slot_duration_ms,
+        }])
     }
 
     /// The slot duration in effect at `epoch`.
-    pub fn get_slot_duration_ms(&self, epoch: Epoch) -> u64 {
-        self.configured_slot_duration_schedule()
-            .and_then(|schedule| schedule.slot_duration_ms_for_epoch(epoch))
-            .unwrap_or(self.slot_duration_ms)
-    }
-
-    fn configured_slot_duration_schedule(&self) -> Option<&SlotDurationSchedule> {
-        self.feature_fork_epoch(FeatureId::Eip8198)?;
-        features::eip8198::slot_duration_schedule(self)
+    pub fn get_slot_duration_ms(&self, _epoch: Epoch) -> u64 {
+        self.slot_duration_ms
     }
 
     /// Compute values that are derived from other config values.
@@ -3452,13 +3400,6 @@ impl Config {
 
             ..chain_spec.clone()
         };
-        if spec.feature_fork_epoch(FeatureId::Eip8198).is_some()
-            && let Err(e) =
-                features::eip8198::validate_slot_duration_schedule(&spec, E::slots_per_epoch())
-        {
-            error!(error = %e, "Invalid SLOT_DURATION_SCHEDULE");
-            return None;
-        }
         Some(spec.compute_derived_values::<E>())
     }
 }

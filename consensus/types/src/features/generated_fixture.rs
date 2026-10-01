@@ -8,22 +8,17 @@ use serde_utils::quoted_u64::MaybeQuoted;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum FeatureId {
-    Eip8198,
     HezeTestFeature,
     GloasTestFeature,
 }
 
 impl FeatureId {
     /// All features, in registry order.
-    pub const ALL: &'static [FeatureId] = &[
-        FeatureId::Eip8198,
-        FeatureId::HezeTestFeature,
-        FeatureId::GloasTestFeature,
-    ];
+    pub const ALL: &'static [FeatureId] =
+        &[FeatureId::HezeTestFeature, FeatureId::GloasTestFeature];
 
     pub fn name(self) -> &'static str {
         match self {
-            FeatureId::Eip8198 => "eip8198",
             FeatureId::HezeTestFeature => "heze_test_feature",
             FeatureId::GloasTestFeature => "gloas_test_feature",
         }
@@ -32,18 +27,10 @@ impl FeatureId {
     /// The first fork that the feature can run on.
     pub fn min_fork(self) -> ForkName {
         match self {
-            FeatureId::Eip8198 => ForkName::Heze,
             FeatureId::HezeTestFeature => ForkName::Heze,
             FeatureId::GloasTestFeature => ForkName::Gloas,
         }
     }
-}
-
-pub struct Eip8198;
-
-impl Feature for Eip8198 {
-    const ID: FeatureId = FeatureId::Eip8198;
-    const MIN_FORK: ForkName = ForkName::Heze;
 }
 
 pub struct HezeTestFeature;
@@ -64,11 +51,6 @@ impl Feature for GloasTestFeature {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureSpec {
-    pub eip8198_fork_version: [u8; 4],
-    /// `None` means that the feature never activates.
-    pub eip8198_fork_epoch: Option<Epoch>,
-    pub slot_duration_schedule: Option<crate::core::SlotDurationSchedule>,
-    pub min_blob_data_retention_ms: Option<u64>,
     pub heze_test_feature_fork_version: [u8; 4],
     /// `None` means that the feature never activates.
     pub heze_test_feature_fork_epoch: Option<Epoch>,
@@ -82,10 +64,6 @@ pub struct FeatureSpec {
 impl FeatureSpec {
     pub fn mainnet() -> Self {
         Self {
-            eip8198_fork_version: [0xe8, 0x19, 0x80, 0x00],
-            eip8198_fork_epoch: None,
-            slot_duration_schedule: None,
-            min_blob_data_retention_ms: None,
             heze_test_feature_fork_version: [0xf0, 0x00, 0x00, 0x00],
             heze_test_feature_fork_epoch: None,
             heze_test_feature_limit: Default::default(),
@@ -97,10 +75,6 @@ impl FeatureSpec {
 
     pub fn minimal() -> Self {
         Self {
-            eip8198_fork_version: [0xe8, 0x19, 0x80, 0x01],
-            eip8198_fork_epoch: None,
-            slot_duration_schedule: None,
-            min_blob_data_retention_ms: None,
             heze_test_feature_fork_version: [0xf0, 0x00, 0x00, 0x01],
             heze_test_feature_fork_epoch: None,
             heze_test_feature_limit: Default::default(),
@@ -112,10 +86,6 @@ impl FeatureSpec {
 
     pub fn gnosis() -> Self {
         Self {
-            eip8198_fork_version: [0xe8, 0x19, 0x80, 0x64],
-            eip8198_fork_epoch: None,
-            slot_duration_schedule: None,
-            min_blob_data_retention_ms: None,
             heze_test_feature_fork_version: [0xf0, 0x00, 0x00, 0x64],
             heze_test_feature_fork_epoch: None,
             heze_test_feature_limit: Default::default(),
@@ -127,7 +97,6 @@ impl FeatureSpec {
 
     pub fn fork_version(&self, id: FeatureId) -> [u8; 4] {
         match id {
-            FeatureId::Eip8198 => self.eip8198_fork_version,
             FeatureId::HezeTestFeature => self.heze_test_feature_fork_version,
             FeatureId::GloasTestFeature => self.gloas_test_feature_fork_version,
         }
@@ -135,7 +104,6 @@ impl FeatureSpec {
 
     pub fn fork_epoch(&self, id: FeatureId) -> Option<Epoch> {
         match id {
-            FeatureId::Eip8198 => self.eip8198_fork_epoch,
             FeatureId::HezeTestFeature => self.heze_test_feature_fork_epoch,
             FeatureId::GloasTestFeature => self.gloas_test_feature_fork_epoch,
         }
@@ -145,32 +113,6 @@ impl FeatureSpec {
 /// The config keys of each feature.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct FeatureConfig {
-    #[serde(
-        rename = "EIP8198_FORK_VERSION",
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "optional_fork_version"
-    )]
-    pub eip8198_fork_version: Option<[u8; 4]>,
-    #[serde(
-        rename = "EIP8198_FORK_EPOCH",
-        default,
-        serialize_with = "serialize_fork_epoch",
-        deserialize_with = "deserialize_fork_epoch"
-    )]
-    pub eip8198_fork_epoch: Option<MaybeQuoted<Epoch>>,
-    #[serde(
-        rename = "SLOT_DURATION_SCHEDULE",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub slot_duration_schedule: Option<crate::core::SlotDurationSchedule>,
-    #[serde(
-        rename = "MIN_BLOB_DATA_RETENTION_MS",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub min_blob_data_retention_ms: Option<u64>,
     #[serde(
         rename = "HEZE_TEST_FEATURE_FORK_VERSION",
         default,
@@ -216,10 +158,6 @@ pub struct FeatureConfig {
 impl FeatureConfig {
     pub fn from_spec(spec: &FeatureSpec) -> Self {
         Self {
-            eip8198_fork_version: Some(spec.eip8198_fork_version),
-            eip8198_fork_epoch: spec.eip8198_fork_epoch.map(|value| MaybeQuoted { value }),
-            slot_duration_schedule: Clone::clone(&spec.slot_duration_schedule),
-            min_blob_data_retention_ms: Clone::clone(&spec.min_blob_data_retention_ms),
             heze_test_feature_fork_version: Some(spec.heze_test_feature_fork_version),
             heze_test_feature_fork_epoch: spec
                 .heze_test_feature_fork_epoch
@@ -235,16 +173,6 @@ impl FeatureConfig {
 
     /// Set the fork epochs of `spec`, and each fork version and config value that the config has.
     pub fn apply_to(&self, spec: &mut FeatureSpec) {
-        if let Some(version) = self.eip8198_fork_version {
-            spec.eip8198_fork_version = version;
-        }
-        spec.eip8198_fork_epoch = self.eip8198_fork_epoch.map(|epoch| epoch.value);
-        if let Some(value) = &self.slot_duration_schedule {
-            spec.slot_duration_schedule = Some(Clone::clone(value));
-        }
-        if let Some(value) = &self.min_blob_data_retention_ms {
-            spec.min_blob_data_retention_ms = Some(Clone::clone(value));
-        }
         if let Some(version) = self.heze_test_feature_fork_version {
             spec.heze_test_feature_fork_version = version;
         }

@@ -16,8 +16,6 @@
 #[cfg_attr(feature = "fresnel-fixture", path = "generated_fixture.rs")]
 mod generated;
 
-pub mod eip8198;
-
 use std::marker::PhantomData;
 
 use crate::core::{ChainSpec, Epoch};
