@@ -3051,7 +3051,6 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         // This function will never import any blocks.
         let imported_blocks = vec![];
         let mut filtered_chain_segment = Vec::with_capacity(chain_segment.len());
-        let checkpoint_root = self.store.get_split_info().block_root;
 
         // Produce a list of the parent root and slot of the child of each block.
         //
@@ -3139,7 +3138,9 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 // However, we will potentially get a `ParentUnknown` on a later block. The sync
                 // protocol will need to ensure this is handled gracefully.
                 Err(BlockError::WouldRevertFinalizedSlot { .. }) => {
-                    if range_sync_envelope_needs_import && checkpoint_root == block_root {
+                    if range_sync_envelope_needs_import
+                        && self.is_finalized_checkpoint_block(block_root)
+                    {
                         filtered_chain_segment.push((block_root, block));
                     }
                 }
@@ -3166,6 +3167,43 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         }
 
         Ok(filtered_chain_segment)
+    }
+
+    /// Returns `true` if `block_root` is the finalized checkpoint block (the split block).
+    pub fn is_finalized_checkpoint_block(&self, block_root: Hash256) -> bool {
+        self.store.get_split_info().block_root == block_root
+    }
+
+    /// Imports the envelope of the finalized checkpoint block if `blocks` starts with that block,
+    /// and removes the block from `blocks`.
+    ///
+    /// After checkpoint sync, fork choice holds the checkpoint block with `payload_received:
+    /// false`, and its first FULL child cannot import until this envelope is imported. The block
+    /// has no parent in fork choice, so it skips block import. If its slot is prior to the
+    /// finalized epoch start slot, gossip and lookups reject its envelope with
+    /// `EnvelopeError::PriorToFinalization`, so range sync is the only path that imports it.
+    async fn import_finalized_checkpoint_block_envelope(
+        self: &Arc<Self>,
+        blocks: &mut Vec<HashBlockTuple<T::EthSpec>>,
+    ) -> Result<Option<(Hash256, Slot)>, BlockError> {
+        if !matches!(blocks.first(), Some((root, _)) if self.is_finalized_checkpoint_block(*root)) {
+            return Ok(None);
+        }
+        let (block_root, block) = blocks.remove(0);
+        let block_slot = block.slot();
+
+        if let RangeSyncBlock::Gloas {
+            block,
+            envelope: Some(envelope),
+        } = block
+        {
+            verify_columns_against_block(&self.kzg, &block, &envelope.columns)
+                .map_err(BlockError::AvailabilityCheck)?;
+            self.process_range_sync_envelope(envelope, block_root, block)
+                .await?;
+        }
+
+        Ok(Some((block_root, block_slot)))
     }
 
     /// Attempt to verify and import a chain of blocks to `self`.
@@ -3227,42 +3265,18 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             let mut blocks = filtered_chain_segment.split_off(last_index);
             std::mem::swap(&mut blocks, &mut filtered_chain_segment);
 
-            // Here, we are special casing the checkpoint sync block's envelope processing.
-            // Post-gloas, if the first filtered block is the checkpoint block, range
-            // sync may still need to process its envelope so that the first post-checkpoint
-            // child can resolve its parent payload status.
-            // The block is an anchor, so there won't be a parent present in fork choice,
-            // so we need to avoid processing it.
-            let checkpoint_root = self.store.get_split_info().block_root;
-            if matches!(blocks.first(), Some((root, _)) if *root == checkpoint_root) {
-                let (block_root, block) = blocks.remove(0);
-                let block_slot = block.slot();
-
-                if let RangeSyncBlock::Gloas {
-                    block,
-                    envelope: Some(envelope),
-                } = block
-                {
-                    let chain = self.clone();
-                    if let Err(error) = async move {
-                        verify_columns_against_block(&chain.kzg, &block, &envelope.columns)
-                            .map_err(BlockError::AvailabilityCheck)?;
-
-                        self.process_range_sync_envelope(envelope, block_root, block)
-                            .await
-                            .map_err(BlockError::from)?;
-
-                        Ok::<(), BlockError>(())
-                    }
-                    .await
-                    {
-                        return ChainSegmentResult::Failed {
-                            imported_blocks,
-                            error,
-                        };
-                    }
+            match self
+                .import_finalized_checkpoint_block_envelope(&mut blocks)
+                .await
+            {
+                Ok(Some(imported_block)) => imported_blocks.push(imported_block),
+                Ok(None) => {}
+                Err(error) => {
+                    return ChainSegmentResult::Failed {
+                        imported_blocks,
+                        error,
+                    };
                 }
-                imported_blocks.push((block_root, block_slot));
             }
 
             // Extract envelopes before passing blocks to signature verification.

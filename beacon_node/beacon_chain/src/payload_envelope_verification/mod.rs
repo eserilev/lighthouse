@@ -246,8 +246,10 @@ pub enum EnvelopeError {
         proposer_index: u64,
         local_shuffling: u64,
     },
-    /// The slot belongs to a block that is from a slot prior than
-    /// to most recently finalized slot
+    /// The envelope's slot is prior to the finalized epoch start slot.
+    ///
+    /// The finalized checkpoint block can have such a slot. Range sync imports its envelope
+    /// through `BeaconChain::import_finalized_checkpoint_block_envelope`, which skips this check.
     PriorToFinalization {
         payload_slot: Slot,
         latest_finalized_slot: Slot,

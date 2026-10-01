@@ -48,8 +48,9 @@ pub(crate) fn verify_envelope_consistency<E: EthSpec>(
     execution_bid: &ExecutionPayloadBid<E>,
     latest_finalized_slot: Slot,
 ) -> Result<(), EnvelopeError> {
-    // Check that the envelope's slot isn't from a slot prior
-    // to the latest finalized slot.
+    // Check that the envelope's slot isn't from a slot prior to the latest finalized slot. The
+    // finalized checkpoint block's envelope is the exception: range sync imports it through
+    // `BeaconChain::import_finalized_checkpoint_block_envelope`.
     if envelope.slot() < latest_finalized_slot {
         return Err(EnvelopeError::PriorToFinalization {
             payload_slot: envelope.slot(),
