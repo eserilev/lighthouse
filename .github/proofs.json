@@ -1,0 +1,17 @@
+[
+  {
+    "name": "slot-duration-schedule",
+    "crate": "consensus/types",
+    "proofs": "consensus/types/proofs",
+    "lib": "SlotScheduleProofs",
+    "entrypoint": "types::core::slot_duration_schedule::compute_time_at_slot_ms",
+    "generated": "SlotScheduleProofs/Generated.lean",
+    "charon_extra": "--start-from types::core::slot_duration_schedule::compute_slot_at_time_ms --start-from types::features::eip8198::validation::validate_schedule --start-from types::features::eip8198::validation::validate_slot_duration_changes --include safe_arith --include core::option::_::map --include core::option::_::is_some_and -- --lib",
+    "sources": [
+      "consensus/types/src/core/slot_duration_schedule.rs",
+      "consensus/types/src/core/slot_epoch.rs",
+      "consensus/types/src/core/slot_epoch_macros.rs",
+      "consensus/types/src/features/eip8198/validation.rs"
+    ]
+  }
+]
