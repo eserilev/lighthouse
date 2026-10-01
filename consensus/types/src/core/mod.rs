@@ -13,6 +13,7 @@ mod preset;
 mod relative_epoch;
 mod signing_data;
 mod slot_data;
+mod slot_duration_schedule;
 #[macro_use]
 mod slot_epoch_macros;
 mod slot_epoch;
@@ -43,6 +44,7 @@ pub use preset::{
 pub use relative_epoch::{Error as RelativeEpochError, RelativeEpoch};
 pub use signing_data::{SignedRoot, SigningData};
 pub use slot_data::SlotData;
+pub use slot_duration_schedule::{SlotDurationSchedule, SlotDurationScheduleEntry};
 pub use slot_epoch::{Epoch, Slot};
 
 #[cfg(test)]

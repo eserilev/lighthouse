@@ -35,11 +35,24 @@ pub struct ConfigKey {
     pub name: String,
     #[serde(rename = "type")]
     pub ty: String,
+    /// The spec holds `Option<type>`, which is `None` until a config sets the key. A config
+    /// that the spec produces leaves the key out while it is `None`.
+    #[serde(default)]
+    pub optional: bool,
 }
 
 impl ConfigKey {
     fn field(&self) -> String {
         self.name.to_ascii_lowercase()
+    }
+
+    /// The type of the field in `FeatureSpec`.
+    fn spec_type(&self) -> String {
+        if self.optional {
+            format!("Option<{}>", self.ty)
+        } else {
+            self.ty.clone()
+        }
     }
 }
 
@@ -409,7 +422,7 @@ pub fn generate(registry: &Registry) -> Result<String, fmt::Error> {
         writeln!(out, "/// `None` means that the feature never activates.")?;
         writeln!(out, "pub {}_fork_epoch: Option<Epoch>,", feature.name)?;
         for config in &feature.config {
-            writeln!(out, "pub {}: {},", config.field(), config.ty)?;
+            writeln!(out, "pub {}: {},", config.field(), config.spec_type())?;
         }
     }
     writeln!(out, "}}")?;
@@ -428,7 +441,12 @@ pub fn generate(registry: &Registry) -> Result<String, fmt::Error> {
             )?;
             writeln!(out, "{}_fork_epoch: None,", feature.name)?;
             for config in &feature.config {
-                writeln!(out, "{}: Default::default(),", config.field())?;
+                let default = if config.optional {
+                    "None"
+                } else {
+                    "Default::default()"
+                };
+                writeln!(out, "{}: {default},", config.field())?;
             }
         }
         writeln!(out, "}}")?;
@@ -521,11 +539,19 @@ pub fn generate(registry: &Registry) -> Result<String, fmt::Error> {
             name = feature.name
         )?;
         for config in &feature.config {
-            writeln!(
-                out,
-                "{field}: Some(Clone::clone(&spec.{field})),",
-                field = config.field()
-            )?;
+            if config.optional {
+                writeln!(
+                    out,
+                    "{field}: Clone::clone(&spec.{field}),",
+                    field = config.field()
+                )?;
+            } else {
+                writeln!(
+                    out,
+                    "{field}: Some(Clone::clone(&spec.{field})),",
+                    field = config.field()
+                )?;
+            }
         }
     }
     writeln!(out, "}}")?;
@@ -557,11 +583,19 @@ pub fn generate(registry: &Registry) -> Result<String, fmt::Error> {
             name = feature.name
         )?;
         for config in &feature.config {
-            writeln!(
-                out,
-                "if let Some(value) = &self.{field} {{ spec.{field}.clone_from(value); }}",
-                field = config.field()
-            )?;
+            if config.optional {
+                writeln!(
+                    out,
+                    "if let Some(value) = &self.{field} {{ spec.{field} = Some(Clone::clone(value)); }}",
+                    field = config.field()
+                )?;
+            } else {
+                writeln!(
+                    out,
+                    "if let Some(value) = &self.{field} {{ spec.{field}.clone_from(value); }}",
+                    field = config.field()
+                )?;
+            }
         }
     }
     writeln!(out, "}}")?;

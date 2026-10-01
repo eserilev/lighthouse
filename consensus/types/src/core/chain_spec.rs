@@ -16,9 +16,10 @@ use crate::{
     consts::bellatrix::BASIS_POINTS,
     core::{
         APPLICATION_DOMAIN_BUILDER, Address, ApplicationDomain, EnrForkId, Epoch, EthSpec,
-        EthSpecId, ExecutionBlockHash, Hash256, MainnetEthSpec, Slot, Uint256,
+        EthSpecId, ExecutionBlockHash, Hash256, MainnetEthSpec, Slot, SlotDurationSchedule,
+        SlotDurationScheduleEntry, Uint256,
     },
-    features::{FeatureId, FeatureSpec},
+    features::{self, FeatureId, FeatureSpec},
     fork::{Fork, ForkData, ForkName},
 };
 
@@ -1109,6 +1110,31 @@ impl ChainSpec {
         self.slot_duration_ms = slot_duration_ms;
         self.seconds_per_slot = slot_duration_ms.saturating_div(1000);
         self.compute_derived_values::<E>()
+    }
+
+    /// The slot duration schedule. Without a configured schedule, it is one genesis entry of
+    /// `SLOT_DURATION_MS`, which gives slots of a fixed length.
+    pub fn slot_duration_schedule(&self) -> SlotDurationSchedule {
+        self.configured_slot_duration_schedule()
+            .cloned()
+            .unwrap_or_else(|| {
+                SlotDurationSchedule::new(vec![SlotDurationScheduleEntry {
+                    epoch: Epoch::new(0),
+                    slot_duration_ms: self.slot_duration_ms,
+                }])
+            })
+    }
+
+    /// The slot duration in effect at `epoch`.
+    pub fn get_slot_duration_ms(&self, epoch: Epoch) -> u64 {
+        self.configured_slot_duration_schedule()
+            .and_then(|schedule| schedule.slot_duration_ms_for_epoch(epoch))
+            .unwrap_or(self.slot_duration_ms)
+    }
+
+    fn configured_slot_duration_schedule(&self) -> Option<&SlotDurationSchedule> {
+        self.feature_fork_epoch(FeatureId::Eip8198)?;
+        features::eip8198::slot_duration_schedule(self)
     }
 
     /// Compute values that are derived from other config values.
@@ -3373,6 +3399,13 @@ impl Config {
 
             ..chain_spec.clone()
         };
+        if spec.feature_fork_epoch(FeatureId::Eip8198).is_some()
+            && let Err(e) =
+                features::eip8198::validate_slot_duration_schedule(&spec, E::slots_per_epoch())
+        {
+            error!(error = %e, "Invalid SLOT_DURATION_SCHEDULE");
+            return None;
+        }
         Some(spec.compute_derived_values::<E>())
     }
 }
@@ -4659,6 +4692,56 @@ mod yaml_tests {
         // 15000 bps = 150% of slot duration, which is invalid
         spec.attestation_due_bps = 15000;
         spec.compute_derived_values::<MainnetEthSpec>();
+    }
+
+    #[test]
+    fn slot_duration_schedule_without_a_config_is_the_slot_duration() {
+        let spec = ChainSpec::mainnet();
+        assert_eq!(
+            spec.slot_duration_schedule(),
+            SlotDurationSchedule::new(vec![SlotDurationScheduleEntry {
+                epoch: Epoch::new(0),
+                slot_duration_ms: 12000,
+            }])
+        );
+        assert_eq!(spec.get_slot_duration_ms(Epoch::new(0)), 12000);
+        assert_eq!(spec.get_slot_duration_ms(Epoch::new(1_000_000)), 12000);
+    }
+
+    #[test]
+    fn slot_time_mapping_matches_linear_mapping_without_schedule() {
+        let spec = ChainSpec::mainnet();
+        let schedule = spec.slot_duration_schedule();
+        let genesis_time_ms = 1_606_824_023_000;
+        for slot in [0, 1, 31, 32, 12_345, 10_000_000] {
+            assert_eq!(
+                schedule.compute_time_at_slot_ms(
+                    MainnetEthSpec::slots_per_epoch(),
+                    genesis_time_ms,
+                    Slot::new(slot)
+                ),
+                Ok(genesis_time_ms + slot * 12000)
+            );
+        }
+        for offset_ms in [0, 1, 11_999, 12_000, 123_456_789] {
+            assert_eq!(
+                schedule.compute_slot_at_time_ms(
+                    MainnetEthSpec::slots_per_epoch(),
+                    genesis_time_ms,
+                    genesis_time_ms + offset_ms
+                ),
+                Ok(Slot::new(offset_ms / 12000))
+            );
+        }
+        assert!(
+            schedule
+                .compute_slot_at_time_ms(
+                    MainnetEthSpec::slots_per_epoch(),
+                    genesis_time_ms,
+                    genesis_time_ms - 1
+                )
+                .is_err()
+        );
     }
 
     fn configs_base_path() -> PathBuf {
