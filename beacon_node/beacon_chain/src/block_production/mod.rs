@@ -208,7 +208,10 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         // 3. The `get_proposer_head` conditions from fork choice pass.
         let re_org_cutoff_duration = self
             .spec
-            .compute_slot_component_duration(self.spec.proposer_reorg_cutoff_bps)
+            .compute_slot_component_duration_at::<T::EthSpec>(
+                self.spec.proposer_reorg_cutoff_bps,
+                slot,
+            )
             .ok()?;
 
         let proposing_on_time = slot_delay < re_org_cutoff_duration;

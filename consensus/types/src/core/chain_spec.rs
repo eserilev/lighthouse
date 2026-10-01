@@ -2,6 +2,7 @@ use std::{fs::File, path::Path, time::Duration};
 
 use educe::Educe;
 use ethereum_hashing::hash;
+use feature_dispatch::feature_dispatch;
 use fixed_bytes::FixedBytesExtended;
 use int_to_bytes::int_to_bytes4;
 use safe_arith::{ArithError, SafeArith};
@@ -19,7 +20,7 @@ use crate::{
         EthSpecId, ExecutionBlockHash, Hash256, MainnetEthSpec, Slot, SlotDurationSchedule,
         SlotDurationScheduleEntry, Uint256,
     },
-    features::{self, FeatureId, FeatureSpec},
+    features::{self, Eip8198, FeatureId, FeatureSpec},
     fork::{Fork, ForkData, ForkName},
 };
 
@@ -1043,6 +1044,11 @@ impl ChainSpec {
     }
 
     /// Spec: `get_attestation_due_ms`. Returns the epoch-appropriate threshold.
+    #[feature_dispatch(
+        Eip8198 => features::eip8198::get_attestation_due::<E>,
+        spec = self,
+        epoch = slot.epoch(E::slots_per_epoch())
+    )]
     pub fn get_attestation_due<E: EthSpec>(&self, slot: Slot) -> Duration {
         if self.fork_name_at_slot::<E>(slot).gloas_enabled() {
             self.unaggregated_attestation_due_gloas
@@ -1052,16 +1058,31 @@ impl ChainSpec {
     }
 
     /// Spec: `get_payload_due_ms`.
-    pub fn get_payload_due(&self) -> Duration {
+    #[feature_dispatch(
+        Eip8198 => features::eip8198::get_payload_due::<E>,
+        spec = self,
+        epoch = slot.epoch(E::slots_per_epoch())
+    )]
+    pub fn get_payload_due<E: EthSpec>(&self, slot: Slot) -> Duration {
         self.payload_due
     }
 
     /// Spec: `get_payload_attestation_due_ms`.
-    pub fn get_payload_attestation_due(&self) -> Duration {
+    #[feature_dispatch(
+        Eip8198 => features::eip8198::get_payload_attestation_due::<E>,
+        spec = self,
+        epoch = slot.epoch(E::slots_per_epoch())
+    )]
+    pub fn get_payload_attestation_due<E: EthSpec>(&self, slot: Slot) -> Duration {
         self.payload_attestation_due
     }
 
     /// Spec: `get_aggregate_attestation_due_ms`. Returns the epoch-appropriate threshold.
+    #[feature_dispatch(
+        Eip8198 => features::eip8198::get_aggregate_attestation_due::<E>,
+        spec = self,
+        epoch = slot.epoch(E::slots_per_epoch())
+    )]
     pub fn get_aggregate_attestation_due<E: EthSpec>(&self, slot: Slot) -> Duration {
         if self.fork_name_at_slot::<E>(slot).gloas_enabled() {
             self.aggregate_attestation_due_gloas
@@ -1071,6 +1092,11 @@ impl ChainSpec {
     }
 
     /// Spec: `get_contribution_due_ms`. Returns the epoch-appropriate threshold.
+    #[feature_dispatch(
+        Eip8198 => features::eip8198::get_contribution_message_due::<E>,
+        spec = self,
+        epoch = slot.epoch(E::slots_per_epoch())
+    )]
     pub fn get_contribution_message_due<E: EthSpec>(&self, slot: Slot) -> Duration {
         if self.fork_name_at_slot::<E>(slot).gloas_enabled() {
             self.contribution_and_proof_due_gloas
@@ -1080,6 +1106,11 @@ impl ChainSpec {
     }
 
     /// Spec: `get_sync_message_due_ms`. Returns the epoch-appropriate threshold.
+    #[feature_dispatch(
+        Eip8198 => features::eip8198::get_sync_message_due::<E>,
+        spec = self,
+        epoch = slot.epoch(E::slots_per_epoch())
+    )]
     pub fn get_sync_message_due<E: EthSpec>(&self, slot: Slot) -> Duration {
         if self.fork_name_at_slot::<E>(slot).gloas_enabled() {
             self.sync_message_due_gloas
@@ -1098,6 +1129,20 @@ impl ChainSpec {
                 .safe_mul(self.slot_duration_ms)?
                 .safe_div(BASIS_POINTS)?,
         ))
+    }
+
+    /// Calculate the duration into `slot` for a given slot component.
+    #[feature_dispatch(
+        Eip8198 => features::eip8198::compute_slot_component_duration_at::<E>,
+        spec = self,
+        epoch = slot.epoch(E::slots_per_epoch())
+    )]
+    pub fn compute_slot_component_duration_at<E: EthSpec>(
+        &self,
+        component_basis_points: u64,
+        slot: Slot,
+    ) -> Result<Duration, ArithError> {
+        self.compute_slot_component_duration(component_basis_points)
     }
 
     /// Get the duration of a slot
@@ -4402,11 +4447,11 @@ mod yaml_tests {
 
         // Test payload due (5000 bps = 50% of 12s = 6s)
         let spec = ChainSpec::mainnet().compute_derived_values::<MainnetEthSpec>();
-        let payload_due = spec.get_payload_due();
+        let payload_due = spec.get_payload_due::<MainnetEthSpec>(Slot::new(0));
         assert_eq!(payload_due, Duration::from_millis(6000)); // 12000 * 5000 / 10000
 
         // Test payload attestation due (7500 bps = 75% of 12s = 9s)
-        let payload_att_due = spec.get_payload_attestation_due();
+        let payload_att_due = spec.get_payload_attestation_due::<MainnetEthSpec>(Slot::new(0));
         assert_eq!(payload_att_due, Duration::from_millis(9000)); // 12000 * 7500 / 10000
 
         // Test gloas attestation due (2500 bps = 25% of 12s = 3s)
@@ -4568,9 +4613,12 @@ mod yaml_tests {
         );
 
         // Mainnet payload due: 12000ms slots, 5000 bps = 6000ms
-        assert_eq!(mainnet.get_payload_due(), Duration::from_millis(6000));
         assert_eq!(
-            mainnet.get_payload_attestation_due(),
+            mainnet.get_payload_due::<MainnetEthSpec>(Slot::new(0)),
+            Duration::from_millis(6000)
+        );
+        assert_eq!(
+            mainnet.get_payload_attestation_due::<MainnetEthSpec>(Slot::new(0)),
             Duration::from_millis(9000)
         );
 
@@ -4613,9 +4661,12 @@ mod yaml_tests {
             Duration::from_millis(4000)
         );
         // Minimal payload due: 6000ms slots, 5000 bps = 3000ms
-        assert_eq!(minimal.get_payload_due(), Duration::from_millis(3000));
         assert_eq!(
-            minimal.get_payload_attestation_due(),
+            minimal.get_payload_due::<MinimalEthSpec>(Slot::new(0)),
+            Duration::from_millis(3000)
+        );
+        assert_eq!(
+            minimal.get_payload_attestation_due::<MinimalEthSpec>(Slot::new(0)),
             Duration::from_millis(4500)
         );
 
@@ -4658,9 +4709,12 @@ mod yaml_tests {
             Duration::from_millis(3333)
         );
         // Gnosis payload due: 5000ms slots, 5000 bps = 2500ms
-        assert_eq!(gnosis.get_payload_due(), Duration::from_millis(2500));
         assert_eq!(
-            gnosis.get_payload_attestation_due(),
+            gnosis.get_payload_due::<crate::core::GnosisEthSpec>(Slot::new(0)),
+            Duration::from_millis(2500)
+        );
+        assert_eq!(
+            gnosis.get_payload_attestation_due::<crate::core::GnosisEthSpec>(Slot::new(0)),
             Duration::from_millis(3750)
         );
 

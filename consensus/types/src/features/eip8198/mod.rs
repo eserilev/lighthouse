@@ -8,10 +8,12 @@
 use crate::core::{ChainSpec, Epoch, SlotDurationSchedule, SlotDurationScheduleEntry};
 use crate::features::FeatureId;
 
+mod deadlines;
 mod rescaling;
 #[cfg(test)]
 mod tests;
 
+pub use deadlines::*;
 pub use rescaling::*;
 
 /// The `SLOT_DURATION_SCHEDULE` of the config, if the config has one.
