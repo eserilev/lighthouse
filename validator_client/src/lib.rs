@@ -407,10 +407,9 @@ impl<E: EthSpec> ProductionValidatorClient<E> {
             ctx.shared.write().genesis_time = Some(genesis_time);
         }
 
-        let slot_clock = SystemTimeSlotClock::new(
-            context.eth2_config.spec.genesis_slot,
+        let slot_clock = SystemTimeSlotClock::from_spec::<E>(
             Duration::from_secs(genesis_time),
-            context.eth2_config.spec.get_slot_duration(),
+            &context.eth2_config.spec,
         );
 
         beacon_nodes.set_slot_clock(slot_clock.clone());
