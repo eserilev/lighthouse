@@ -20,7 +20,7 @@ arbitrary = [
     "swap_or_not_shuffle/arbitrary",
 ]
 portable = ["bls/supranational-portable"]
-# Add the test features of `consensus/fresnel/tests/fixtures/test_features.toml`.
+# Add the test features of `fresnel/tests/fixtures/test_features.toml`.
 fresnel-fixture = []
 
 [dependencies]

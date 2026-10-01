@@ -1,7 +1,7 @@
 //! Experimental consensus features.
 //!
 //! Features are listed in `registry.toml`. `make features` generates `generated.rs` from it, and
-//! `generated_fixture.rs` from it and `consensus/fresnel/tests/fixtures/test_features.toml`. The
+//! `generated_fixture.rs` from it and `fresnel/tests/fixtures/test_features.toml`. The
 //! `fresnel-fixture` feature compiles `generated_fixture.rs` instead, so that tests have features
 //! to schedule.
 //!

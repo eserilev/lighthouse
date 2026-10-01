@@ -10,10 +10,7 @@ struct Cli {
     #[arg(long, default_value = "consensus/types/src/features/registry.toml")]
     registry: PathBuf,
     /// Path to the test features that the tests of `types` add to the registry.
-    #[arg(
-        long,
-        default_value = "consensus/fresnel/tests/fixtures/test_features.toml"
-    )]
+    #[arg(long, default_value = "fresnel/tests/fixtures/test_features.toml")]
     fixture: PathBuf,
     /// Path to the source file of the `ForkName` enum.
     #[arg(long, default_value = "consensus/types/src/fork/fork_name.rs")]

@@ -2,7 +2,7 @@ use fresnel::{Registry, generate, read_forks, rustfmt, type_name};
 
 const TWO_FEATURES: &str = include_str!("fixtures/two_features.toml");
 const TEST_FEATURES: &str = include_str!("fixtures/test_features.toml");
-const FORK_NAME_SOURCE: &str = include_str!("../../types/src/fork/fork_name.rs");
+const FORK_NAME_SOURCE: &str = include_str!("../../consensus/types/src/fork/fork_name.rs");
 
 fn forks() -> Vec<String> {
     read_forks(FORK_NAME_SOURCE).expect("fork names")
@@ -78,7 +78,10 @@ fn empty_registry_generates_no_features() {
 
 #[test]
 fn checked_in_files_match_the_registry() {
-    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../types/src/features");
+    let root = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../consensus/types/src/features"
+    );
     let read = |file: &str| std::fs::read_to_string(format!("{root}/{file}")).expect(file);
     let registry = Registry::parse(&read("registry.toml"), &forks()).expect("valid registry");
     let fixture = Registry::parse(TEST_FEATURES, &forks()).expect("valid fixture");
