@@ -137,9 +137,12 @@ enum PayloadRequest<E: EthSpec> {
     /// is FULL. We can't tell FULL from EMPTY from the block alone: only a FULL child of this block
     /// proves a payload was published, which is signalled by `peers` becoming non-empty.
     Request {
+        slot: Slot,
         peers: PeerSet,
         state: SingleLookupRequestState<Arc<SignedExecutionPayloadEnvelope<E>>>,
     },
+    /// Post-Gloas block whose payload envelope is already imported.
+    NotRequired,
     /// Pre-Gloas block: no payload envelope exists, nothing to fetch.
     PreGloas,
 }
@@ -149,7 +152,7 @@ impl<E: EthSpec> PayloadRequest<E> {
         match &self {
             PayloadRequest::WaitingForBlock => false,
             PayloadRequest::Request { state, .. } => state.is_processed(),
-            PayloadRequest::PreGloas => true,
+            PayloadRequest::NotRequired | PayloadRequest::PreGloas => true,
         }
     }
 }
@@ -366,7 +369,7 @@ impl<T: BeaconChainTypes> SingleBlockLookup<T> {
                 // See `data_request` above: not awaiting an event itself, the block request covers it.
                 PayloadRequest::WaitingForBlock => false,
                 PayloadRequest::Request { state, .. } => state.is_awaiting_event(),
-                PayloadRequest::PreGloas => false,
+                PayloadRequest::NotRequired | PayloadRequest::PreGloas => false,
             }
     }
 
@@ -456,6 +459,7 @@ impl<T: BeaconChainTypes> SingleBlockLookup<T> {
                     if let Some(block) = self.block_request.state.peek_downloaded_data() {
                         self.payload_request = if block.fork_name_unchecked().gloas_enabled() {
                             PayloadRequest::Request {
+                                slot: block.slot(),
                                 peers: self.get_data_peers(block.payload_bid_block_hash().ok()),
                                 state: SingleLookupRequestState::new(),
                             }
@@ -466,7 +470,18 @@ impl<T: BeaconChainTypes> SingleBlockLookup<T> {
                         break;
                     }
                 }
-                PayloadRequest::Request { peers, state } => {
+                PayloadRequest::Request { slot, peers, state } => {
+                    if state.is_awaiting_download() {
+                        if cx.chain.envelope_is_known_to_fork_choice(&self.block_root) {
+                            self.payload_request = PayloadRequest::NotRequired;
+                            continue;
+                        }
+                        if cx.is_payload_prior_to_finalization(*slot) {
+                            return Err(LookupRequestError::Failed(
+                                "payload prior to finalization".to_owned(),
+                            ));
+                        }
+                    }
                     state.maybe_start_downloading(|failed_peers| {
                         cx.payload_lookup_request(
                             self.id,
@@ -490,7 +505,7 @@ impl<T: BeaconChainTypes> SingleBlockLookup<T> {
                     }
                     break;
                 }
-                PayloadRequest::PreGloas => break,
+                PayloadRequest::NotRequired | PayloadRequest::PreGloas => break,
             }
         }
 
