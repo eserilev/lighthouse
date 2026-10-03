@@ -2,7 +2,7 @@ import EpochProofs.Equiv.BuilderPendingPayments
 import EpochProofs.Sanity.EffectiveBalanceUpdates
 
 /-!
-# Lighthouse effective balance kernel equals the reference
+# Lighthouse effective balance update equals the reference
 
 `hysteresis_thresholds_equiv` and `new_effective_balance_equiv` relate the two Rust functions in
 `effective_balance.rs` to `hysteresisThresholds` and `newEffectiveBalance`.
