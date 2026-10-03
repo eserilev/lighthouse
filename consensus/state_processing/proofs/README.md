@@ -62,7 +62,7 @@ reference result. An overflow or a division by zero maps to the same spec error.
 `slashings_context_equiv` and `new_balance_after_slashing_equiv` do the same for slashings,
 after Electra.
 
-`new_balance_after_rewards_equiv` relates the rewards kernel to `rewardsCombined`: add all
+`new_balance_after_rewards_equiv` relates `new_balance_after_rewards` to `rewardsCombined`: add all
 rewards, then subtract all penalties once. The spec instead applies the four deltas in four
 rounds, with `saturating_sub` after each round (`rewardsSequential`).
 `new_balance_after_rewards_eq_spec` shows that the two agree when the balance covers all

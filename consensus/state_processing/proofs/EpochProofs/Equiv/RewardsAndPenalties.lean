@@ -2,7 +2,7 @@ import EpochProofs.Equiv.Slashings
 import EpochProofs.Sanity.RewardsAndPenalties
 
 /-!
-# Lighthouse rewards and penalties kernel equals the reference
+# Lighthouse rewards and penalties equal the reference
 
 `flag_delta_equiv` and `inactivity_penalty_equiv` relate the Rust helpers to `flagDelta` and
 `inactivityDelta`. `new_balance_after_rewards_equiv` relates `new_balance_after_rewards` to
