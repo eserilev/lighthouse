@@ -29,7 +29,8 @@ theorem withdrawals_loop (quorum : Uint64) (payments : List BuilderPendingPaymen
 /-- The state after `process_builder_pending_payments` for a given quorum. -/
 def builderPendingPaymentsResult (p : Preset) (quorum : Uint64) (state : BeaconState) :
     BeaconState :=
-  { builder_pending_payments :=
+  { state with
+    builder_pending_payments :=
       state.builder_pending_payments.drop p.SLOTS_PER_EPOCH
         ++ List.replicate p.SLOTS_PER_EPOCH BuilderPendingPayment.empty
     builder_pending_withdrawals :=

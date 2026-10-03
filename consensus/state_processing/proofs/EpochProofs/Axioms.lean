@@ -1,4 +1,5 @@
 import EpochProofs.Equiv.BuilderPendingPayments
+import EpochProofs.Equiv.EffectiveBalanceUpdates
 open EpochProofs.Spec
 #print axioms EpochProofs.Spec.withdrawals_loop
 #print axioms EpochProofs.Spec.process_builder_pending_payments_eq
@@ -11,3 +12,9 @@ open EpochProofs.Spec
 #print axioms EpochProofs.quorum_equiv
 #print axioms EpochProofs.absPayment_default
 #print axioms EpochProofs.builder_pending_payments_equiv
+#print axioms EpochProofs.Spec.process_effective_balance_updates_eq
+#print axioms EpochProofs.Spec.hysteresisThresholds_mainnet
+#print axioms EpochProofs.Spec.newEffectiveBalance_le_max
+#print axioms EpochProofs.Spec.newEffectiveBalance_in_band
+#print axioms EpochProofs.hysteresis_thresholds_equiv
+#print axioms EpochProofs.new_effective_balance_equiv

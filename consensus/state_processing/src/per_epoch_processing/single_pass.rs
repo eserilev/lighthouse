@@ -5,7 +5,9 @@ use crate::{
     },
     epoch_cache::{PreEpochCache, initialize_epoch_cache},
     per_block_processing::is_valid_deposit_signature,
-    per_epoch_processing::{Delta, Error, ParticipationEpochSummary, builder_pending_payments},
+    per_epoch_processing::{
+        Delta, Error, ParticipationEpochSummary, builder_pending_payments, effective_balance,
+    },
 };
 use itertools::izip;
 use milhouse::{Cow, List, Vector};
@@ -1314,12 +1316,12 @@ fn process_pending_consolidations<E: EthSpec>(
 
 impl EffectiveBalancesContext {
     fn new(spec: &ChainSpec) -> Result<Self, Error> {
-        let hysteresis_increment = spec
-            .effective_balance_increment
-            .safe_div(spec.hysteresis_quotient)?;
-        let downward_threshold =
-            hysteresis_increment.safe_mul(spec.hysteresis_downward_multiplier)?;
-        let upward_threshold = hysteresis_increment.safe_mul(spec.hysteresis_upward_multiplier)?;
+        let (downward_threshold, upward_threshold) = effective_balance::hysteresis_thresholds(
+            spec.effective_balance_increment,
+            spec.hysteresis_quotient,
+            spec.hysteresis_downward_multiplier,
+            spec.hysteresis_upward_multiplier,
+        )?;
 
         Ok(Self {
             downward_threshold,
@@ -1368,20 +1370,14 @@ fn process_single_effective_balance_update(
     let effective_balance_limit = validator.get_max_effective_balance(spec, state_ctxt.fork_name);
 
     let old_effective_balance = validator.effective_balance;
-    let new_effective_balance = if balance.safe_add(eb_ctxt.downward_threshold)?
-        < validator.effective_balance
-        || validator
-            .effective_balance
-            .safe_add(eb_ctxt.upward_threshold)?
-            < balance
-    {
-        min(
-            balance.safe_sub(balance.safe_rem(spec.effective_balance_increment)?)?,
-            effective_balance_limit,
-        )
-    } else {
-        validator.effective_balance
-    };
+    let new_effective_balance = effective_balance::new_effective_balance(
+        balance,
+        validator.effective_balance,
+        effective_balance_limit,
+        eb_ctxt.downward_threshold,
+        eb_ctxt.upward_threshold,
+        spec.effective_balance_increment,
+    )?;
 
     let is_active_next_epoch = validator.is_active_at(state_ctxt.next_epoch);
 

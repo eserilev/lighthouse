@@ -87,6 +87,30 @@ inductive safe_arith.ArithError where
 | Overflow : safe_arith.ArithError
 | DivisionByZero : safe_arith.ArithError
 
+/-- [safe_arith::{impl safe_arith::SafeArith<u64> for u64}::safe_add]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/safe_arith-0.1.0/src/lib.rs', lines 140:12-140:59
+    Name pattern: [safe_arith::{safe_arith::SafeArith<u64, u64>}::safe_add]
+    Visibility: public -/
+@[rust_fun "safe_arith::{safe_arith::SafeArith<u64, u64>}::safe_add"]
+def U64.Insts.Safe_arithSafeArithU64.safe_add
+  (self : Std.U64) (other : Std.U64) :
+  Result (core.result.Result Std.U64 safe_arith.ArithError)
+  := do
+  let o ← lift (U64.checked_add self other)
+  core.option.Option.ok_or o safe_arith.ArithError.Overflow
+
+/-- [safe_arith::{impl safe_arith::SafeArith<u64> for u64}::safe_sub]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/safe_arith-0.1.0/src/lib.rs', lines 145:12-145:59
+    Name pattern: [safe_arith::{safe_arith::SafeArith<u64, u64>}::safe_sub]
+    Visibility: public -/
+@[rust_fun "safe_arith::{safe_arith::SafeArith<u64, u64>}::safe_sub"]
+def U64.Insts.Safe_arithSafeArithU64.safe_sub
+  (self : Std.U64) (other : Std.U64) :
+  Result (core.result.Result Std.U64 safe_arith.ArithError)
+  := do
+  let o ← lift (U64.checked_sub self other)
+  core.option.Option.ok_or o safe_arith.ArithError.Overflow
+
 /-- [safe_arith::{impl safe_arith::SafeArith<u64> for u64}::safe_mul]:
     Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/safe_arith-0.1.0/src/lib.rs', lines 150:12-150:59
     Name pattern: [safe_arith::{safe_arith::SafeArith<u64, u64>}::safe_mul]
@@ -109,6 +133,18 @@ def U64.Insts.Safe_arithSafeArithU64.safe_div
   Result (core.result.Result Std.U64 safe_arith.ArithError)
   := do
   let o ← lift (U64.checked_div self other)
+  core.option.Option.ok_or o safe_arith.ArithError.DivisionByZero
+
+/-- [safe_arith::{impl safe_arith::SafeArith<u64> for u64}::safe_rem]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/safe_arith-0.1.0/src/lib.rs', lines 160:12-160:59
+    Name pattern: [safe_arith::{safe_arith::SafeArith<u64, u64>}::safe_rem]
+    Visibility: public -/
+@[rust_fun "safe_arith::{safe_arith::SafeArith<u64, u64>}::safe_rem"]
+def U64.Insts.Safe_arithSafeArithU64.safe_rem
+  (self : Std.U64) (other : Std.U64) :
+  Result (core.result.Result Std.U64 safe_arith.ArithError)
+  := do
+  let o ← lift (U64.checked_rem self other)
   core.option.Option.ok_or o safe_arith.ArithError.DivisionByZero
 
 /-- [types::builder::builder_pending_withdrawal::BuilderPendingWithdrawal]
@@ -419,5 +455,116 @@ def
     per_epoch_processing.builder_pending_payments.process_builder_pending_payments_loop2
       slots_per_epoch updated_payments 0#usize
   ok (new_withdrawals, updated_payments1)
+
+/-- [state_processing::per_epoch_processing::effective_balance::hysteresis_thresholds]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/effective_balance.rs', lines 10:0-20:1
+    Visibility: public -/
+def per_epoch_processing.effective_balance.hysteresis_thresholds
+  (effective_balance_increment : Std.U64) (hysteresis_quotient : Std.U64)
+  (hysteresis_downward_multiplier : Std.U64)
+  (hysteresis_upward_multiplier : Std.U64) :
+  Result (core.result.Result (Std.U64 × Std.U64) safe_arith.ArithError)
+  := do
+  let r ←
+    U64.Insts.Safe_arithSafeArithU64.safe_div effective_balance_increment
+      hysteresis_quotient
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let r1 ←
+      U64.Insts.Safe_arithSafeArithU64.safe_mul val
+        hysteresis_downward_multiplier
+    let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+    match cf1 with
+    | core.ops.control_flow.ControlFlow.Continue val1 =>
+      let r2 ←
+        U64.Insts.Safe_arithSafeArithU64.safe_mul val
+          hysteresis_upward_multiplier
+      let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
+      match cf2 with
+      | core.ops.control_flow.ControlFlow.Continue val2 =>
+        ok (core.result.Result.Ok (val1, val2))
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          (Std.U64 × Std.U64) (core.convert.FromSame safe_arith.ArithError)
+          residual
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        (Std.U64 × Std.U64) (core.convert.FromSame safe_arith.ArithError)
+        residual
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      (Std.U64 × Std.U64) (core.convert.FromSame safe_arith.ArithError)
+      residual
+
+/-- [state_processing::per_epoch_processing::effective_balance::new_effective_balance]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/effective_balance.rs', lines 23:0-41:1
+    Visibility: public -/
+def per_epoch_processing.effective_balance.new_effective_balance
+  (balance : Std.U64) (effective_balance : Std.U64)
+  (effective_balance_limit : Std.U64) (downward_threshold : Std.U64)
+  (upward_threshold : Std.U64) (effective_balance_increment : Std.U64) :
+  Result (core.result.Result Std.U64 safe_arith.ArithError)
+  := do
+  let r ←
+    U64.Insts.Safe_arithSafeArithU64.safe_add balance downward_threshold
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    if val < effective_balance
+    then
+      let r1 ←
+        U64.Insts.Safe_arithSafeArithU64.safe_rem balance
+          effective_balance_increment
+      let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+      match cf1 with
+      | core.ops.control_flow.ControlFlow.Continue val1 =>
+        let r2 ← U64.Insts.Safe_arithSafeArithU64.safe_sub balance val1
+        let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
+        match cf2 with
+        | core.ops.control_flow.ControlFlow.Continue val2 =>
+          let i ← core.cmp.min core.cmp.OrdU64 val2 effective_balance_limit
+          ok (core.result.Result.Ok i)
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+    else
+      let r1 ←
+        U64.Insts.Safe_arithSafeArithU64.safe_add effective_balance
+          upward_threshold
+      let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+      match cf1 with
+      | core.ops.control_flow.ControlFlow.Continue val1 =>
+        if val1 < balance
+        then
+          let r2 ←
+            U64.Insts.Safe_arithSafeArithU64.safe_rem balance
+              effective_balance_increment
+          let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
+          match cf2 with
+          | core.ops.control_flow.ControlFlow.Continue val2 =>
+            let r3 ← U64.Insts.Safe_arithSafeArithU64.safe_sub balance val2
+            let cf3 ← core.result.Result.Insts.CoreOpsTry.branch r3
+            match cf3 with
+            | core.ops.control_flow.ControlFlow.Continue val3 =>
+              let i ←
+                core.cmp.min core.cmp.OrdU64 val3 effective_balance_limit
+              ok (core.result.Result.Ok i)
+            | core.ops.control_flow.ControlFlow.Break residual =>
+              core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+          | core.ops.control_flow.ControlFlow.Break residual =>
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+              Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+        else ok (core.result.Result.Ok effective_balance)
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
 
 end state_processing

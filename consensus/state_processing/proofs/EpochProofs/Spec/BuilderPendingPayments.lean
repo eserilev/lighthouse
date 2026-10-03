@@ -3,7 +3,7 @@ import EpochProofs.Spec.Types
 /-!
 # Reference: `process_builder_pending_payments`
 
-Transcribed line by line from `specs/gloas/beacon-chain.md` (v1.7.0-beta.0).
+Transcribed line by line from `specs/gloas/beacon-chain.md` (v1.7.0-beta.2).
 Each definition quotes its pyspec.
 
 `get_total_active_balance(state)` is a parameter. The reference does not model the
