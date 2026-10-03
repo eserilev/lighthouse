@@ -2608,10 +2608,12 @@ impl<E: EthSpec> BeaconState<E> {
                 total_active_balance.safe_add_assign(validator.effective_balance)?;
             }
         }
-        Ok(std::cmp::max(
-            total_active_balance,
-            spec.effective_balance_increment,
-        ))
+        Ok(
+            crate::state::total_active_balance::floor_total_active_balance(
+                total_active_balance,
+                spec.effective_balance_increment,
+            ),
+        )
     }
 
     /// Implementation of `get_total_active_balance`, matching the spec.
@@ -2647,7 +2649,10 @@ impl<E: EthSpec> BeaconState<E> {
     ///
     /// This function will ensure the balance is never set to 0, thus conforming to the spec.
     pub fn set_total_active_balance(&mut self, epoch: Epoch, balance: u64, spec: &ChainSpec) {
-        let safe_balance = std::cmp::max(balance, spec.effective_balance_increment);
+        let safe_balance = crate::state::total_active_balance::floor_total_active_balance(
+            balance,
+            spec.effective_balance_increment,
+        );
         *self.total_active_balance_mut() = Some((epoch, safe_balance));
     }
 

@@ -1,5 +1,6 @@
 mod activation_queue;
 mod balance;
+pub mod base_rewards;
 mod beacon_state;
 #[macro_use]
 mod committee_cache;
@@ -12,6 +13,7 @@ mod iter;
 mod progressive_balances_cache;
 mod pubkey_cache;
 mod slashings_cache;
+pub mod total_active_balance;
 
 pub use activation_queue::ActivationQueue;
 pub use balance::Balance;

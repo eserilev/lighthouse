@@ -234,6 +234,135 @@ The reference omits `initiate_validator_exit`. It writes only `exit_epoch` and
 - Builder A uses `E + 1` and builder B uses `E`. Both over-approximate. A keeps more entries,
   and the filter removes them.
 
+## EpochCache
+
+Files:
+
+- Rust: `../src/state/{total_active_balance,base_rewards}.rs`
+- Reference: `CacheProofs/Spec/EpochCache.lean`
+- Theorems: `CacheProofs/Equiv/EpochCache.lean`
+
+Production code that calls the pure function:
+
+- `EpochCache::get_effective_balance` and `EpochCache::get_base_reward` (`../src/state/epoch_cache.rs`)
+- `PreEpochCache::update_effective_balance` and `PreEpochCache::into_epoch_cache`
+  (`consensus/state_processing/src/epoch_cache.rs`)
+- `SqrtTotalActiveBalance::new`, `base::get_base_reward`, `altair::get_base_reward` and
+  `get_base_reward_per_increment` (`consensus/state_processing/src/common/{base,altair}.rs`)
+- `BeaconState::compute_total_active_balance_slow` and `BeaconState::set_total_active_balance`
+  (the floor only)
+
+The pure function `integer_sqrt` is the Newton loop of the spec `integer_squareroot`. It replaces the
+`integer_sqrt` crate at these call sites. Both return the floor of the square root, so the values
+do not change.
+
+### Theorems
+
+`act i` is the "active in the next epoch" flag of validator `i`. `activeSum act ebs` is the sum of
+`ebs[i]` over the indices with `act i`.
+
+Total active balance:
+
+| Theorem | Kind | Statement |
+|---|---|---|
+| `update_effective_balance_spec` | Preservation | If `total = activeSum act ebs`, `i ≤ len`, the flag is `act i` and `total + eb` fits, the update returns `Ok(true)` and keeps `total' = activeSum act ebs'`. A push appends, a late update replaces. |
+| `update_effective_balance_out_of_bounds` | Error | If `i > len`, the update returns `Ok(false)` (`ValidatorIndexOutOfBounds`) and changes nothing. |
+| `lhRun_spec`, `lhRun_build` | Build | The `single_pass.rs` sequence of calls from an empty cache does not fail, and gives `total = activeSum act ebs`. |
+| `single_pass_total_active_balance` | Read | If the calls give the effective balances of `vs`, then `floor_total_active_balance(total)` equals the spec `get_total_active_balance` of the state with validators `vs` at the next epoch. |
+| `total_active_balance_equiv` | Read | The same, for any coherent `(ebs, total)`. |
+| `compute_total_active_balance_slow_equiv` | Build | The `BeaconState` total active balance cache equals the spec `get_total_active_balance`, and its loop does not overflow if the spec sum does not. |
+
+Base rewards:
+
+| Theorem | Kind | Statement |
+|---|---|---|
+| `integer_sqrt_equiv` | Read | For every `u64`, the pure function `integer_sqrt` returns `ok`, and its result equals the spec `integer_squareroot`. Both equal `Nat.sqrt`. |
+| `base_rewards_spec` | Build | `base_rewards` (the table of `into_epoch_cache`) returns `Ok` with `max_effective_balance / increment + 1` entries. Entry `k` is the base reward for `k * increment` with the floored total. |
+| `get_base_reward_equiv` | Read | Build the table from a total whose floor is the spec total active balance. Then for each validator with an effective balance that is a multiple of `EFFECTIVE_BALANCE_INCREMENT` and at most `max_effective_balance`, `get_base_reward` returns `Ok`. The value equals the spec phase0 or altair `get_base_reward`. |
+| `get_effective_balance_spec`, `get_effective_balance_no_false_error` | Read | `get_effective_balance` returns `Ok(ebs[i])` for each `i < len`. It returns `ValidatorIndexOutOfBounds` only for `i ≥ len`. |
+| `mainnet_hypotheses` | Check | The size hypotheses hold on mainnet for 32 ETH and for 2048 ETH (Electra). |
+| `floor_required` | Check | With no active validator, the raw total is 0. Without the floor, `base_reward_per_increment` fails with `DivisionByZero` (`no_floor_division_by_zero`). The spec returns `ok` on the same state. With the floor, `base_rewards` returns `Ok`. This is the fault that #9106 fixed. |
+
+The main statement:
+
+```lean
+theorem get_base_reward_equiv (cfg : Config) (vs : List Validator) (epoch : Nat)
+    (total inc maxEb factor bpe : U64) (phase0 : Bool)
+    (hinc : inc.val = cfg.EFFECTIVE_BALANCE_INCREMENT)
+    (hfactor : factor.val = cfg.BASE_REWARD_FACTOR)
+    (hbpeq : bpe.val = cfg.BASE_REWARDS_PER_EPOCH)
+    (hinc1 : 1 ≤ inc.val) (hbpe1 : 1 ≤ bpe.val)
+    (hincf : inc.val * factor.val ≤ U64.max) (hfit : maxEb.val * factor.val ≤ U64.max)
+    (hcap : maxEb.val / inc.val < 4294967295)
+    (htotal : get_total_active_balance cfg ⟨vs, epoch⟩ = .ok (max inc.val total.val))
+    (ebs : Slice U64) (hebs : ebs.val.map (·.val) = vs.map (·.effective_balance))
+    (index : Usize) (v : Validator) (hv : vs[index.val]? = some v)
+    (hmult : v.effective_balance % inc.val = 0) (hle : v.effective_balance ≤ maxEb.val) :
+    ∃ tbl, base_rewards total inc maxEb factor bpe phase0 = ok (.Ok tbl) ∧
+      ∃ r, get_base_reward ebs (alloc.vec.Vec.deref tbl) inc index = ok (.Ok r) ∧
+        (if phase0 then get_base_reward_phase0 cfg ⟨vs, epoch⟩ index.val
+          else get_base_reward_altair cfg ⟨vs, epoch⟩ index.val) = .ok r.val
+```
+
+### The reference
+
+`CacheProofs/Spec/EpochCache.lean` transcribes `integer_squareroot`, `is_active_validator`,
+`get_active_validator_indices`, `get_total_balance`, `get_total_active_balance`, the phase0
+`get_base_reward`, and the altair `get_base_reward_per_increment` and `get_base_reward`. The
+local spec checkout is v1.7.0-beta.0-17-g593604b8f. These functions are the same in
+v1.7.0-beta.2. The state has only the fields that these functions read.
+
+### Trusted base
+
+- Charon, Aeneas and the Aeneas Lean library. Its `sorry` warnings are not reachable from
+  these theorems.
+- `lhRun` models the glue in `single_pass.rs`: one `update_effective_balance` call per event,
+  in order, and `?` stops at the first error.
+- `lhSlowSum` models the loop of `compute_total_active_balance_slow`.
+- `single_pass.rs` makes calls that satisfy `ValidCalls`:
+  - The main loop calls `update_effective_balance` once for each index `0..n`, in order. The
+    dummy update for a validator in a consolidation counts as this call.
+  - New validators from pending deposits get the next indices, in order.
+  - A late update (consolidations) uses an index below the length.
+  - All calls for one index pass the same flag. The flag is `is_active_at(next_epoch)` of the
+    final validator. This is true because registry updates for a validator run before its
+    first call, and nothing later in the epoch transition changes its activation or exit epoch.
+  - Each running total plus the new effective balance fits in a `u64`. The total ETH supply
+    (about 2^57 Gwei) is far below 2^64.
+- `Validator::is_active_at` equals `is_active_validator`.
+- The `ChainSpec` values `effective_balance_increment`, `base_reward_factor` and
+  `base_rewards_per_epoch` equal the spec constants. `max_effective_balance_for_fork` of the
+  cache epoch is at least the effective balance of each validator. `ForkName::Base` selects the
+  phase0 formula.
+- Each effective balance is a multiple of `EFFECTIVE_BALANCE_INCREMENT` (spec invariant). Only
+  the phase0 formula needs this.
+- For the read theorems, the cached effective balances equal the effective balances of the
+  state. Effective balances change only in `process_effective_balance_updates`, which writes
+  the next cache. `upgrade_to_electra` changes the effective balance of pre-activation
+  validators, but it also resets the epoch cache.
+- The cache passes `total` to `base_rewards`. Its floor is the spec total active balance. The
+  `single_pass.rs` total is covered by `single_pass_total_active_balance`. The
+  `initialize_epoch_cache` total comes from the `BeaconState` cache, which is covered by
+  `compute_total_active_balance_slow_equiv`.
+- `EpochCache::check_validity`, the `CacheNotInitialized` check and the error mapping from the
+  pure function errors to `EpochCacheError` are glue.
+
+### Which indices the STF reads
+
+`get_effective_balance` and `get_base_reward` fail for an index at or past the cache length.
+The cache has one entry for each validator that existed when it was built. Before Electra, a
+deposit in a block adds a validator in the middle of an epoch. That validator has no cache
+entry. No caller reads it:
+
+- `process_attestation` (`process_operations.rs`) reads the attesting indices. They are
+  committee members, so they are active. An active validator existed before the cache was
+  built.
+- `process_epoch_single_pass` reads `get_base_reward(index)` only if the validator is eligible
+  (active in the previous epoch, or slashed and not yet withdrawable). A new validator is
+  neither, because a validator must be active to be slashed.
+- After Electra, new validators come only from pending deposits in epoch processing. They are
+  pushed to the next cache.
+
 ## Trusted base for all caches
 
 - Charon and Aeneas.

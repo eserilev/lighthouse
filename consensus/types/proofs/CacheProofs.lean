@@ -2,6 +2,8 @@ import CacheProofs.Generated
 import CacheProofs.Spec.Types
 import CacheProofs.Spec.ExitCache
 import CacheProofs.Spec.ActivationQueue
+import CacheProofs.Spec.EpochCache
 import CacheProofs.Equiv.ExitCache
 import CacheProofs.Equiv.ActivationQueue
+import CacheProofs.Equiv.EpochCache
 import CacheProofs.AxiomAudit
