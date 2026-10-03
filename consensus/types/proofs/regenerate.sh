@@ -18,6 +18,7 @@ trap 'rm -rf "$out"' EXIT
 # `-- --lib`: without it Charon translates the crate's binaries into opaque bodies.
 (cd "$crate_dir" && "$CHARON" cargo --preset=aeneas \
   --start-from types::state::exit_queue \
+  --start-from types::validator::activation_eligibility \
   --include safe_arith \
   --dest-file "$out/pure.llbc" -- --lib)
 

@@ -77,4 +77,28 @@ def state.exit_queue.churn_at
        then ok (some 0#u64)
        else ok none
 
+/-- [types::validator::activation_eligibility::could_be_eligible_for_activation_at]:
+    Source: 'consensus/types/src/validator/activation_eligibility.rs', lines 7:0-14:1
+    Visibility: public -/
+def validator.activation_eligibility.could_be_eligible_for_activation_at
+  (activation_eligibility_epoch : Std.U64) (activation_epoch : Std.U64)
+  (epoch : Std.U64) (far_future_epoch : Std.U64) :
+  Result Bool
+  := do
+  if activation_epoch = far_future_epoch
+  then ok (activation_eligibility_epoch < epoch)
+  else ok false
+
+/-- [types::validator::activation_eligibility::is_eligible_for_activation]:
+    Source: 'consensus/types/src/validator/activation_eligibility.rs', lines 17:0-24:1
+    Visibility: public -/
+def validator.activation_eligibility.is_eligible_for_activation
+  (activation_eligibility_epoch : Std.U64) (activation_epoch : Std.U64)
+  (finalized_epoch : Std.U64) (far_future_epoch : Std.U64) :
+  Result Bool
+  := do
+  if activation_eligibility_epoch <= finalized_epoch
+  then ok (activation_epoch = far_future_epoch)
+  else ok false
+
 end types

@@ -104,6 +104,136 @@ Trusted base:
   `record_validator_exit` (`process_operations.rs`, `process_consolidation_request`), so the
   cache is not correct after Electra.
 
+## ActivationQueue
+
+`ActivationQueue` (`src/state/activation_queue.rs`) is a speculative activation queue in the
+`EpochCache`. It is a `BTreeSet<(Epoch, usize)>` of `(activation_eligibility_epoch, index)`.
+
+### When Lighthouse builds and reads it
+
+The cache for epoch `E` comes from one of two builders:
+
+- A. `initialize_epoch_cache` (`state_processing/src/epoch_cache.rs:170`) runs during epoch `E`.
+  It adds each validator with `could_be_eligible_for_activation_at(E + 1)`.
+- B. Single-pass epoch processing at the end of epoch `E - 1`
+  (`single_pass.rs:860`). It adds each validator after its own registry update, with
+  `could_be_eligible_for_activation_at(E)`.
+
+`process_registry_updates` at the end of epoch `E` reads it with
+`get_validators_eligible_for_activation(finalized_epoch, churn_limit)`
+(`single_pass.rs:231`, `registry_updates.rs:50`). Electra and later do not read it.
+
+Between the build and the read:
+
+- Deposits append validators with `activation_eligibility_epoch = FAR_FUTURE_EPOCH`.
+- The eligibility loop of `process_registry_updates` at the end of `E` sets
+  `activation_eligibility_epoch` from `FAR_FUTURE_EPOCH` to `E + 1`.
+- No activation epoch changes. Exits and slashings write only exit fields.
+- Finality changes. The queue does not depend on it.
+
+`Frame finalized_epoch vb vr` states these facts. `vb` is the validator list that the builder
+sees. `vr` is the list at the read.
+
+### The theorems
+
+`CacheProofs/Equiv/ActivationQueue.lean`. `nomega` is `omega` after it unfolds the `Epoch`
+abbrev.
+
+```lean
+-- Pure functions (Aeneas translation of src/validator/activation_eligibility.rs)
+theorem could_be_eligible_for_activation_at_equiv ... :
+    could_be_eligible_for_activation_at elig act epoch far = ok (couldBeAt epoch.val validator)
+theorem is_eligible_for_activation_equiv ... :
+    is_eligible_for_activation elig act fin far = ok (Spec.is_eligible_for_activation fin.val validator)
+
+-- Build: both builders give the sorted keys of the validators with
+-- could_be_eligible_for_activation_at(epoch).
+theorem lhBuild_eq_queueSummary (epoch : Nat) (validators : List Validator) :
+    lhBuild epoch validators = queueSummary epoch validators
+
+-- Why the cache works.
+theorem couldBeAt_of_is_eligible_for_activation (hfin : finalized_epoch < epoch)
+    (h : is_eligible_for_activation finalized_epoch validator = true) :
+    couldBeAt epoch validator = true
+theorem over_approximation (hframe : Frame finalized_epoch vb vr) (hfin : finalized_epoch < epoch)
+    (hr : vr[i]? = some r) (hel : is_eligible_for_activation finalized_epoch r = true) :
+    ∃ b, vb[i]? = some b ∧ couldBeAt epoch b = true ∧
+      b.activation_eligibility_epoch = r.activation_eligibility_epoch
+
+-- Read agreement, phase0 to Deneb.
+theorem lhSelect_eq_dequeued (hframe : Frame finalized_epoch vb vr)
+    (hfin : finalized_epoch < epoch) (hepoch : epoch ≤ FAR_FUTURE_EPOCH) :
+    lhSelect (lhBuild epoch vb) finalized_epoch churn_limit =
+      dequeued finalized_epoch churn_limit vr
+theorem mem_lhSelect_iff ... : i ∈ lhSelect (lhBuild epoch vb) .. ↔ i ∈ dequeued ..
+
+-- Read agreement, Electra: three `if`s in Lighthouse equal `if`/`elif` in the spec.
+theorem lhRegistryUpdatePostElectra_eq (hfin : finalized_epoch ≤ current_epoch)
+    (hcur : current_epoch < FAR_FUTURE_EPOCH)
+    (hbal : EJECTION_BALANCE < MIN_ACTIVATION_BALANCE) :
+    lhRegistryUpdatePostElectra .. validator = process_registry_update_electra .. validator
+
+-- Discharge of the hypotheses from the spec.
+theorem process_activation_eligibility_frame (hfin : finalized_epoch ≤ current_epoch)
+    (h : process_activation_eligibility MAX_EFFECTIVE_BALANCE current_epoch vs = .ok vs') :
+    vs'.length = vs.length ∧ ∀ i b r, .. -- the Frame facts for the eligibility loop
+theorem process_finalizations_lt (hfin : finalized_epoch < current_epoch)
+    (h : process_finalizations bits pj cj current_epoch finalized_epoch = .ok f) :
+    f < current_epoch
+```
+
+`hfin` holds on both paths:
+
+- A: `epoch = E + 1`, and the finalized epoch is at most `E`.
+- B: `epoch = E`. At the end of epoch 0 the finalized epoch is 0. At the end of a later epoch
+  `E`, the old finalized epoch is less than `E`. `process_finalizations_lt` keeps it less than
+  `E`. By induction, the finalized epoch at the read is less than `E` for `E ≥ 1`.
+
+The functions have no error path. `get_validators_eligible_for_activation` returns indices from
+`vb`, and `vb.length ≤ vr.length`. So `get_validator_mut(index)?` does not fail.
+
+### The reference
+
+`CacheProofs/Spec/ActivationQueue.lean` transcribes `is_active_validator`,
+`is_eligible_for_activation_queue` (phase0, Electra), `is_eligible_for_activation`,
+`process_registry_updates` (phase0 to Deneb, Electra), and the finalization rules of
+`weigh_justification_and_finalization`. The local spec checkout is v1.7.0-beta.0-17-g593604b8f.
+These functions are the same in v1.7.0-beta.2.
+
+The reference omits `initiate_validator_exit`. It writes only `exit_epoch` and
+`withdrawable_epoch`, and the activation functions do not read them.
+
+### Trusted base
+
+- Charon and Aeneas. No Charon flags beyond `--include safe_arith`.
+- `BTreeSet<(Epoch, usize)>` is a sorted list without duplicates. `lhInsert` models `insert`.
+  Iteration is in list order. The tuple order is lexicographic, as `tupleLe`.
+- `lhBuild` models the loops in `initialize_epoch_cache` and
+  `process_single_registry_update_pre_electra`. `lhSelect` models
+  `get_validators_eligible_for_activation` before `collect`. The `collect` into
+  `BTreeSet<usize>` keeps the members. Single-pass uses `contains`, and `registry_updates.rs`
+  sets the same activation epoch for each member, so order does not matter.
+- `lhRegistryUpdatePostElectra` models `process_single_registry_update_post_electra`.
+  `Validator::is_eligible_for_activation_queue` and `Validator::is_active_at` equal the spec
+  functions.
+- `Frame` holds between the build and the read. Block processing before Electra appends
+  validators with `FAR_FUTURE_EPOCH` eligibility and does not write `activation_epoch` or
+  `activation_eligibility_epoch` of existing validators.
+- Lighthouse's justification and finalization equals the spec. `finalized_epoch` is the epoch
+  after it.
+- `get_activation_churn_limit` equals `get_validator_activation_churn_limit` (Deneb) or
+  `get_validator_churn_limit` (before Deneb).
+- Mainnet and minimal presets have `EJECTION_BALANCE < MIN_ACTIVATION_BALANCE`.
+
+### Coherence notes
+
+- `process_epoch_single_pass` with `effective_balance_updates` and without `registry_updates`
+  stores an empty queue for the next epoch (`single_pass.rs:480-486`). Only
+  `process_effective_balance_updates_slow` (tests) does this. A real epoch transition enables
+  all steps.
+- Builder A uses `E + 1` and builder B uses `E`. Both over-approximate. A keeps more entries,
+  and the filter removes them.
+
 ## Trusted base for all caches
 
 - Charon and Aeneas.

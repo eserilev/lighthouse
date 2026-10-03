@@ -1,4 +1,5 @@
 import CacheProofs.Equiv.ExitCache
+import CacheProofs.Equiv.ActivationQueue
 import Lean.Util.CollectAxioms
 
 /-!
