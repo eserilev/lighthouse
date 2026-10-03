@@ -662,6 +662,215 @@ def per_epoch_processing.inactivity_updates.new_inactivity_score
           Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
   else ok (core.result.Result.Ok inactivity_score)
 
+/-- [state_processing::per_epoch_processing::pending_deposits::DepositView]
+    Source: 'consensus/state_processing/src/per_epoch_processing/pending_deposits.rs', lines 9:0-19:1
+    Visibility: public -/
+structure per_epoch_processing.pending_deposits.DepositView where
+  slot : Std.U64
+  amount : Std.U64
+  is_known_validator : Bool
+  exit_epoch : Std.U64
+  withdrawable_epoch : Std.U64
+  activation_epoch : Std.U64
+  effective_balance : Std.U64
+  eth1_bridge_blocked : Bool
+
+/-- [state_processing::per_epoch_processing::pending_deposits::DepositConstants]
+    Source: 'consensus/state_processing/src/per_epoch_processing/pending_deposits.rs', lines 22:0-29:1
+    Visibility: public -/
+structure per_epoch_processing.pending_deposits.DepositConstants where
+  far_future_epoch : Std.U64
+  ejection_balance : Std.U64
+  max_pending_deposits_per_epoch : Std.U64
+  registry_updates : Bool
+
+/-- [state_processing::per_epoch_processing::pending_deposits::DepositsOutcome]
+    Source: 'consensus/state_processing/src/per_epoch_processing/pending_deposits.rs', lines 32:0-37:1
+    Visibility: public -/
+structure per_epoch_processing.pending_deposits.DepositsOutcome where
+  next_deposit_index : Std.U64
+  deposit_balance_to_consume : Std.U64
+  postponed : alloc.vec.Vec Bool
+
+/-- [state_processing::per_epoch_processing::pending_deposits::deposit_status]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/pending_deposits.rs', lines 41:0-59:1
+    Visibility: public -/
+def per_epoch_processing.pending_deposits.deposit_status
+  (view : per_epoch_processing.pending_deposits.DepositView)
+  (current_epoch : Std.U64) (next_epoch : Std.U64)
+  (constants : per_epoch_processing.pending_deposits.DepositConstants) :
+  Result (Bool × Bool)
+  := do
+  if view.is_known_validator
+  then
+    let is_active ←
+      if view.activation_epoch <= current_epoch
+      then ok (current_epoch < view.exit_epoch)
+      else ok false
+    let will_be_exited ←
+      if constants.registry_updates
+      then
+        if is_active
+        then ok (view.effective_balance <= constants.ejection_balance)
+        else ok false
+      else ok false
+    let b ←
+      if view.exit_epoch < constants.far_future_epoch
+      then ok true
+      else ok will_be_exited
+    ok (b, view.withdrawable_epoch < next_epoch)
+  else ok (false, false)
+
+/-- [state_processing::per_epoch_processing::pending_deposits::process_pending_deposits]: loop body 0:
+    Source: 'consensus/state_processing/src/per_epoch_processing/pending_deposits.rs', lines 78:4-111:5
+    Visibility: public -/
+@[rust_loop_body]
+def per_epoch_processing.pending_deposits.process_pending_deposits_loop.body
+  (views : Slice per_epoch_processing.pending_deposits.DepositView)
+  (finalized_slot : Std.U64) (current_epoch : Std.U64) (next_epoch : Std.U64)
+  (constants : per_epoch_processing.pending_deposits.DepositConstants)
+  (available_for_processing : Std.U64) (processed_amount : Std.U64)
+  (next_deposit_index : Std.U64) (postponed : alloc.vec.Vec Bool)
+  (i : Std.Usize) :
+  Result (ControlFlow (Std.U64 × Std.U64 × (alloc.vec.Vec Bool) × Std.Usize)
+    (Std.U64 × Std.U64 × Bool × Bool × (alloc.vec.Vec Bool)))
+  := do
+  let i1 := Slice.len views
+  if i < i1
+  then
+    let o ←
+      core.slice.Slice.get (core.slice.index.SliceIndexUsizeSlice
+        per_epoch_processing.pending_deposits.DepositView) views i
+    match o with
+    | none =>
+      let i2 ← lift (core.num.Usize.saturating_add i 1#usize)
+      ok (cont (processed_amount, next_deposit_index, postponed, i2))
+    | some view =>
+      if view.eth1_bridge_blocked
+      then
+        ok (done (processed_amount, next_deposit_index, false, false,
+          postponed))
+      else
+        if view.slot > finalized_slot
+        then
+          ok (done (processed_amount, next_deposit_index, false, false,
+            postponed))
+        else
+          if next_deposit_index >= constants.max_pending_deposits_per_epoch
+          then
+            ok (done (processed_amount, next_deposit_index, false, false,
+              postponed))
+          else
+            let (is_exited, is_withdrawn) ←
+              per_epoch_processing.pending_deposits.deposit_status view
+                current_epoch next_epoch constants
+            if is_withdrawn
+            then
+              let postponed1 ← alloc.vec.Vec.push postponed false
+              let next_deposit_index1 ←
+                lift (core.num.U64.saturating_add next_deposit_index 1#u64)
+              let i2 ← lift (core.num.Usize.saturating_add i 1#usize)
+              ok (cont (processed_amount, next_deposit_index1, postponed1, i2))
+            else
+              if is_exited
+              then
+                let postponed1 ← alloc.vec.Vec.push postponed true
+                let next_deposit_index1 ←
+                  lift (core.num.U64.saturating_add next_deposit_index 1#u64)
+                let i2 ← lift (core.num.Usize.saturating_add i 1#usize)
+                ok (cont (processed_amount, next_deposit_index1, postponed1,
+                  i2))
+              else
+                let o1 ← lift (U64.checked_add processed_amount view.amount)
+                match o1 with
+                | none =>
+                  ok (done (processed_amount, next_deposit_index, false, true,
+                    postponed))
+                | some total =>
+                  if total > available_for_processing
+                  then
+                    ok (done (processed_amount, next_deposit_index, true,
+                      false, postponed))
+                  else
+                    let postponed1 ← alloc.vec.Vec.push postponed false
+                    let next_deposit_index1 ←
+                      lift (core.num.U64.saturating_add next_deposit_index
+                        1#u64)
+                    let i2 ← lift (core.num.Usize.saturating_add i 1#usize)
+                    ok (cont (total, next_deposit_index1, postponed1, i2))
+  else
+    ok (done (processed_amount, next_deposit_index, false, false, postponed))
+
+/-- [state_processing::per_epoch_processing::pending_deposits::process_pending_deposits]: loop 0:
+    Source: 'consensus/state_processing/src/per_epoch_processing/pending_deposits.rs', lines 78:4-111:5
+    Visibility: public -/
+@[rust_loop]
+def per_epoch_processing.pending_deposits.process_pending_deposits_loop
+  (views : Slice per_epoch_processing.pending_deposits.DepositView)
+  (finalized_slot : Std.U64) (current_epoch : Std.U64) (next_epoch : Std.U64)
+  (constants : per_epoch_processing.pending_deposits.DepositConstants)
+  (available_for_processing : Std.U64) (processed_amount : Std.U64)
+  (next_deposit_index : Std.U64) (postponed : alloc.vec.Vec Bool)
+  (i : Std.Usize) :
+  Result (Std.U64 × Std.U64 × Bool × Bool × (alloc.vec.Vec Bool))
+  := do
+  loop
+    (fun (processed_amount1, next_deposit_index1, postponed1, i1) =>
+      per_epoch_processing.pending_deposits.process_pending_deposits_loop.body
+      views finalized_slot current_epoch next_epoch constants
+      available_for_processing processed_amount1 next_deposit_index1 postponed1
+      i1)
+    (processed_amount, next_deposit_index, postponed, i)
+
+/-- [state_processing::per_epoch_processing::pending_deposits::process_pending_deposits]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/pending_deposits.rs', lines 62:0-126:1
+    Visibility: public -/
+def per_epoch_processing.pending_deposits.process_pending_deposits
+  (views : Slice per_epoch_processing.pending_deposits.DepositView)
+  (finalized_slot : Std.U64) (current_epoch : Std.U64) (next_epoch : Std.U64)
+  (deposit_balance_to_consume : Std.U64) (activation_churn_limit : Std.U64)
+  (constants : per_epoch_processing.pending_deposits.DepositConstants) :
+  Result (core.result.Result
+    per_epoch_processing.pending_deposits.DepositsOutcome
+    safe_arith.ArithError)
+  := do
+  let r ←
+    U64.Insts.Safe_arithSafeArithU64.safe_add deposit_balance_to_consume
+      activation_churn_limit
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let (processed_amount, next_deposit_index, is_churn_limit_reached,
+      overflow, postponed) ←
+      per_epoch_processing.pending_deposits.process_pending_deposits_loop views
+        finalized_slot current_epoch next_epoch constants val 0#u64 0#u64
+        (alloc.vec.Vec.new Bool) 0#usize
+    if overflow
+    then ok (core.result.Result.Err safe_arith.ArithError.Overflow)
+    else
+      if is_churn_limit_reached
+      then
+        let r1 ←
+          U64.Insts.Safe_arithSafeArithU64.safe_sub val processed_amount
+        let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+        match cf1 with
+        | core.ops.control_flow.ControlFlow.Continue val1 =>
+          ok (core.result.Result.Ok
+            { next_deposit_index, deposit_balance_to_consume := val1, postponed
+            })
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            per_epoch_processing.pending_deposits.DepositsOutcome
+            (core.convert.FromSame safe_arith.ArithError) residual
+      else
+        ok (core.result.Result.Ok
+          { next_deposit_index, deposit_balance_to_consume := 0#u64, postponed
+          })
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      per_epoch_processing.pending_deposits.DepositsOutcome
+      (core.convert.FromSame safe_arith.ArithError) residual
+
 /-- [state_processing::per_epoch_processing::registry_update::RegistryFields]
     Source: 'consensus/state_processing/src/per_epoch_processing/registry_update.rs', lines 9:0-16:1
     Visibility: public -/

@@ -76,11 +76,14 @@ structure Preset where
   EJECTION_BALANCE : Gwei := 16000000000
   MAX_SEED_LOOKAHEAD : Uint64 := 4
   MIN_VALIDATOR_WITHDRAWABILITY_DELAY : Uint64 := 256
+  MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS : Gwei := 256000000000
+  MAX_PENDING_DEPOSITS_PER_EPOCH : Uint64 := 16
 
 def Preset.mainnet : Preset := { SLOTS_PER_EPOCH := 32 }
 def Preset.minimal : Preset :=
   { SLOTS_PER_EPOCH := 8, EPOCHS_PER_SLASHINGS_VECTOR := 64,
-    MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA := 64000000000, CHURN_LIMIT_QUOTIENT_GLOAS := 16 }
+    MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA := 64000000000, CHURN_LIMIT_QUOTIENT_GLOAS := 16,
+    MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS := 128000000000 }
 
 def BUILDER_PAYMENT_THRESHOLD_NUMERATOR : Uint64 := 6
 def BUILDER_PAYMENT_THRESHOLD_DENOMINATOR : Uint64 := 10
@@ -106,9 +109,12 @@ def UINT64_MAX : Uint64 := 2 ^ 64 - 1
 def UINT64_MAX_SQRT : Uint64 := 4294967295
 
 abbrev Bytes32 := Vector UInt8 32
+abbrev BLSPubkey := Vector UInt8 48
+abbrev BLSSignature := Vector UInt8 96
 
 /-- Only the fields that the reference reads or writes. -/
 structure Validator where
+  pubkey : BLSPubkey
   withdrawal_credentials : Bytes32
   effective_balance : Gwei
   slashed : Bool
@@ -116,6 +122,14 @@ structure Validator where
   activation_epoch : Epoch
   exit_epoch : Epoch
   withdrawable_epoch : Epoch
+  deriving DecidableEq, Repr
+
+structure PendingDeposit where
+  pubkey : BLSPubkey
+  withdrawal_credentials : Bytes32
+  amount : Gwei
+  signature : BLSSignature
+  slot : Slot
   deriving DecidableEq, Repr
 
 structure Checkpoint where
@@ -155,6 +169,8 @@ structure BeaconState where
   slashings : List Gwei := []
   earliest_exit_epoch : Epoch := 0
   exit_balance_to_consume : Gwei := 0
+  pending_deposits : List PendingDeposit := []
+  deposit_balance_to_consume : Gwei := 0
   builder_pending_payments : List BuilderPendingPayment
   builder_pending_withdrawals : List BuilderPendingWithdrawal
   deriving DecidableEq, Repr

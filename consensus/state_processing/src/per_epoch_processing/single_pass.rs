@@ -7,7 +7,8 @@ use crate::{
     per_block_processing::is_valid_deposit_signature,
     per_epoch_processing::{
         Error, ParticipationEpochSummary, builder_pending_payments, effective_balance,
-        inactivity_updates, registry_update, rewards_penalties, slashings_penalty,
+        inactivity_updates, pending_deposits, registry_update, rewards_penalties,
+        slashings_penalty,
     },
 };
 use itertools::izip;
@@ -1019,121 +1020,97 @@ impl PendingDepositsContext {
         spec: &ChainSpec,
         config: &SinglePassConfig,
     ) -> Result<Self, Error> {
-        let available_for_processing = state
-            .deposit_balance_to_consume()?
-            .safe_add(state.get_activation_exit_churn_limit(spec)?)?;
         let current_epoch = state.current_epoch();
         let next_epoch = state.next_epoch()?;
-        let mut processed_amount = 0;
-        let mut next_deposit_index = 0;
-        let mut validator_deposits_to_process = HashMap::new();
-        let mut deposits_to_postpone = vec![];
-        let mut new_validator_deposits = vec![];
-        let mut is_churn_limit_reached = false;
         let finalized_slot = state
             .finalized_checkpoint()
             .epoch
             .start_slot(E::slots_per_epoch());
+        let fulu_enabled = state.fork_name_unchecked().fulu_enabled();
+        let constants = pending_deposits::DepositConstants {
+            far_future_epoch: spec.far_future_epoch.as_u64(),
+            ejection_balance: spec.ejection_balance,
+            max_pending_deposits_per_epoch: E::max_pending_deposits_per_epoch() as u64,
+            registry_updates: config.registry_updates,
+        };
 
+        // The decisions never look past `max_pending_deposits_per_epoch` deposits.
         let pending_deposits = state.pending_deposits()?;
-
-        for deposit in pending_deposits.iter() {
+        let mut views = Vec::new();
+        let mut validator_indices = Vec::new();
+        for deposit in pending_deposits
+            .iter()
+            .take(E::max_pending_deposits_per_epoch())
+        {
             // Do not process deposit requests if pre-Fulu and the Eth1 bridge deposits are not yet applied.
             // Support for the former Eth1 bridge deposit mechanism was removed in Fulu.
-            if !state.fork_name_unchecked().fulu_enabled()
+            let eth1_bridge_blocked = !fulu_enabled
                 && deposit.slot > spec.genesis_slot
-                && state.eth1_deposit_index() < state.deposit_requests_start_index()?
-            {
-                break;
-            }
-            // Do not process is deposit slot has not been finalized.
-            if deposit.slot > finalized_slot {
-                break;
-            }
-            // Do not process if we have reached the limit for the number of deposits
-            // processed in an epoch.
-            if next_deposit_index >= E::max_pending_deposits_per_epoch() {
-                break;
-            }
-            // We have to do a bit of indexing into `validators` here, but I can't see any way
-            // around that without changing the spec.
-            //
-            // We need to work out if `validator.exit_epoch` will be set to a non-default value
-            // *after* changes applied by `process_registry_updates`, which in our implementation
-            // does not happen until after this (but in the spec happens before). However it's not
-            // hard to work out: we don't need to know exactly what value the `exit_epoch` will
-            // take, just whether it is non-default. Nor do we need to know the value of
-            // `withdrawable_epoch`, because `next_epoch <= withdrawable_epoch` will evaluate to
-            // `true` both for the actual value & the default placeholder value (`FAR_FUTURE_EPOCH`).
-            let mut is_validator_exited = false;
-            let mut is_validator_withdrawn = false;
+                && state.eth1_deposit_index() < state.deposit_requests_start_index()?;
             let opt_validator_index = state.pubkey_cache().get(&deposit.pubkey);
-            if let Some(validator_index) = opt_validator_index {
+            let view = if let Some(validator_index) = opt_validator_index {
                 let validator = state.get_validator(validator_index)?;
-                let already_exited = validator.exit_epoch < spec.far_future_epoch;
-                // In the spec process_registry_updates is called before process_pending_deposits
-                // so we must account for process_registry_updates ejecting the validator for low balance
-                // and setting the exit_epoch to < far_future_epoch. Note that in the spec the effective
-                // balance update does not happen until *after* the registry update, so we don't need to
-                // account for changes to the effective balance that would push it below the ejection
-                // balance here.
-                // Note: we only consider this if registry_updates are enabled in the config.
-                // EF tests require us to run epoch_processing functions in isolation.
-                let will_be_exited = config.registry_updates
-                    && (validator.is_active_at(current_epoch)
-                        && validator.effective_balance <= spec.ejection_balance);
-                is_validator_exited = already_exited || will_be_exited;
-                is_validator_withdrawn = validator.withdrawable_epoch < next_epoch;
-            }
-
-            if is_validator_withdrawn {
-                // Deposited balance will never become active. Queue a balance increase but do not
-                // consume churn. Validator index must be known if the validator is known to be
-                // withdrawn (see calculation of `is_validator_withdrawn` above).
-                let validator_index =
-                    opt_validator_index.ok_or(Error::PendingDepositsLogicError)?;
-                validator_deposits_to_process
-                    .entry(validator_index)
-                    .or_insert(0)
-                    .safe_add_assign(deposit.amount)?;
-            } else if is_validator_exited {
-                // Validator is exiting, postpone the deposit until after withdrawable epoch
-                deposits_to_postpone.push(deposit.clone());
+                pending_deposits::DepositView {
+                    slot: deposit.slot.as_u64(),
+                    amount: deposit.amount,
+                    is_known_validator: true,
+                    exit_epoch: validator.exit_epoch.as_u64(),
+                    withdrawable_epoch: validator.withdrawable_epoch.as_u64(),
+                    activation_epoch: validator.activation_epoch.as_u64(),
+                    effective_balance: validator.effective_balance,
+                    eth1_bridge_blocked,
+                }
             } else {
-                // Check if deposit fits in the churn, otherwise, do no more deposit processing in this epoch.
-                is_churn_limit_reached =
-                    processed_amount.safe_add(deposit.amount)? > available_for_processing;
-                if is_churn_limit_reached {
-                    break;
+                pending_deposits::DepositView {
+                    slot: deposit.slot.as_u64(),
+                    amount: deposit.amount,
+                    is_known_validator: false,
+                    exit_epoch: 0,
+                    withdrawable_epoch: 0,
+                    activation_epoch: 0,
+                    effective_balance: 0,
+                    eth1_bridge_blocked,
                 }
-                processed_amount.safe_add_assign(deposit.amount)?;
-
-                // Deposit fits in the churn, process it. Increase balance and consume churn.
-                if let Some(validator_index) = state.pubkey_cache().get(&deposit.pubkey) {
-                    validator_deposits_to_process
-                        .entry(validator_index)
-                        .or_insert(0)
-                        .safe_add_assign(deposit.amount)?;
-                } else {
-                    // The `PendingDeposit` is for a new validator
-                    new_validator_deposits.push(deposit.clone());
-                }
-            }
-
-            // Regardless of how the deposit was handled, we move on in the queue.
-            next_deposit_index.safe_add_assign(1)?;
+            };
+            views.push(view);
+            validator_indices.push(opt_validator_index);
         }
 
-        // Accumulate churn only if the churn limit has been hit.
-        let deposit_balance_to_consume = if is_churn_limit_reached {
-            available_for_processing.safe_sub(processed_amount)?
-        } else {
-            0
-        };
+        let outcome = pending_deposits::process_pending_deposits(
+            &views,
+            finalized_slot.as_u64(),
+            current_epoch.as_u64(),
+            next_epoch.as_u64(),
+            state.deposit_balance_to_consume()?,
+            state.get_activation_exit_churn_limit(spec)?,
+            &constants,
+        )?;
+
+        let next_deposit_index = outcome.next_deposit_index as usize;
+        let mut validator_deposits_to_process = HashMap::new();
+        let mut deposits_to_postpone = vec![];
+        let mut new_validator_deposits = vec![];
+        for (i, deposit) in pending_deposits.iter().take(next_deposit_index).enumerate() {
+            let postpone = outcome
+                .postponed
+                .get(i)
+                .copied()
+                .ok_or(Error::PendingDepositsLogicError)?;
+            if postpone {
+                deposits_to_postpone.push(deposit.clone());
+            } else if let Some(Some(validator_index)) = validator_indices.get(i) {
+                validator_deposits_to_process
+                    .entry(*validator_index)
+                    .or_insert(0)
+                    .safe_add_assign(deposit.amount)?;
+            } else {
+                new_validator_deposits.push(deposit.clone());
+            }
+        }
 
         Ok(Self {
             next_deposit_index,
-            deposit_balance_to_consume,
+            deposit_balance_to_consume: outcome.deposit_balance_to_consume,
             validator_deposits_to_process,
             deposits_to_postpone,
             new_validator_deposits,
