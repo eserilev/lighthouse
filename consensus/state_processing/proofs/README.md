@@ -3,7 +3,7 @@
 Goal: prove that Lighthouse's Gloas epoch processing equals the consensus spec for every state.
 
 ```
-../src/per_epoch_processing/{builder_pending_payments,effective_balance,inactivity_updates,slashings_penalty}.rs
+../src/per_epoch_processing/{builder_pending_payments,effective_balance,inactivity_updates,slashings_penalty,rewards_penalties}.rs
    --charon--> .llbc --aeneas--> EpochProofs/Generated.lean
                                           |
                      EpochProofs/Equiv/*.lean (equivalence proof)
@@ -19,6 +19,7 @@ EpochProofs/Spec/*.lean  <-- written by hand from the consensus specs
 | `process_effective_balance_updates` (per validator) | Done | Done | Done |
 | `process_inactivity_updates` (per validator) | Done | Done | Done |
 | `process_slashings` (context and per validator) | Done | Done | Done |
+| `process_rewards_and_penalties` (per validator) | Done | Done | Done, with a condition |
 
 ## The theorems
 
@@ -61,6 +62,14 @@ reference result. An overflow or a division by zero maps to the same spec error.
 `slashings_context_equiv` and `new_balance_after_slashing_equiv` do the same for slashings,
 after Electra.
 
+`new_balance_after_rewards_equiv` relates the rewards kernel to `rewardsCombined`: add all
+rewards, then subtract all penalties once. The spec instead applies the four deltas in four
+rounds, with `saturating_sub` after each round (`rewardsSequential`).
+`new_balance_after_rewards_eq_spec` shows that the two agree when the balance covers all
+penalties and no addition overflows. `rewards_saturation_example` shows an input where they
+differ: a balance of 3, a source penalty of 5 and a target reward of 10 give 10 in the spec
+and 8 in Lighthouse. Prysm uses the same order as Lighthouse.
+
 `absState` maps Aeneas types to reference types. Rust `Default` maps to spec `empty()`.
 
 ## The reference
@@ -95,6 +104,9 @@ Rules:
 | `process_slashings_eq` | The loop is a `foldlM` of one step per validator, with the preamble computed once |
 | `slashingBalanceStep_not_slashed` | A validator that is not slashed keeps its balance |
 | `slashingBalanceStep_le` | The penalty never raises a balance |
+| `rewardsSequential_eq_combined` | Without saturation, the four-round order is `balance + rewards - penalties` |
+| `rewardsCombined_eq_sequential` | Under the same condition, the Lighthouse order equals the spec order |
+| `rewards_saturation_example` | Without the condition, the two orders differ |
 
 `get_total_active_balance(state)` is a parameter. Lighthouse reads it from a cache.
 
@@ -120,7 +132,9 @@ charon cargo --preset=aeneas \
   --start-from 'state_processing::per_epoch_processing::effective_balance' \
   --start-from 'state_processing::per_epoch_processing::inactivity_updates' \
   --start-from 'state_processing::per_epoch_processing::slashings_penalty' \
+  --start-from 'state_processing::per_epoch_processing::rewards_penalties' \
   --include safe_arith --include types::builder --include alloy_primitives::bits \
+  --include types::core::consts \
   --dest-file "$out/pure.llbc" -- --lib
 aeneas -backend lean "$out/pure.llbc" -dest "$out"
 cp "$out/Pure.lean" proofs/EpochProofs/Generated.lean
@@ -159,6 +173,9 @@ Aeneas rejected the original code in `single_pass.rs` for two reasons:
 - `single_pass.rs` passes three flags to `new_inactivity_score`: `is_eligible`, the timely
   target check, and `is_in_inactivity_leak`. Each equals its spec predicate.
 - `single_pass.rs` sums `state.slashings` with `safe_sum`. The theorem takes the sum as an input.
+- `single_pass.rs` passes `base_reward` from the epoch cache, the participation flags, the leak
+  flag and the participating increments from the progressive balances cache to
+  `new_balance_after_rewards`. Each equals its spec value.
 - Lighthouse computes the slashings target epoch once per epoch. The spec computes it once per
   slashed validator. The theorems assume that `epoch + EPOCHS_PER_SLASHINGS_VECTOR / 2` fits in a
   `u64`.
