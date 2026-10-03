@@ -10,5 +10,17 @@
     "sources": [
       "validator_client/slashing_protection/src/pure_check.rs"
     ]
+  },
+  {
+    "name": "epoch-processing",
+    "crate": "consensus/state_processing",
+    "proofs": "consensus/state_processing/proofs",
+    "lib": "EpochProofs",
+    "entrypoint": "state_processing::per_epoch_processing::builder_pending_payments",
+    "generated": "EpochProofs/Generated.lean",
+    "charon_extra": "--include safe_arith --include types::builder --include alloy_primitives::bits -- --lib",
+    "sources": [
+      "consensus/state_processing/src/per_epoch_processing/builder_pending_payments.rs"
+    ]
   }
 ]
