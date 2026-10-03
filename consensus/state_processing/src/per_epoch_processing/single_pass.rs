@@ -1,14 +1,11 @@
 use crate::{
-    common::{
-        decrease_balance, increase_balance,
-        update_progressive_balances_cache::initialize_progressive_balances_cache,
-    },
+    common::update_progressive_balances_cache::initialize_progressive_balances_cache,
     epoch_cache::{PreEpochCache, initialize_epoch_cache},
     per_block_processing::is_valid_deposit_signature,
     per_epoch_processing::{
         Error, ParticipationEpochSummary, builder_pending_payments, effective_balance,
-        inactivity_updates, pending_deposits, registry_update, rewards_penalties,
-        slashings_penalty,
+        inactivity_updates, pending_consolidations, pending_deposits, registry_update,
+        rewards_penalties, slashings_penalty,
     },
 };
 use itertools::izip;
@@ -1170,36 +1167,64 @@ fn process_pending_consolidations<E: EthSpec>(
     state_ctxt: &StateContext,
     spec: &ChainSpec,
 ) -> Result<(), Error> {
-    let mut next_pending_consolidation: usize = 0;
     let next_epoch = state.next_epoch()?;
     let pending_consolidations = state.pending_consolidations()?.to_owned_list();
 
-    for pending_consolidation in pending_consolidations.iter() {
-        let source_index = pending_consolidation.source_index as usize;
-        let target_index = pending_consolidation.target_index as usize;
-        let source_validator = state.get_validator(source_index)?;
-        if source_validator.slashed {
-            next_pending_consolidation.safe_add_assign(1)?;
-            continue;
+    // The moves only touch validators that consolidations reference, so they work on a local
+    // table of those validators.
+    let local_indices: Vec<usize> = validators_in_consolidations.iter().copied().collect();
+    let mut validators = Vec::with_capacity(local_indices.len());
+    let mut balances = Vec::with_capacity(local_indices.len());
+    for &index in &local_indices {
+        let validator = state.validators().get(index);
+        validators.push(pending_consolidations::LocalValidator {
+            exists: validator.is_some(),
+            slashed: validator.is_some_and(|validator| validator.slashed),
+            withdrawable_epoch: validator
+                .map_or(0, |validator| validator.withdrawable_epoch.as_u64()),
+            effective_balance: validator.map_or(0, |validator| validator.effective_balance),
+        });
+        balances.push(state.balances().get(index).copied().unwrap_or(0));
+    }
+    let position = |index: u64| {
+        local_indices
+            .binary_search(&(index as usize))
+            .map_err(|_| Error::from(BeaconStateError::UnknownValidator(index as usize)))
+    };
+    let views = pending_consolidations
+        .iter()
+        .map(|consolidation| {
+            Ok(pending_consolidations::ConsolidationView {
+                source: position(consolidation.source_index)?,
+                target: position(consolidation.target_index)?,
+            })
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
+
+    let (next_pending_consolidation, new_balances) =
+        pending_consolidations::process_pending_consolidations(
+            &views,
+            &validators,
+            balances,
+            next_epoch.as_u64(),
+        )
+        .map_err(|error| match error {
+            pending_consolidations::ConsolidationError::UnknownValidator(position) => {
+                Error::from(BeaconStateError::UnknownValidator(
+                    local_indices.get(position).copied().unwrap_or(position),
+                ))
+            }
+            pending_consolidations::ConsolidationError::Overflow => {
+                Error::from(safe_arith::ArithError::Overflow)
+            }
+        })?;
+
+    for (&index, &new_balance) in local_indices.iter().zip(new_balances.iter()) {
+        if state.balances().get(index) != Some(&new_balance)
+            && let Ok(balance) = state.get_balance_mut(index)
+        {
+            *balance = new_balance;
         }
-        if source_validator.withdrawable_epoch > next_epoch {
-            break;
-        }
-
-        // Calculate the consolidated balance
-        let source_effective_balance = std::cmp::min(
-            *state
-                .balances()
-                .get(source_index)
-                .ok_or(BeaconStateError::UnknownValidator(source_index))?,
-            source_validator.effective_balance,
-        );
-
-        // Move active balance to target. Excess balance is withdrawable.
-        decrease_balance(state, source_index, source_effective_balance)?;
-        increase_balance(state, target_index, source_effective_balance)?;
-
-        next_pending_consolidation.safe_add_assign(1)?;
     }
 
     state

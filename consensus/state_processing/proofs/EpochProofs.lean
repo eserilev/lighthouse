@@ -7,6 +7,7 @@ import EpochProofs.Spec.Slashings
 import EpochProofs.Spec.RewardsAndPenalties
 import EpochProofs.Spec.RegistryUpdates
 import EpochProofs.Spec.PendingDeposits
+import EpochProofs.Spec.PendingConsolidations
 import EpochProofs.Sanity.BuilderPendingPayments
 import EpochProofs.Sanity.EffectiveBalanceUpdates
 import EpochProofs.Sanity.InactivityUpdates
@@ -14,6 +15,7 @@ import EpochProofs.Sanity.Slashings
 import EpochProofs.Sanity.RewardsAndPenalties
 import EpochProofs.Sanity.RegistryUpdates
 import EpochProofs.Sanity.PendingDeposits
+import EpochProofs.Sanity.PendingConsolidations
 import EpochProofs.Equiv.BuilderPendingPayments
 import EpochProofs.Equiv.EffectiveBalanceUpdates
 import EpochProofs.Equiv.InactivityUpdates
@@ -21,4 +23,5 @@ import EpochProofs.Equiv.Slashings
 import EpochProofs.Equiv.RewardsAndPenalties
 import EpochProofs.Equiv.RegistryUpdates
 import EpochProofs.Equiv.PendingDeposits
+import EpochProofs.Equiv.PendingConsolidations
 import EpochProofs.Axioms

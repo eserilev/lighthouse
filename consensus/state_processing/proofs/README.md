@@ -4,7 +4,7 @@ Goal: prove that Lighthouse's Gloas epoch processing equals the consensus spec f
 
 ```
 ../src/per_epoch_processing/{builder_pending_payments,effective_balance,inactivity_updates,slashings_penalty,
-   rewards_penalties,registry_update,pending_deposits}.rs
+   rewards_penalties,registry_update,pending_deposits,pending_consolidations}.rs
    --charon--> .llbc --aeneas--> EpochProofs/Generated.lean
                                           |
                      EpochProofs/Equiv/*.lean (equivalence proof)
@@ -23,6 +23,7 @@ EpochProofs/Spec/*.lean  <-- written by hand from the consensus specs
 | `process_rewards_and_penalties` (per validator) | Done | Done | Done, with a condition |
 | `process_registry_updates` (per validator, after Electra) | Done | Done | Done, with conditions |
 | `process_pending_deposits` (decisions) | Done | Done | Done |
+| `process_pending_consolidations` (balance moves) | Done | Done | Done |
 
 ## The theorems
 
@@ -86,6 +87,12 @@ each deposit's validator before `process_registry_updates` runs and predicts its
 `predictedStatus_eq_post_registry` shows that this prediction equals the spec's flags after the
 registry update, on valid states.
 
+`process_pending_consolidations_equiv` relates the consolidation moves to
+`stepLoop consolidationStep`: the new balances, the number of processed consolidations, and the
+error. Lighthouse runs on a local table of the validators that consolidations reference.
+`process_pending_consolidations_eq` shows that the reference equals `stepLoop consolidationStep`
+on the full registry, then a drop of the processed consolidations.
+
 `absState` maps Aeneas types to reference types. Rust `Default` maps to spec `empty()`.
 
 ## The reference
@@ -126,6 +133,8 @@ Rules:
 | `registryStepIndependent_eq_exclusive` | On valid states, three independent steps equal the spec's `if`/`elif`/`elif` |
 | `predictedStatus_eq_post_registry` | Lighthouse's ejection prediction equals the flags after the registry update |
 | `depositLoop_append` | The deposit loop over two lists is the loop over the first, then the second |
+| `forIn_eq_stepLoop` | A `for` loop with `break` is a `stepLoop`, if each body run is one step |
+| `process_pending_consolidations_eq` | If the balances and the validators have the same length, the reference is `stepLoop consolidationStep`, then a drop |
 
 `get_total_active_balance(state)` is a parameter. Lighthouse reads it from a cache.
 
@@ -154,6 +163,7 @@ charon cargo --preset=aeneas \
   --start-from 'state_processing::per_epoch_processing::rewards_penalties' \
   --start-from 'state_processing::per_epoch_processing::registry_update' \
   --start-from 'state_processing::per_epoch_processing::pending_deposits' \
+  --start-from 'state_processing::per_epoch_processing::pending_consolidations' \
   --include safe_arith --include types::builder --include alloy_primitives::bits \
   --include types::core::consts \
   --dest-file "$out/pure.llbc" -- --lib
@@ -207,6 +217,10 @@ copies the rest of the body into each branch, and the generated code grows expon
   pubkeys again in each iteration, so a deposit for a validator added earlier in the same loop
   finds it. Lighthouse takes the same path: such a deposit counts as a new validator, consumes
   churn, and is applied to the added validator after the loop.
+- `single_pass.rs` builds the consolidation table from the validators that consolidations
+  reference, in index order, and maps each index to its position in the table. The moves read
+  and write only these rows, so the table run equals the full-registry run of
+  `process_pending_consolidations_eq`. The glue writes the new balances back.
 - `apply_pending_deposit` is a parameter of the reference. It verifies a BLS signature.
 - The registry proof covers Electra and later. The pre-Electra path is unchanged and not proved.
 - Lighthouse computes the slashings target epoch once per epoch. The spec computes it once per

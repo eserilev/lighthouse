@@ -5,6 +5,7 @@ import EpochProofs.Equiv.Slashings
 import EpochProofs.Equiv.RewardsAndPenalties
 import EpochProofs.Equiv.RegistryUpdates
 import EpochProofs.Equiv.PendingDeposits
+import EpochProofs.Equiv.PendingConsolidations
 open EpochProofs.Spec
 #print axioms EpochProofs.Spec.withdrawals_loop
 #print axioms EpochProofs.Spec.process_builder_pending_payments_eq
@@ -54,3 +55,7 @@ open EpochProofs.Spec
 #print axioms EpochProofs.deposit_status_eq
 #print axioms EpochProofs.deposits_loop_spec
 #print axioms EpochProofs.process_pending_deposits_equiv
+#print axioms EpochProofs.Spec.forIn_eq_stepLoop
+#print axioms EpochProofs.Spec.process_pending_consolidations_eq
+#print axioms EpochProofs.consolidations_loop_spec
+#print axioms EpochProofs.process_pending_consolidations_equiv
