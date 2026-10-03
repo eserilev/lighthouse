@@ -18,11 +18,12 @@
     "lib": "EpochProofs",
     "entrypoint": "state_processing::per_epoch_processing::builder_pending_payments",
     "generated": "EpochProofs/Generated.lean",
-    "charon_extra": "--start-from state_processing::per_epoch_processing::effective_balance --start-from state_processing::per_epoch_processing::inactivity_updates --include safe_arith --include types::builder --include alloy_primitives::bits -- --lib",
+    "charon_extra": "--start-from state_processing::per_epoch_processing::effective_balance --start-from state_processing::per_epoch_processing::inactivity_updates --start-from state_processing::per_epoch_processing::slashings_penalty --include safe_arith --include types::builder --include alloy_primitives::bits -- --lib",
     "sources": [
       "consensus/state_processing/src/per_epoch_processing/builder_pending_payments.rs",
       "consensus/state_processing/src/per_epoch_processing/effective_balance.rs",
-      "consensus/state_processing/src/per_epoch_processing/inactivity_updates.rs"
+      "consensus/state_processing/src/per_epoch_processing/inactivity_updates.rs",
+      "consensus/state_processing/src/per_epoch_processing/slashings_penalty.rs"
     ]
   }
 ]

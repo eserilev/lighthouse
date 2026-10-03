@@ -630,4 +630,149 @@ def per_epoch_processing.inactivity_updates.new_inactivity_score
           Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
   else ok (core.result.Result.Ok inactivity_score)
 
+/-- [state_processing::per_epoch_processing::slashings_penalty::slashings_context]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/slashings_penalty.rs', lines 10:0-31:1
+    Visibility: public -/
+def per_epoch_processing.slashings_penalty.slashings_context
+  (sum_slashings : Std.U64) (proportional_slashing_multiplier : Std.U64)
+  (total_active_balance : Std.U64) (current_epoch : Std.U64)
+  (epochs_per_slashings_vector : Std.U64)
+  (effective_balance_increment : Std.U64) :
+  Result (core.result.Result (Std.U64 × Std.U64 × Std.U64)
+    safe_arith.ArithError)
+  := do
+  let r ←
+    U64.Insts.Safe_arithSafeArithU64.safe_mul sum_slashings
+      proportional_slashing_multiplier
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let adjusted_total_slashing_balance ←
+      core.cmp.min core.cmp.OrdU64 val total_active_balance
+    let r1 ←
+      U64.Insts.Safe_arithSafeArithU64.safe_div epochs_per_slashings_vector
+        2#u64
+    let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+    match cf1 with
+    | core.ops.control_flow.ControlFlow.Continue val1 =>
+      let r2 ← U64.Insts.Safe_arithSafeArithU64.safe_add current_epoch val1
+      let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
+      match cf2 with
+      | core.ops.control_flow.ControlFlow.Continue val2 =>
+        let r3 ←
+          U64.Insts.Safe_arithSafeArithU64.safe_div total_active_balance
+            effective_balance_increment
+        let cf3 ← core.result.Result.Insts.CoreOpsTry.branch r3
+        match cf3 with
+        | core.ops.control_flow.ControlFlow.Continue val3 =>
+          let r4 ←
+            U64.Insts.Safe_arithSafeArithU64.safe_div
+              adjusted_total_slashing_balance val3
+          let cf4 ← core.result.Result.Insts.CoreOpsTry.branch r4
+          match cf4 with
+          | core.ops.control_flow.ControlFlow.Continue val4 =>
+            ok (core.result.Result.Ok (adjusted_total_slashing_balance, val2,
+              val4))
+          | core.ops.control_flow.ControlFlow.Break residual =>
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+              (Std.U64 × Std.U64 × Std.U64) (core.convert.FromSame
+              safe_arith.ArithError) residual
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            (Std.U64 × Std.U64 × Std.U64) (core.convert.FromSame
+            safe_arith.ArithError) residual
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          (Std.U64 × Std.U64 × Std.U64) (core.convert.FromSame
+          safe_arith.ArithError) residual
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        (Std.U64 × Std.U64 × Std.U64) (core.convert.FromSame
+        safe_arith.ArithError) residual
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      (Std.U64 × Std.U64 × Std.U64) (core.convert.FromSame
+      safe_arith.ArithError) residual
+
+/-- [state_processing::per_epoch_processing::slashings_penalty::new_balance_after_slashing]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/slashings_penalty.rs', lines 35:0-63:1
+    Visibility: public -/
+def per_epoch_processing.slashings_penalty.new_balance_after_slashing
+  (balance : Std.U64) (slashed : Bool) (withdrawable_epoch : Std.U64)
+  (effective_balance : Std.U64) (target_withdrawable_epoch : Std.U64)
+  (adjusted_total_slashing_balance : Std.U64)
+  (penalty_per_effective_balance_increment : Std.U64)
+  (total_active_balance : Std.U64) (effective_balance_increment : Std.U64)
+  (electra_enabled : Bool) :
+  Result (core.result.Result Std.U64 safe_arith.ArithError)
+  := do
+  if slashed
+  then
+    if target_withdrawable_epoch != withdrawable_epoch
+    then ok (core.result.Result.Ok balance)
+    else
+      if electra_enabled
+      then
+        let r ←
+          U64.Insts.Safe_arithSafeArithU64.safe_div effective_balance
+            effective_balance_increment
+        let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+        match cf with
+        | core.ops.control_flow.ControlFlow.Continue val =>
+          let r1 ←
+            U64.Insts.Safe_arithSafeArithU64.safe_mul
+              penalty_per_effective_balance_increment val
+          let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+          match cf1 with
+          | core.ops.control_flow.ControlFlow.Continue val1 =>
+            let i ← lift (core.num.U64.saturating_sub balance val1)
+            ok (core.result.Result.Ok i)
+          | core.ops.control_flow.ControlFlow.Break residual =>
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+              Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+      else
+        let r ←
+          U64.Insts.Safe_arithSafeArithU64.safe_div effective_balance
+            effective_balance_increment
+        let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+        match cf with
+        | core.ops.control_flow.ControlFlow.Continue val =>
+          let r1 ←
+            U64.Insts.Safe_arithSafeArithU64.safe_mul val
+              adjusted_total_slashing_balance
+          let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+          match cf1 with
+          | core.ops.control_flow.ControlFlow.Continue val1 =>
+            let r2 ←
+              U64.Insts.Safe_arithSafeArithU64.safe_div val1
+                total_active_balance
+            let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
+            match cf2 with
+            | core.ops.control_flow.ControlFlow.Continue val2 =>
+              let r3 ←
+                U64.Insts.Safe_arithSafeArithU64.safe_mul val2
+                  effective_balance_increment
+              let cf3 ← core.result.Result.Insts.CoreOpsTry.branch r3
+              match cf3 with
+              | core.ops.control_flow.ControlFlow.Continue val3 =>
+                let i ← lift (core.num.U64.saturating_sub balance val3)
+                ok (core.result.Result.Ok i)
+              | core.ops.control_flow.ControlFlow.Break residual =>
+                core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                  Std.U64 (core.convert.FromSame safe_arith.ArithError)
+                  residual
+            | core.ops.control_flow.ControlFlow.Break residual =>
+              core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+          | core.ops.control_flow.ControlFlow.Break residual =>
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+              Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+  else ok (core.result.Result.Ok balance)
+
 end state_processing

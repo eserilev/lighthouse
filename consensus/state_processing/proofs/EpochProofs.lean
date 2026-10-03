@@ -3,10 +3,13 @@ import EpochProofs.Spec.Types
 import EpochProofs.Spec.BuilderPendingPayments
 import EpochProofs.Spec.EffectiveBalanceUpdates
 import EpochProofs.Spec.InactivityUpdates
+import EpochProofs.Spec.Slashings
 import EpochProofs.Sanity.BuilderPendingPayments
 import EpochProofs.Sanity.EffectiveBalanceUpdates
 import EpochProofs.Sanity.InactivityUpdates
+import EpochProofs.Sanity.Slashings
 import EpochProofs.Equiv.BuilderPendingPayments
 import EpochProofs.Equiv.EffectiveBalanceUpdates
 import EpochProofs.Equiv.InactivityUpdates
+import EpochProofs.Equiv.Slashings
 import EpochProofs.Axioms
