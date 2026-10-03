@@ -132,6 +132,11 @@ structure PendingDeposit where
   slot : Slot
   deriving DecidableEq, Repr
 
+structure PendingConsolidation where
+  source_index : ValidatorIndex
+  target_index : ValidatorIndex
+  deriving DecidableEq, Repr
+
 structure Checkpoint where
   epoch : Epoch
   deriving DecidableEq, Repr
@@ -171,6 +176,7 @@ structure BeaconState where
   exit_balance_to_consume : Gwei := 0
   pending_deposits : List PendingDeposit := []
   deposit_balance_to_consume : Gwei := 0
+  pending_consolidations : List PendingConsolidation := []
   builder_pending_payments : List BuilderPendingPayment
   builder_pending_withdrawals : List BuilderPendingWithdrawal
   deriving DecidableEq, Repr
