@@ -363,6 +363,137 @@ entry. No caller reads it:
 - After Electra, new validators come only from pending deposits in epoch processing. They are
   pushed to the next cache.
 
+## ProgressiveBalancesCache
+
+The cache keeps, for the previous and the current epoch and for each participation flag, the
+total effective balance of the unslashed validators that are active in that epoch and have the
+flag. `Balance::get` returns `max(EFFECTIVE_BALANCE_INCREMENT, total)`.
+
+Files:
+
+- Rust: `consensus/types/src/state/{balance,participation_totals}.rs`. It holds
+  `Balance` (moved from `state/balance.rs`) and the flag updates. `EpochTotalBalances` and
+  `update_flag_total_balances` call it.
+- Reference: `CacheProofs/Spec/ProgressiveBalances.lean`.
+- Proofs: `CacheProofs/Equiv/ProgressiveBalances.lean`.
+
+### The theorems
+
+`flagSum vs ps e f` is the raw total: the sum of `effective_balance` over the validators that
+are active in `e`, not slashed, and have flag `f` in `ps`. `Coherent incr s c` says that for
+each flag below 3, the current cache holds `(flagSum .. current_epoch_participation ..
+current_epoch f, incr)` and the previous cache holds `(flagSum .. previous_epoch_participation
+.. get_previous_epoch(s) f, incr)`. `CurrentCoherent` is the first half.
+
+Each theorem says that Lighthouse returns `Ok`, so it does not return an error, and that the
+result is coherent.
+
+| Theorem | Statement |
+|---|---|
+| `build_coherent` | `initialize_progressive_balances_cache` gives a coherent cache if each total fits in a `u64`. |
+| `attestation_coherent` | After `set_participation_flag` for a new flag, `on_new_attestation` gives a coherent cache. |
+| `slashing_coherent` | After `set_slashed`, `on_slashing` gives a coherent cache. It never fails. |
+| `effective_balance_change_coherent` | After `set_effective_balance`, `on_effective_balance_change` keeps the current cache coherent and does not change the previous cache. |
+| `epoch_transition_coherent` | From `CurrentCoherent` alone, `on_epoch_transition` gives a cache that is coherent with `next_epoch_participation(s)`. |
+| `registry_change_coherent` | A change to validators that keeps each effective balance, slashed flag and activity in both epochs keeps the cache coherent with no hook. |
+| `add_validator_coherent` | A new validator with empty participation keeps the cache coherent with no hook. |
+| `read_current_eq_spec` | `current_epoch_flag_attesting_balance(f)` returns `get_total_balance(state, get_unslashed_participating_indices(state, f, get_current_epoch(state)))`. |
+| `read_previous_eq_spec` | The same for the previous epoch, after the genesis epoch. |
+| `spec_total_eq` | The spec computation equals `max(EFFECTIVE_BALANCE_INCREMENT, flagSum)`. |
+
+```lean
+theorem attestation_coherent (incr : Nat) (s s' : Spec.BeaconState) (c : LhCache)
+    (e j : Nat) (f : Usize) (is_slashed : Bool) (eb : U64) (v : Spec.Validator) (p : Nat)
+    (hc : Coherent incr s c) (hspec : Spec.set_participation_flag s e j f.val = .ok s')
+    (he : e = Spec.get_previous_epoch s ∨ e = Spec.get_current_epoch s)
+    (hepoch : s.current_epoch ≤ U64.max)
+    (hv : s.validators[j]? = some v) (hp : (partAt s e)[j]? = some p)
+    (hnew : Spec.has_flag p f.val = false) (hactive : Spec.is_active_validator v e = true)
+    (hf : f.val < 3) (hslashed : is_slashed = v.slashed) (heb : eb.val = v.effective_balance)
+    (hfit : flagSum s'.validators (partAt s' e) e f.val ≤ U64.max) :
+    ∃ c', lhOnNewAttestation c e is_slashed f eb = ok (.Ok c') ∧ Coherent incr s' c'
+
+theorem epoch_transition_coherent (incr : U64) (s : Spec.BeaconState) (c : LhCache)
+    (hc : CurrentCoherent incr.val s c) (hepoch : s.current_epoch + 1 ≤ U64.max) :
+    ∃ c', lhOnEpochTransition c incr = ok (.Ok c') ∧
+      Coherent incr.val (Spec.next_epoch_participation s) c'
+
+theorem read_current_eq_spec (incr : Nat) (s : Spec.BeaconState) (c : LhCache) (f : Usize)
+    (hc : CurrentCoherent incr s c) (hf : f.val < 3)
+    (hlen : s.current_epoch_participation.length = s.validators.length)
+    (hfit : max incr (flagSum s.validators s.current_epoch_participation s.current_epoch f.val)
+      < Spec.UINT64_SIZE) :
+    ∃ x : U64, lhCurrentEpochFlagAttestingBalance c f = ok (.Ok x) ∧
+      (Spec.get_unslashed_participating_indices s f.val (Spec.get_current_epoch s) >>=
+        Spec.get_total_balance incr s) = .ok x.val
+```
+
+The other statements are in the Lean file.
+
+### Why the previous cache needs no effective balance update
+
+`process_effective_balance_updates` changes effective balances. So the previous epoch total of
+the spec changes too, and the previous cache is stale until the end of epoch processing.
+`process_participation_flag_updates` then drops the previous epoch. `on_epoch_transition`
+replaces the previous cache with the current cache. `epoch_transition_coherent` needs only
+`CurrentCoherent`, so the stale previous cache has no effect. No code reads the previous cache
+between the effective balance updates and the transition: `RewardsAndPenaltiesContext` and
+justification read it before, and `process_epoch` clones the cache for the summary before.
+
+### The reference
+
+`Spec/ProgressiveBalances.lean` transcribes `is_active_validator`, `get_previous_epoch`,
+`get_active_validator_indices`, `get_total_balance`, `has_flag`, `add_flag`,
+`get_unslashed_participating_indices` and `process_participation_flag_updates`. It also has
+the lines of `process_attestation`, `slash_validator` and `process_effective_balance_updates`
+that change the cache inputs. The local spec checkout is `v1.7.0-beta.0-17-g593604b8f`. These
+functions are the same in v1.7.0-beta.2.
+
+### Trusted base
+
+- Charon, Aeneas and the Aeneas Lean library.
+- The hand models of the glue: `lhInitialize` and `lhInitLoop`
+  (`initialize_progressive_balances_cache`), `lhNewTotals` (`EpochTotalBalances::new`),
+  `lhOnNewAttestation`, `lhOnSlashing`, `lhOnEffectiveBalanceChange`, `lhOnEpochTransition`,
+  `lhCurrentEpochFlagAttestingBalance`, `lhPreviousEpochFlagAttestingBalance`,
+  `lhIsActiveAt` (`Validator::is_active_at`) and `lhPreviousEpoch`
+  (`BeaconState::previous_epoch`). `LhCache` is `Inner`. The models use `Nat` epochs with an
+  explicit `u64` overflow check.
+- The `From<progressive_balances::Error> for BeaconStateError` impl maps each variant to the
+  old variant.
+- The cache is initialized when a hook runs, and its `current_epoch` equals the state's current
+  epoch. `per_block_processing` and `process_epoch_single_pass` call
+  `initialize_progressive_balances_cache` first.
+- These facts hold in the state when a hook runs. The theorems take them as hypotheses:
+  - Each participation list has the same length as `validators`.
+  - A participation flag implies that the validator is active in that epoch. Only committee
+    members (active validators) get flags, `process_participation_flag_updates` moves current
+    flags to the previous epoch, and no exit or activation epoch changes to a value at or
+    before the current epoch.
+  - Attestation: the target epoch is the previous or the current epoch. The flag was not set
+    before (Lighthouse calls the hook only then). The validator is active in the target epoch.
+    `epoch_cache().get_effective_balance(index)` equals `validator.effective_balance`, and
+    `slashings_cache().is_slashed(index)` equals `validator.slashed`.
+  - Slashing: the validator was not slashed (`is_slashable_validator`). The hook reads the
+    effective balance of the validator.
+  - Effective balance change: the hook reads `validator.slashed` and the old effective balance.
+  - Each total fits in a `u64` (about 18.4 billion ETH).
+- No other code changes `effective_balance`, `slashed` or a participation flag of an active
+  validator. A search of `consensus/` finds only these writes: `single_pass.rs` (with the
+  hook), `slash_validator.rs` (with the hook), `process_operations.rs` (with the hook),
+  `effective_balance_updates.rs` (phase0 only), `genesis.rs` and `upgrade/altair.rs` (before
+  `initialize`), `upgrade/electra.rs` (validators that are not active), and new validators
+  (`add_validator_coherent`).
+
+### Genesis epoch
+
+At the genesis epoch, `get_previous_epoch(state)` is the current epoch. So the spec reads
+`current_epoch_participation` for the previous epoch. The previous cache holds the total over
+`previous_epoch_participation`, which is empty at genesis. The two differ when there are
+attestations in the genesis epoch. The spec does not use the previous totals at genesis
+(justification returns early, and rewards skip genesis), so consensus is not affected.
+`read_previous_eq_spec` has the hypothesis `GENESIS_EPOCH < current_epoch`.
+
 ## Trusted base for all caches
 
 - Charon and Aeneas.

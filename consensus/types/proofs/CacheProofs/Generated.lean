@@ -26,6 +26,54 @@ inductive safe_arith.ArithError where
 | Overflow : safe_arith.ArithError
 | DivisionByZero : safe_arith.ArithError
 
+/-- [safe_arith::{impl core::fmt::Debug for safe_arith::ArithError}::fmt]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/safe_arith-0.1.0/src/lib.rs', lines 74:9-74:14
+    Name pattern: [safe_arith::{core::fmt::Debug<safe_arith::ArithError>}::fmt]
+    Visibility: public -/
+@[rust_fun "safe_arith::{core::fmt::Debug<safe_arith::ArithError>}::fmt"]
+def safe_arith.ArithError.Insts.CoreFmtDebug.fmt
+  (self : safe_arith.ArithError) (f : core.fmt.Formatter) :
+  Result ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+  := do
+  match self with
+  | safe_arith.ArithError.Overflow =>
+    core.fmt.Formatter.write_str f (toStr "Overflow")
+  | safe_arith.ArithError.DivisionByZero =>
+    core.fmt.Formatter.write_str f (toStr "DivisionByZero")
+
+/-- Trait implementation: [safe_arith::{impl core::fmt::Debug for safe_arith::ArithError}]
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/safe_arith-0.1.0/src/lib.rs', lines 74:9-74:14
+    Name pattern: [core::fmt::Debug<safe_arith::ArithError>] -/
+@[reducible, rust_trait_impl "core::fmt::Debug<safe_arith::ArithError>"]
+def safe_arith.ArithError.Insts.CoreFmtDebug : core.fmt.Debug
+  safe_arith.ArithError := {
+  fmt := safe_arith.ArithError.Insts.CoreFmtDebug.fmt
+}
+
+/-- [safe_arith::{impl core::cmp::PartialEq<safe_arith::ArithError> for safe_arith::ArithError}::eq]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/safe_arith-0.1.0/src/lib.rs', lines 74:16-74:25
+    Name pattern: [safe_arith::{core::cmp::PartialEq<safe_arith::ArithError, safe_arith::ArithError>}::eq]
+    Visibility: public -/
+@[rust_fun
+  "safe_arith::{core::cmp::PartialEq<safe_arith::ArithError, safe_arith::ArithError>}::eq"]
+def safe_arith.ArithError.Insts.CoreCmpPartialEqArithError.eq
+  (self : safe_arith.ArithError) (other : safe_arith.ArithError) :
+  Result Bool
+  := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  ok (self1 = other1)
+
+/-- Trait implementation: [safe_arith::{impl core::cmp::PartialEq<safe_arith::ArithError> for safe_arith::ArithError}]
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/safe_arith-0.1.0/src/lib.rs', lines 74:16-74:25
+    Name pattern: [core::cmp::PartialEq<safe_arith::ArithError, safe_arith::ArithError>] -/
+@[reducible, rust_trait_impl
+  "core::cmp::PartialEq<safe_arith::ArithError, safe_arith::ArithError>"]
+def safe_arith.ArithError.Insts.CoreCmpPartialEqArithError : core.cmp.PartialEq
+  safe_arith.ArithError safe_arith.ArithError := {
+  eq := safe_arith.ArithError.Insts.CoreCmpPartialEqArithError.eq
+}
+
 /-- [safe_arith::{impl safe_arith::SafeArith<u64> for u64}::safe_add]:
     Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/safe_arith-0.1.0/src/lib.rs', lines 140:12-140:59
     Name pattern: [safe_arith::{safe_arith::SafeArith<u64, u64>}::safe_add]
@@ -73,6 +121,142 @@ def U64.Insts.Safe_arithSafeArithU64.safe_div
   := do
   let o ← lift (U64.checked_div self other)
   core.option.Option.ok_or o safe_arith.ArithError.DivisionByZero
+
+/-- [types::core::consts::altair::NUM_FLAG_INDICES]
+    Source: 'consensus/types/src/core/consts.rs', lines 20:4-20:42
+    Visibility: public -/
+@[global_simps, irreducible]
+def core.consts.altair.NUM_FLAG_INDICES : Std.Usize := 3#usize
+
+/-- [types::state::balance::Balance]
+    Source: 'consensus/types/src/state/balance.rs', lines 10:0-13:1
+    Visibility: public -/
+structure state.balance.Balance where
+  raw : Std.U64
+  minimum : Std.U64
+
+/-- Trait implementation: [types::state::balance::{impl core::marker::StructuralPartialEq for types::state::balance::Balance}]
+    Source: 'consensus/types/src/state/balance.rs', lines 9:9-9:18 -/
+@[reducible]
+def state.balance.Balance.Insts.CoreMarkerStructuralPartialEq :
+  core.marker.StructuralPartialEq state.balance.Balance := {
+}
+
+/-- [types::state::balance::{impl core::cmp::PartialEq<types::state::balance::Balance> for types::state::balance::Balance}::eq]:
+    Source: 'consensus/types/src/state/balance.rs', lines 9:9-9:18
+    Visibility: public -/
+def state.balance.Balance.Insts.CoreCmpPartialEqBalance.eq
+  (self : state.balance.Balance) (other : state.balance.Balance) :
+  Result Bool
+  := do
+  if self.raw = other.raw
+  then ok (self.minimum = other.minimum)
+  else ok false
+
+/-- Trait implementation: [types::state::balance::{impl core::cmp::PartialEq<types::state::balance::Balance> for types::state::balance::Balance}]
+    Source: 'consensus/types/src/state/balance.rs', lines 9:9-9:18 -/
+@[reducible]
+def state.balance.Balance.Insts.CoreCmpPartialEqBalance : core.cmp.PartialEq
+  state.balance.Balance state.balance.Balance := {
+  eq := state.balance.Balance.Insts.CoreCmpPartialEqBalance.eq
+}
+
+/-- [types::state::balance::{impl core::fmt::Debug for types::state::balance::Balance}::fmt]:
+    Source: 'consensus/types/src/state/balance.rs', lines 9:20-9:25
+    Visibility: public -/
+def state.balance.Balance.Insts.CoreFmtDebug.fmt
+  (self : state.balance.Balance) (f : core.fmt.Formatter) :
+  Result ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+  := do
+  let dyn := Dyn.mk _ core.fmt.DebugU64 self.raw
+  let dyn1 := Dyn.mk _ (core.fmt.DebugShared core.fmt.DebugU64) self.minimum
+  core.fmt.Formatter.debug_struct_field2_finish f (toStr "Balance") (toStr
+    "raw") dyn (toStr "minimum") dyn1
+
+/-- Trait implementation: [types::state::balance::{impl core::fmt::Debug for types::state::balance::Balance}]
+    Source: 'consensus/types/src/state/balance.rs', lines 9:20-9:25 -/
+@[reducible]
+def state.balance.Balance.Insts.CoreFmtDebug : core.fmt.Debug
+  state.balance.Balance := {
+  fmt := state.balance.Balance.Insts.CoreFmtDebug.fmt
+}
+
+/-- [types::state::balance::{impl core::clone::Clone for types::state::balance::Balance}::clone]:
+    Source: 'consensus/types/src/state/balance.rs', lines 9:27-9:32
+    Visibility: public -/
+def state.balance.Balance.Insts.CoreCloneClone.clone
+  (self : state.balance.Balance) : Result state.balance.Balance := do
+  ok self
+
+/-- Trait implementation: [types::state::balance::{impl core::clone::Clone for types::state::balance::Balance}]
+    Source: 'consensus/types/src/state/balance.rs', lines 9:27-9:32 -/
+@[reducible]
+def state.balance.Balance.Insts.CoreCloneClone : core.clone.Clone
+  state.balance.Balance := {
+  clone := state.balance.Balance.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [types::state::balance::{impl core::marker::Copy for types::state::balance::Balance}]
+    Source: 'consensus/types/src/state/balance.rs', lines 9:34-9:38 -/
+@[reducible]
+def state.balance.Balance.Insts.CoreMarkerCopy : core.marker.Copy
+  state.balance.Balance := {
+  cloneInst := state.balance.Balance.Insts.CoreCloneClone
+}
+
+/-- [types::state::balance::{types::state::balance::Balance}::zero]:
+    Source: 'consensus/types/src/state/balance.rs', lines 17:4-19:5
+    Visibility: public -/
+def state.balance.Balance.zero
+  (minimum : Std.U64) : Result state.balance.Balance := do
+  ok { raw := 0#u64, minimum }
+
+/-- [types::state::balance::{types::state::balance::Balance}::get]:
+    Source: 'consensus/types/src/state/balance.rs', lines 22:4-28:5
+    Visibility: public -/
+def state.balance.Balance.get
+  (self : state.balance.Balance) : Result Std.U64 := do
+  if self.raw > self.minimum
+  then ok self.raw
+  else ok self.minimum
+
+/-- [types::state::balance::{types::state::balance::Balance}::safe_add_assign]:
+    Source: 'consensus/types/src/state/balance.rs', lines 31:4-34:5
+    Visibility: public -/
+def state.balance.Balance.safe_add_assign
+  (self : state.balance.Balance) (other : Std.U64) :
+  Result ((core.result.Result Unit safe_arith.ArithError) ×
+    state.balance.Balance)
+  := do
+  let r ← U64.Insts.Safe_arithSafeArithU64.safe_add self.raw other
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    ok (core.result.Result.Ok (), { self with raw := val })
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    let r1 ←
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        Unit (core.convert.FromSame safe_arith.ArithError) residual
+    ok (r1, self)
+
+/-- [types::state::balance::{types::state::balance::Balance}::safe_sub_assign]:
+    Source: 'consensus/types/src/state/balance.rs', lines 37:4-40:5
+    Visibility: public -/
+def state.balance.Balance.safe_sub_assign
+  (self : state.balance.Balance) (other : Std.U64) :
+  Result ((core.result.Result Unit safe_arith.ArithError) ×
+    state.balance.Balance)
+  := do
+  let r ← U64.Insts.Safe_arithSafeArithU64.safe_sub self.raw other
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    ok (core.result.Result.Ok (), { self with raw := val })
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    let r1 ←
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        Unit (core.convert.FromSame safe_arith.ArithError) residual
+    ok (r1, self)
 
 /-- [types::state::base_rewards::ReadError]
     Source: 'consensus/types/src/state/base_rewards.rs', lines 11:0-15:1
@@ -476,6 +660,557 @@ def state.exit_queue.churn_at
   else if exit_epoch > max_exit_epoch
        then ok (some 0#u64)
        else ok none
+
+/-- [types::state::participation_totals::Error]
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 13:0-16:1
+    Visibility: public -/
+@[discriminant isize]
+inductive state.participation_totals.Error where
+| InvalidFlagIndex : Std.Usize → state.participation_totals.Error
+| Arith : safe_arith.ArithError → state.participation_totals.Error
+
+/-- Trait implementation: [types::state::participation_totals::{impl core::marker::StructuralPartialEq for types::state::participation_totals::Error}]
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 12:9-12:18 -/
+@[reducible]
+def state.participation_totals.Error.Insts.CoreMarkerStructuralPartialEq :
+  core.marker.StructuralPartialEq state.participation_totals.Error := {
+}
+
+/-- [types::state::participation_totals::{impl core::cmp::PartialEq<types::state::participation_totals::Error> for types::state::participation_totals::Error}::eq]:
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 12:9-12:18
+    Visibility: public -/
+def state.participation_totals.Error.Insts.CoreCmpPartialEqError.eq
+  (self : state.participation_totals.Error)
+  (other : state.participation_totals.Error) :
+  Result Bool
+  := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  if self1 = other1
+  then
+    match self with
+    | state.participation_totals.Error.InvalidFlagIndex __self_0 =>
+      match other with
+      | state.participation_totals.Error.InvalidFlagIndex __arg1_0 =>
+        lift (core.cmp.impls.PartialEqUsize.eq __self_0 __arg1_0)
+      | state.participation_totals.Error.Arith _ => fail panic
+    | state.participation_totals.Error.Arith __self_0 =>
+      match other with
+      | state.participation_totals.Error.InvalidFlagIndex _ => fail panic
+      | state.participation_totals.Error.Arith __arg1_0 =>
+        safe_arith.ArithError.Insts.CoreCmpPartialEqArithError.eq __self_0
+          __arg1_0
+  else ok false
+
+/-- Trait implementation: [types::state::participation_totals::{impl core::cmp::PartialEq<types::state::participation_totals::Error> for types::state::participation_totals::Error}]
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 12:9-12:18 -/
+@[reducible]
+def state.participation_totals.Error.Insts.CoreCmpPartialEqError :
+  core.cmp.PartialEq state.participation_totals.Error
+  state.participation_totals.Error := {
+  eq := state.participation_totals.Error.Insts.CoreCmpPartialEqError.eq
+}
+
+/-- [types::state::participation_totals::{impl core::fmt::Debug for types::state::participation_totals::Error}::fmt]:
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 12:20-12:25
+    Visibility: public -/
+def state.participation_totals.Error.Insts.CoreFmtDebug.fmt
+  (self : state.participation_totals.Error) (f : core.fmt.Formatter) :
+  Result ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+  := do
+  match self with
+  | state.participation_totals.Error.InvalidFlagIndex __self_0 =>
+    let __self_01 :=
+      Dyn.mk _ (core.fmt.DebugShared core.fmt.DebugUsize) __self_0
+    core.fmt.Formatter.debug_tuple_field1_finish f (toStr "InvalidFlagIndex")
+      __self_01
+  | state.participation_totals.Error.Arith __self_0 =>
+    let __self_01 :=
+      Dyn.mk _ (core.fmt.DebugShared safe_arith.ArithError.Insts.CoreFmtDebug)
+        __self_0
+    core.fmt.Formatter.debug_tuple_field1_finish f (toStr "Arith") __self_01
+
+/-- Trait implementation: [types::state::participation_totals::{impl core::fmt::Debug for types::state::participation_totals::Error}]
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 12:20-12:25 -/
+@[reducible]
+def state.participation_totals.Error.Insts.CoreFmtDebug : core.fmt.Debug
+  state.participation_totals.Error := {
+  fmt := state.participation_totals.Error.Insts.CoreFmtDebug.fmt
+}
+
+/-- [types::state::participation_totals::{impl core::clone::Clone for types::state::participation_totals::Error}::clone]:
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 12:27-12:32
+    Visibility: public -/
+def state.participation_totals.Error.Insts.CoreCloneClone.clone
+  (self : state.participation_totals.Error) :
+  Result state.participation_totals.Error
+  := do
+  ok self
+
+/-- Trait implementation: [types::state::participation_totals::{impl core::clone::Clone for types::state::participation_totals::Error}]
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 12:27-12:32 -/
+@[reducible]
+def state.participation_totals.Error.Insts.CoreCloneClone : core.clone.Clone
+  state.participation_totals.Error := {
+  clone := state.participation_totals.Error.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [types::state::participation_totals::{impl core::marker::Copy for types::state::participation_totals::Error}]
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 12:34-12:38 -/
+@[reducible]
+def state.participation_totals.Error.Insts.CoreMarkerCopy : core.marker.Copy
+  state.participation_totals.Error := {
+  cloneInst := state.participation_totals.Error.Insts.CoreCloneClone
+}
+
+/-- [types::state::participation_totals::{impl core::convert::From<safe_arith::ArithError> for types::state::participation_totals::Error}::from]:
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 19:4-21:5
+    Visibility: public -/
+def state.participation_totals.Error.Insts.CoreConvertFromArithError.from
+  (e : safe_arith.ArithError) : Result state.participation_totals.Error := do
+  ok (state.participation_totals.Error.Arith e)
+
+/-- Trait implementation: [types::state::participation_totals::{impl core::convert::From<safe_arith::ArithError> for types::state::participation_totals::Error}]
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 18:0-22:1 -/
+@[reducible]
+def state.participation_totals.Error.Insts.CoreConvertFromArithError :
+  core.convert.From state.participation_totals.Error safe_arith.ArithError := {
+  «from» :=
+    state.participation_totals.Error.Insts.CoreConvertFromArithError.from
+}
+
+/-- [types::state::participation_totals::has_flag]:
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 25:0-35:1
+    Visibility: public -/
+def state.participation_totals.has_flag
+  (flags : Std.U8) (flag_index : Std.Usize) :
+  Result (core.result.Result Bool safe_arith.ArithError)
+  := do
+  if flag_index >= core.consts.altair.NUM_FLAG_INDICES
+  then ok (core.result.Result.Err safe_arith.ArithError.Overflow)
+  else
+    let mask ←
+      match flag_index.val with
+      | 0 => ok 1#u8
+      | 1 => ok 2#u8
+      | _ => ok 4#u8
+    let i ← lift (flags &&& mask)
+    ok (core.result.Result.Ok (i = mask))
+
+/-- [types::state::participation_totals::total_flag_balance]:
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 38:0-43:1
+    Visibility: public -/
+def state.participation_totals.total_flag_balance
+  (totals : Slice state.balance.Balance) (flag_index : Std.Usize) :
+  Result (core.result.Result Std.U64 state.participation_totals.Error)
+  := do
+  let o ←
+    core.slice.Slice.get (core.slice.index.SliceIndexUsizeSlice
+      state.balance.Balance) totals flag_index
+  match o with
+  | none =>
+    ok (core.result.Result.Err
+      (state.participation_totals.Error.InvalidFlagIndex flag_index))
+  | some balance =>
+    let i ← state.balance.Balance.get balance
+    ok (core.result.Result.Ok i)
+
+/-- [types::state::participation_totals::add_to_flag]:
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 46:0-54:1
+    Visibility: public -/
+def state.participation_totals.add_to_flag
+  (totals : Slice state.balance.Balance) (flag_index : Std.Usize)
+  (amount : Std.U64) :
+  Result ((core.result.Result Unit state.participation_totals.Error) × (Slice
+    state.balance.Balance))
+  := do
+  let (o, get_mut_back) ←
+    core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice
+      state.balance.Balance) totals flag_index
+  match o with
+  | none =>
+    let totals1 := get_mut_back none
+    ok (core.result.Result.Err
+      (state.participation_totals.Error.InvalidFlagIndex flag_index), totals1)
+  | some balance =>
+    let (r, balance1) ← state.balance.Balance.safe_add_assign balance amount
+    let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+    match cf with
+    | core.ops.control_flow.ControlFlow.Continue _ =>
+      let totals1 := get_mut_back (some balance1)
+      ok (core.result.Result.Ok (), totals1)
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      let r1 ←
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          Unit state.participation_totals.Error.Insts.CoreConvertFromArithError
+          residual
+      let totals1 := get_mut_back (some balance1)
+      ok (r1, totals1)
+
+/-- [types::state::participation_totals::sub_from_flag]:
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 57:0-65:1
+    Visibility: public -/
+def state.participation_totals.sub_from_flag
+  (totals : Slice state.balance.Balance) (flag_index : Std.Usize)
+  (amount : Std.U64) :
+  Result ((core.result.Result Unit state.participation_totals.Error) × (Slice
+    state.balance.Balance))
+  := do
+  let (o, get_mut_back) ←
+    core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice
+      state.balance.Balance) totals flag_index
+  match o with
+  | none =>
+    let totals1 := get_mut_back none
+    ok (core.result.Result.Err
+      (state.participation_totals.Error.InvalidFlagIndex flag_index), totals1)
+  | some balance =>
+    let (r, balance1) ← state.balance.Balance.safe_sub_assign balance amount
+    let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+    match cf with
+    | core.ops.control_flow.ControlFlow.Continue _ =>
+      let totals1 := get_mut_back (some balance1)
+      ok (core.result.Result.Ok (), totals1)
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      let r1 ←
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          Unit state.participation_totals.Error.Insts.CoreConvertFromArithError
+          residual
+      let totals1 := get_mut_back (some balance1)
+      ok (r1, totals1)
+
+/-- [types::state::participation_totals::add_if_flag]:
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 68:0-78:1
+    Visibility: public -/
+def state.participation_totals.add_if_flag
+  (totals : Slice state.balance.Balance) (flags : Std.U8)
+  (flag_index : Std.Usize) (effective_balance : Std.U64) :
+  Result ((core.result.Result Unit state.participation_totals.Error) × (Slice
+    state.balance.Balance))
+  := do
+  let r ← state.participation_totals.has_flag flags flag_index
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    if val
+    then
+      let (r1, totals1) ←
+        state.participation_totals.add_to_flag totals flag_index
+          effective_balance
+      let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+      match cf1 with
+      | core.ops.control_flow.ControlFlow.Continue _ =>
+        ok (core.result.Result.Ok (), totals1)
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        let r2 ←
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            Unit (core.convert.FromSame state.participation_totals.Error)
+            residual
+        ok (r2, totals1)
+    else ok (core.result.Result.Ok (), totals)
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    let r1 ←
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        Unit state.participation_totals.Error.Insts.CoreConvertFromArithError
+        residual
+    ok (r1, totals)
+
+/-- [types::state::participation_totals::sub_if_flag]:
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 81:0-91:1
+    Visibility: public -/
+def state.participation_totals.sub_if_flag
+  (totals : Slice state.balance.Balance) (flags : Std.U8)
+  (flag_index : Std.Usize) (effective_balance : Std.U64) :
+  Result ((core.result.Result Unit state.participation_totals.Error) × (Slice
+    state.balance.Balance))
+  := do
+  let r ← state.participation_totals.has_flag flags flag_index
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    if val
+    then
+      let (r1, totals1) ←
+        state.participation_totals.sub_from_flag totals flag_index
+          effective_balance
+      let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+      match cf1 with
+      | core.ops.control_flow.ControlFlow.Continue _ =>
+        ok (core.result.Result.Ok (), totals1)
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        let r2 ←
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            Unit (core.convert.FromSame state.participation_totals.Error)
+            residual
+        ok (r2, totals1)
+    else ok (core.result.Result.Ok (), totals)
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    let r1 ←
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        Unit state.participation_totals.Error.Insts.CoreConvertFromArithError
+        residual
+    ok (r1, totals)
+
+/-- [types::state::participation_totals::change_if_flag]:
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 95:0-118:1
+    Visibility: public -/
+def state.participation_totals.change_if_flag
+  (totals : Slice state.balance.Balance) (flags : Std.U8)
+  (flag_index : Std.Usize) (old_effective_balance : Std.U64)
+  (new_effective_balance : Std.U64) :
+  Result ((core.result.Result Unit state.participation_totals.Error) × (Slice
+    state.balance.Balance))
+  := do
+  let r ← state.participation_totals.has_flag flags flag_index
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    if val
+    then
+      if new_effective_balance > old_effective_balance
+      then
+        let r1 ←
+          U64.Insts.Safe_arithSafeArithU64.safe_sub new_effective_balance
+            old_effective_balance
+        let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+        match cf1 with
+        | core.ops.control_flow.ControlFlow.Continue val1 =>
+          let (r2, totals1) ←
+            state.participation_totals.add_to_flag totals flag_index val1
+          let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
+          match cf2 with
+          | core.ops.control_flow.ControlFlow.Continue _ =>
+            ok (core.result.Result.Ok (), totals1)
+          | core.ops.control_flow.ControlFlow.Break residual =>
+            let r3 ←
+              core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                Unit (core.convert.FromSame state.participation_totals.Error)
+                residual
+            ok (r3, totals1)
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          let r2 ←
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+              Unit
+              state.participation_totals.Error.Insts.CoreConvertFromArithError
+              residual
+          ok (r2, totals)
+      else
+        let r1 ←
+          U64.Insts.Safe_arithSafeArithU64.safe_sub old_effective_balance
+            new_effective_balance
+        let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+        match cf1 with
+        | core.ops.control_flow.ControlFlow.Continue val1 =>
+          let (r2, totals1) ←
+            state.participation_totals.sub_from_flag totals flag_index val1
+          let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
+          match cf2 with
+          | core.ops.control_flow.ControlFlow.Continue _ =>
+            ok (core.result.Result.Ok (), totals1)
+          | core.ops.control_flow.ControlFlow.Break residual =>
+            let r3 ←
+              core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                Unit (core.convert.FromSame state.participation_totals.Error)
+                residual
+            ok (r3, totals1)
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          let r2 ←
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+              Unit
+              state.participation_totals.Error.Insts.CoreConvertFromArithError
+              residual
+          ok (r2, totals)
+    else ok (core.result.Result.Ok (), totals)
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    let r1 ←
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        Unit state.participation_totals.Error.Insts.CoreConvertFromArithError
+        residual
+    ok (r1, totals)
+
+/-- [types::state::participation_totals::add_flags]:
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 121:0-130:1
+    Visibility: public -/
+def state.participation_totals.add_flags
+  (totals : Array state.balance.Balance 3#usize) (flags : Std.U8)
+  (effective_balance : Std.U64) :
+  Result ((core.result.Result Unit state.participation_totals.Error) × (Array
+    state.balance.Balance 3#usize))
+  := do
+  let (s, to_slice_mut_back) ← lift (Array.to_slice_mut totals)
+  let (r, s1) ←
+    state.participation_totals.add_if_flag s flags 0#usize effective_balance
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue _ =>
+    let totals1 := to_slice_mut_back s1
+    let (s2, to_slice_mut_back1) ← lift (Array.to_slice_mut totals1)
+    let (r1, s3) ←
+      state.participation_totals.add_if_flag s2 flags 1#usize effective_balance
+    let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+    match cf1 with
+    | core.ops.control_flow.ControlFlow.Continue _ =>
+      let totals2 := to_slice_mut_back1 s3
+      let (s4, to_slice_mut_back2) ← lift (Array.to_slice_mut totals2)
+      let (r2, s5) ←
+        state.participation_totals.add_if_flag s4 flags 2#usize
+          effective_balance
+      let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
+      match cf2 with
+      | core.ops.control_flow.ControlFlow.Continue _ =>
+        let totals3 := to_slice_mut_back2 s5
+        ok (core.result.Result.Ok (), totals3)
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        let r3 ←
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            Unit (core.convert.FromSame state.participation_totals.Error)
+            residual
+        let totals3 := to_slice_mut_back2 s5
+        ok (r3, totals3)
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      let r2 ←
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          Unit (core.convert.FromSame state.participation_totals.Error)
+          residual
+      let totals2 := to_slice_mut_back1 s3
+      ok (r2, totals2)
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    let r1 ←
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        Unit (core.convert.FromSame state.participation_totals.Error) residual
+    let totals1 := to_slice_mut_back s1
+    ok (r1, totals1)
+
+/-- [types::state::participation_totals::on_new_attestation]:
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 133:0-143:1
+    Visibility: public -/
+def state.participation_totals.on_new_attestation
+  (totals : Array state.balance.Balance 3#usize) (is_slashed : Bool)
+  (flag_index : Std.Usize) (effective_balance : Std.U64) :
+  Result ((core.result.Result Unit state.participation_totals.Error) × (Array
+    state.balance.Balance 3#usize))
+  := do
+  if is_slashed
+  then ok (core.result.Result.Ok (), totals)
+  else
+    let (s, to_slice_mut_back) ← lift (Array.to_slice_mut totals)
+    let (r, s1) ←
+      state.participation_totals.add_to_flag s flag_index effective_balance
+    let totals1 := to_slice_mut_back s1
+    ok (r, totals1)
+
+/-- [types::state::participation_totals::on_slashing]:
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 146:0-155:1
+    Visibility: public -/
+def state.participation_totals.on_slashing
+  (totals : Array state.balance.Balance 3#usize) (flags : Std.U8)
+  (effective_balance : Std.U64) :
+  Result ((core.result.Result Unit state.participation_totals.Error) × (Array
+    state.balance.Balance 3#usize))
+  := do
+  let (s, to_slice_mut_back) ← lift (Array.to_slice_mut totals)
+  let (r, s1) ←
+    state.participation_totals.sub_if_flag s flags 0#usize effective_balance
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue _ =>
+    let totals1 := to_slice_mut_back s1
+    let (s2, to_slice_mut_back1) ← lift (Array.to_slice_mut totals1)
+    let (r1, s3) ←
+      state.participation_totals.sub_if_flag s2 flags 1#usize effective_balance
+    let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+    match cf1 with
+    | core.ops.control_flow.ControlFlow.Continue _ =>
+      let totals2 := to_slice_mut_back1 s3
+      let (s4, to_slice_mut_back2) ← lift (Array.to_slice_mut totals2)
+      let (r2, s5) ←
+        state.participation_totals.sub_if_flag s4 flags 2#usize
+          effective_balance
+      let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
+      match cf2 with
+      | core.ops.control_flow.ControlFlow.Continue _ =>
+        let totals3 := to_slice_mut_back2 s5
+        ok (core.result.Result.Ok (), totals3)
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        let r3 ←
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            Unit (core.convert.FromSame state.participation_totals.Error)
+            residual
+        let totals3 := to_slice_mut_back2 s5
+        ok (r3, totals3)
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      let r2 ←
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          Unit (core.convert.FromSame state.participation_totals.Error)
+          residual
+      let totals2 := to_slice_mut_back1 s3
+      ok (r2, totals2)
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    let r1 ←
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        Unit (core.convert.FromSame state.participation_totals.Error) residual
+    let totals1 := to_slice_mut_back s1
+    ok (r1, totals1)
+
+/-- [types::state::participation_totals::on_effective_balance_change]:
+    Source: 'consensus/types/src/state/participation_totals.rs', lines 158:0-190:1
+    Visibility: public -/
+def state.participation_totals.on_effective_balance_change
+  (totals : Array state.balance.Balance 3#usize) (is_slashed : Bool)
+  (flags : Std.U8) (old_effective_balance : Std.U64)
+  (new_effective_balance : Std.U64) :
+  Result ((core.result.Result Unit state.participation_totals.Error) × (Array
+    state.balance.Balance 3#usize))
+  := do
+  if is_slashed
+  then ok (core.result.Result.Ok (), totals)
+  else
+    let (s, to_slice_mut_back) ← lift (Array.to_slice_mut totals)
+    let (r, s1) ←
+      state.participation_totals.change_if_flag s flags 0#usize
+        old_effective_balance new_effective_balance
+    let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+    match cf with
+    | core.ops.control_flow.ControlFlow.Continue _ =>
+      let totals1 := to_slice_mut_back s1
+      let (s2, to_slice_mut_back1) ← lift (Array.to_slice_mut totals1)
+      let (r1, s3) ←
+        state.participation_totals.change_if_flag s2 flags 1#usize
+          old_effective_balance new_effective_balance
+      let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+      match cf1 with
+      | core.ops.control_flow.ControlFlow.Continue _ =>
+        let totals2 := to_slice_mut_back1 s3
+        let (s4, to_slice_mut_back2) ← lift (Array.to_slice_mut totals2)
+        let (r2, s5) ←
+          state.participation_totals.change_if_flag s4 flags 2#usize
+            old_effective_balance new_effective_balance
+        let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
+        match cf2 with
+        | core.ops.control_flow.ControlFlow.Continue _ =>
+          let totals3 := to_slice_mut_back2 s5
+          ok (core.result.Result.Ok (), totals3)
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          let r3 ←
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+              Unit (core.convert.FromSame state.participation_totals.Error)
+              residual
+          let totals3 := to_slice_mut_back2 s5
+          ok (r3, totals3)
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        let r2 ←
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            Unit (core.convert.FromSame state.participation_totals.Error)
+            residual
+        let totals2 := to_slice_mut_back1 s3
+        ok (r2, totals2)
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      let r1 ←
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          Unit (core.convert.FromSame state.participation_totals.Error)
+          residual
+      let totals1 := to_slice_mut_back s1
+      ok (r1, totals1)
 
 /-- [types::state::total_active_balance::update_effective_balance]:
     Source: 'consensus/types/src/state/total_active_balance.rs', lines 21:0-44:1

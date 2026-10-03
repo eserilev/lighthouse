@@ -1,6 +1,7 @@
 import CacheProofs.Equiv.ExitCache
 import CacheProofs.Equiv.ActivationQueue
 import CacheProofs.Equiv.EpochCache
+import CacheProofs.Equiv.ProgressiveBalances
 import Lean.Util.CollectAxioms
 
 /-!

@@ -6,6 +6,7 @@ use crate::metrics::{
 use crate::{BlockProcessingError, EpochProcessingError};
 use metrics::set_gauge;
 use tracing::instrument;
+use types::state::participation_totals;
 use types::{
     BeaconState, BeaconStateError, ChainSpec, Epoch, EpochTotalBalances, EthSpec,
     ParticipationFlags, ProgressiveBalancesCache, Validator, is_progressive_balances_enabled,
@@ -80,11 +81,11 @@ fn update_flag_total_balances(
     participation_flags: ParticipationFlags,
     validator: &Validator,
 ) -> Result<(), BeaconStateError> {
-    for (flag, balance) in total_balances.total_flag_balances.iter_mut().enumerate() {
-        if participation_flags.has_flag(flag)? {
-            balance.safe_add_assign(validator.effective_balance)?;
-        }
-    }
+    participation_totals::add_flags(
+        &mut total_balances.total_flag_balances,
+        participation_flags.into_u8(),
+        validator.effective_balance,
+    )?;
     Ok(())
 }
 
