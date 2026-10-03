@@ -9,12 +9,14 @@ on:
       - stable
     paths:
       - 'consensus/types/src/state/exit_queue.rs'
+      - 'consensus/types/src/validator/activation_eligibility.rs'
       - 'consensus/types/proofs/**'
       - '.github/workflows/lean-proofs.yml'
       - '.github/workflows/beacon-state-cache-proofs.yml'
   pull_request:
     paths:
       - 'consensus/types/src/state/exit_queue.rs'
+      - 'consensus/types/src/validator/activation_eligibility.rs'
       - 'consensus/types/proofs/**'
       - '.github/workflows/lean-proofs.yml'
       - '.github/workflows/beacon-state-cache-proofs.yml'

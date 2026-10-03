@@ -10,6 +10,7 @@ use crate::{
     core::{Address, ChainSpec, Epoch, EthSpec, Hash256},
     fork::ForkName,
     state::BeaconState,
+    validator::activation_eligibility,
 };
 
 /// Information about a `BeaconChain` validator.
@@ -129,10 +130,12 @@ impl Validator {
         finalized_checkpoint: &Checkpoint,
         spec: &ChainSpec,
     ) -> bool {
-        // Placement in queue is finalized
-        self.activation_eligibility_epoch <= finalized_checkpoint.epoch
-        // Has not yet been activated
-        && self.activation_epoch == spec.far_future_epoch
+        activation_eligibility::is_eligible_for_activation(
+            self.activation_eligibility_epoch.as_u64(),
+            self.activation_epoch.as_u64(),
+            finalized_checkpoint.epoch.as_u64(),
+            spec.far_future_epoch.as_u64(),
+        )
     }
 
     /// Returns `true` if the validator *could* be eligible for activation at `epoch`.
@@ -141,14 +144,15 @@ impl Validator {
     /// returning true is a necessary but *not sufficient* condition for a validator to activate in
     /// the epoch transition at the end of `epoch`.
     pub fn could_be_eligible_for_activation_at(&self, epoch: Epoch, spec: &ChainSpec) -> bool {
-        // Has not yet been activated
-        self.activation_epoch == spec.far_future_epoch
-        // Placement in queue could be finalized.
-        //
         // NOTE: the epoch distance is 1 rather than 2 because we consider the activations that
         // occur at the *end* of `epoch`, after `process_justification_and_finalization` has already
         // updated the state's checkpoint.
-        && self.activation_eligibility_epoch < epoch
+        activation_eligibility::could_be_eligible_for_activation_at(
+            self.activation_eligibility_epoch.as_u64(),
+            self.activation_epoch.as_u64(),
+            epoch.as_u64(),
+            spec.far_future_epoch.as_u64(),
+        )
     }
 
     /// Returns `true` if the validator has eth1 withdrawal credential.
