@@ -496,8 +496,9 @@ attestations in the genesis epoch. The spec does not use the previous totals at 
 
 ## CommitteeCache
 
-Rust: `../src/state/committee_assignment.rs`. Reference: `Spec/CommitteeCache.lean`.
-Proofs: `Equiv/CommitteeCache.lean`.
+Rust: `../src/state/committee_assignment.rs` and `shuffle_list_with` in
+`consensus/swap_or_not_shuffle/src/shuffle_list.rs`. Reference: `Spec/CommitteeCache.lean`.
+Proofs: `Equiv/CommitteeCache.lean`, `Equiv/ShuffleSpec.lean`, `Equiv/Shuffle.lean`.
 
 ### Theorems
 
@@ -549,6 +550,28 @@ theorem get_attestation_duties_equiv ... :
 
 `shuffling_positions_spec` is the same build fact in `⦃ ⦄` form.
 
+```lean
+-- Build: the pure function shuffle (backwards `shuffle_list_with`) gives the spec shuffling.
+theorem shuffling_spec {H : Type} (inst : HashInst H) (sha256 : List Nat → List Nat)
+    (hH : HashLink inst sha256) (hsha : ∀ l, (sha256 l).length = 32)
+    (p : Spec.CommitteeCache.Preset) (seed : Slice U8) (hseed : seed.val.length = 32)
+    (indices : alloc.vec.Vec Usize) (rounds : U8) (hR : p.SHUFFLE_ROUND_COUNT = rounds.val)
+    (hn : 0 < indices.val.length) (hn24 : indices.val.length ≤ 16777216)
+    (hr : 0 < rounds.val) :
+    state.committee_assignment.shuffling inst indices rounds seed ⦃ out =>
+      ∃ v, out = some v ∧ CommitteeCache.IsShuffling p sha256 (indices.val.map (·.val))
+        (seed.val.map (·.val)) (v.val.map (·.val)) ⦄
+```
+
+`shuffling_spec` discharges the `IsShuffling` hypothesis of the other theorems. The hash is
+abstract. `shuffle_list_with` is generic over the trait `ShuffleHash`, so Aeneas translates it
+with the hash as a parameter `inst`. `HashLink inst sha256` says that `inst.hash` computes
+`sha256` and does not fail. The theorem holds for every such pair. It uses no axiom for the hash.
+
+`shuffle_list_with_spec` states the result in Lighthouse terms: entry `x` of the output is
+entry `csiFold x` of the input. `compute_shuffled_permutation_eq` proves that the spec gives the
+same `csiFold`.
+
 `IsShuffling p sha256 indices seed shuffling` says that entry `i` of `shuffling` is
 `indices[compute_shuffled_index(i, len(indices), seed)]`. `sha256` is a parameter, so the
 theorems hold for every hash function.
@@ -565,6 +588,11 @@ directly.
 ### Trusted base
 
 - Charon, Aeneas and the Aeneas Lean library.
+- `Sha256Hash::hash` is `hash_fixed`, that is SHA-256. `initialized_unchecked` calls the pure function
+  `shuffling::<Sha256Hash>`, and `shuffle_list` calls `shuffle_list_with::<Sha256Hash>`.
+- The seed has 32 bytes, there are at most `2^24` active validators, and
+  `SHUFFLE_ROUND_COUNT` is in `1..=255`. For other inputs the pure function returns `None` or panics, as
+  before.
 - The glue models `lhGetBeaconCommittee`, `lhShuffledPosition` and `lhGetAttestationDuties`.
   They model `get_beacon_committee`, `shuffled_position`, `get_attestation_duties` and
   `convert_to_slot_and_index` in `committee_cache.rs`.
@@ -574,8 +602,11 @@ directly.
 - `Epoch::start_slot` does not saturate and `convert_to_slot_and_index` does not overflow when
   `(epoch + 1) * SLOTS_PER_EPOCH < 2^64`.
 - The cache holds the inputs that the theorems assume:
-  - `shuffling` is the spec shuffling of the active indices for `initialized_epoch` (`IsShuffling`).
-  - The active indices are distinct, so the shuffling has no duplicates (`hnodup`).
+  - `shuffling` is the output of the pure function `shuffling` on `get_active_validator_indices` and
+    `get_seed` for `initialized_epoch`. Then `shuffling_spec` gives `IsShuffling`. The proofs do
+    not cover `get_active_validator_indices` and `get_seed`.
+  - The shuffling has no duplicates (`hnodup`). The active indices are distinct and the shuffle
+    is a permutation. The proofs do not prove that the shuffle is a permutation.
   - Each shuffled index is below `state.validators().len()` (`hrange`).
   - `committees_per_slot` comes from `committee_count_per_slot` with the spec preset values.
   - `slots_per_epoch` is `SLOTS_PER_EPOCH` and is not 0. There is at least one active validator.
@@ -583,6 +614,12 @@ directly.
 - The caller checks `index < committees_per_slot` and the epoch bound of
   `get_committee_assignment`. For `index >= committees_per_slot`, Lighthouse returns `None`.
   The spec `get_beacon_committee` does not check the index. `process_attestation` checks it.
+
+### Charon flags
+
+The CommitteeCache pure functions need `--include swap_or_not_shuffle`. Without it, Charon does not
+translate the body of `shuffle_list_with`. `regenerate.sh` passes the flag, and the workflow
+also runs when `consensus/swap_or_not_shuffle/src/shuffle_list.rs` changes.
 
 ## Trusted base for all caches
 

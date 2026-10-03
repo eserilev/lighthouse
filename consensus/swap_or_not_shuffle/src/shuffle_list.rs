@@ -1,12 +1,25 @@
-use crate::Hash256;
 use ethereum_hashing::hash_fixed;
-use std::mem;
 
 const SEED_SIZE: usize = 32;
 const ROUND_SIZE: usize = 1;
 const POSITION_WINDOW_SIZE: usize = 4;
 const PIVOT_VIEW_SIZE: usize = SEED_SIZE + ROUND_SIZE;
 const TOTAL_SIZE: usize = SEED_SIZE + ROUND_SIZE + POSITION_WINDOW_SIZE;
+
+/// A 32-byte hash function for the shuffle.
+pub trait ShuffleHash {
+    /// Returns the hash of `input`.
+    fn hash(input: &[u8]) -> [u8; 32];
+}
+
+/// SHA-256, the hash function of the specification.
+pub struct Sha256Hash;
+
+impl ShuffleHash for Sha256Hash {
+    fn hash(input: &[u8]) -> [u8; 32] {
+        hash_fixed(input)
+    }
+}
 
 /// A helper struct to manage the buffer used during shuffling.
 struct Buf([u8; TOTAL_SIZE]);
@@ -30,23 +43,45 @@ impl Buf {
 
     /// Returns the new pivot. It is "raw" because it has not modulo the list size (this must be
     /// done by the caller).
-    fn raw_pivot(&self) -> u64 {
-        let digest = hash_fixed(&self.0[0..PIVOT_VIEW_SIZE]);
+    fn raw_pivot<H: ShuffleHash>(&self) -> u64 {
+        let digest = H::hash(&self.0[0..PIVOT_VIEW_SIZE]);
 
-        let mut bytes = [0; mem::size_of::<u64>()];
-        bytes[..].copy_from_slice(&digest[0..mem::size_of::<u64>()]);
-        u64::from_le_bytes(bytes)
+        (digest[0] as u64)
+            | (digest[1] as u64) << 8
+            | (digest[2] as u64) << 16
+            | (digest[3] as u64) << 24
+            | (digest[4] as u64) << 32
+            | (digest[5] as u64) << 40
+            | (digest[6] as u64) << 48
+            | (digest[7] as u64) << 56
     }
 
     /// Add the current position into the buffer.
     fn mix_in_position(&mut self, position: usize) {
-        self.0[PIVOT_VIEW_SIZE..].copy_from_slice(&position.to_le_bytes()[0..POSITION_WINDOW_SIZE]);
+        self.0[PIVOT_VIEW_SIZE] = position as u8;
+        self.0[PIVOT_VIEW_SIZE + 1] = (position >> 8) as u8;
+        self.0[PIVOT_VIEW_SIZE + 2] = (position >> 16) as u8;
+        self.0[PIVOT_VIEW_SIZE + 3] = (position >> 24) as u8;
     }
 
     /// Hash the entire buffer.
-    fn hash(&self) -> Hash256 {
-        Hash256::from(hash_fixed(&self.0))
+    fn hash<H: ShuffleHash>(&self) -> [u8; 32] {
+        H::hash(&self.0)
     }
+}
+
+/// Returns the bit of position `j`. Refreshes the cached hash and byte when `j` needs new ones.
+#[inline(always)]
+fn bit_at<H: ShuffleHash>(buf: &mut Buf, source: &mut [u8; 32], byte_v: &mut u8, j: usize) -> u8 {
+    if j & 0xff == 0xff {
+        buf.mix_in_position(j >> 8);
+        *source = buf.hash::<H>();
+    }
+
+    if j & 0x07 == 0x07 {
+        *byte_v = source[(j & 0xff) >> 3];
+    }
+    (*byte_v >> (j & 0x07)) & 0x01
 }
 
 /// Applies the swap with a zero-or-all-ones mask, avoiding an unpredictable branch.
@@ -90,6 +125,16 @@ fn masked_swap(input: &mut [usize], i: usize, j: usize, bit: u8) {
 ///  - `list_size > 2**24`
 ///  - `list_size > usize::MAX / 2`
 pub fn shuffle_list(
+    input: Vec<usize>,
+    rounds: u8,
+    seed: &[u8],
+    forwards: bool,
+) -> Option<Vec<usize>> {
+    shuffle_list_with::<Sha256Hash>(input, rounds, seed, forwards)
+}
+
+/// Returns `shuffle_list(input, rounds, seed, forwards)` with `H` as the hash function.
+pub fn shuffle_list_with<H: ShuffleHash>(
     mut input: Vec<usize>,
     rounds: u8,
     seed: &[u8],
@@ -97,8 +142,7 @@ pub fn shuffle_list(
 ) -> Option<Vec<usize>> {
     let list_size = input.len();
 
-    if input.is_empty() || list_size > usize::MAX / 2 || list_size > 2_usize.pow(24) || rounds == 0
-    {
+    if list_size == 0 || list_size > usize::MAX / 2 || list_size > 1 << 24 || rounds == 0 {
         return None;
     }
 
@@ -109,50 +153,38 @@ pub fn shuffle_list(
     loop {
         buf.set_round(r);
 
-        let pivot = (buf.raw_pivot() % list_size as u64) as usize;
+        let pivot = (buf.raw_pivot::<H>() % list_size as u64) as usize;
         let mirror = (pivot + 1) >> 1;
 
         buf.mix_in_position(pivot >> 8);
-        let mut source = buf.hash();
+        let mut source = buf.hash::<H>();
         let mut byte_v = source[(pivot & 0xff) >> 3];
 
-        for i in 0..mirror {
+        let mut i = 0;
+        while i < mirror {
             let j = pivot - i;
 
-            if j & 0xff == 0xff {
-                buf.mix_in_position(j >> 8);
-                source = buf.hash();
-            }
-
-            if j & 0x07 == 0x07 {
-                byte_v = source[(j & 0xff) >> 3];
-            }
-            let bit_v = (byte_v >> (j & 0x07)) & 0x01;
+            let bit_v = bit_at::<H>(&mut buf, &mut source, &mut byte_v, j);
 
             masked_swap(&mut input, i, j, bit_v);
+            i += 1;
         }
 
         let mirror = (pivot + list_size + 1) >> 1;
         let end = list_size - 1;
 
         buf.mix_in_position(end >> 8);
-        let mut source = buf.hash();
+        let mut source = buf.hash::<H>();
         let mut byte_v = source[(end & 0xff) >> 3];
 
-        for (loop_iter, i) in ((pivot + 1)..mirror).enumerate() {
-            let j = end - loop_iter;
+        let mut i = pivot + 1;
+        while i < mirror {
+            let j = end - (i - (pivot + 1));
 
-            if j & 0xff == 0xff {
-                buf.mix_in_position(j >> 8);
-                source = buf.hash();
-            }
-
-            if j & 0x07 == 0x07 {
-                byte_v = source[(j & 0xff) >> 3];
-            }
-            let bit_v = (byte_v >> (j & 0x07)) & 0x01;
+            let bit_v = bit_at::<H>(&mut buf, &mut source, &mut byte_v, j);
 
             masked_swap(&mut input, i, j, bit_v);
+            i += 1;
         }
 
         if forwards {
@@ -174,6 +206,7 @@ pub fn shuffle_list(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::mem;
 
     const TEST_SIZES: [usize; 12] = [1, 2, 3, 7, 8, 9, 255, 256, 257, 511, 512, 513];
     const TEST_ROUNDS: [u8; 3] = [1, 17, 90];
@@ -205,11 +238,11 @@ mod tests {
         loop {
             buf.set_round(round);
 
-            let pivot = (buf.raw_pivot() % list_size as u64) as usize;
+            let pivot = (buf.raw_pivot::<Sha256Hash>() % list_size as u64) as usize;
             let mirror = (pivot + 1) >> 1;
 
             buf.mix_in_position(pivot >> 8);
-            let mut source = buf.hash();
+            let mut source = buf.hash::<Sha256Hash>();
             let mut byte = source[(pivot & 0xff) >> 3];
 
             for i in 0..mirror {
@@ -217,7 +250,7 @@ mod tests {
 
                 if j & 0xff == 0xff {
                     buf.mix_in_position(j >> 8);
-                    source = buf.hash();
+                    source = buf.hash::<Sha256Hash>();
                 }
 
                 if j & 0x07 == 0x07 {
@@ -234,7 +267,7 @@ mod tests {
             let end = list_size - 1;
 
             buf.mix_in_position(end >> 8);
-            let mut source = buf.hash();
+            let mut source = buf.hash::<Sha256Hash>();
             let mut byte = source[(end & 0xff) >> 3];
 
             for (loop_iter, i) in ((pivot + 1)..mirror).enumerate() {
@@ -242,7 +275,7 @@ mod tests {
 
                 if j & 0xff == 0xff {
                     buf.mix_in_position(j >> 8);
-                    source = buf.hash();
+                    source = buf.hash::<Sha256Hash>();
                 }
 
                 if j & 0x07 == 0x07 {

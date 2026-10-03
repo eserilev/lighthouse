@@ -182,6 +182,422 @@ def Usize.Insts.Safe_arithSafeArithUsize.safe_rem
   let o ← lift (Usize.checked_rem self other)
   core.option.Option.ok_or o safe_arith.ArithError.DivisionByZero
 
+/-- [swap_or_not_shuffle::shuffle_list::SEED_SIZE]
+    Source: 'consensus/swap_or_not_shuffle/src/shuffle_list.rs', lines 3:0-3:22
+    Name pattern: [swap_or_not_shuffle::shuffle_list::SEED_SIZE] -/
+@[global_simps, irreducible, rust_const
+  "swap_or_not_shuffle::shuffle_list::SEED_SIZE"]
+def swap_or_not_shuffle.shuffle_list.SEED_SIZE : Std.Usize := 32#usize
+
+/-- [swap_or_not_shuffle::shuffle_list::ROUND_SIZE]
+    Source: 'consensus/swap_or_not_shuffle/src/shuffle_list.rs', lines 4:0-4:23
+    Name pattern: [swap_or_not_shuffle::shuffle_list::ROUND_SIZE] -/
+@[global_simps, irreducible, rust_const
+  "swap_or_not_shuffle::shuffle_list::ROUND_SIZE"]
+def swap_or_not_shuffle.shuffle_list.ROUND_SIZE : Std.Usize := 1#usize
+
+/-- [swap_or_not_shuffle::shuffle_list::PIVOT_VIEW_SIZE]
+    Source: 'consensus/swap_or_not_shuffle/src/shuffle_list.rs', lines 6:0-6:28
+    Name pattern: [swap_or_not_shuffle::shuffle_list::PIVOT_VIEW_SIZE] -/
+@[global_simps, irreducible, rust_const
+  "swap_or_not_shuffle::shuffle_list::PIVOT_VIEW_SIZE"]
+def swap_or_not_shuffle.shuffle_list.PIVOT_VIEW_SIZE : Result Std.Usize :=
+  swap_or_not_shuffle.shuffle_list.SEED_SIZE +
+    swap_or_not_shuffle.shuffle_list.ROUND_SIZE
+
+/-- Trait declaration: [swap_or_not_shuffle::shuffle_list::ShuffleHash]
+    Source: 'consensus/swap_or_not_shuffle/src/shuffle_list.rs', lines 10:0-10:21
+    Name pattern: [swap_or_not_shuffle::shuffle_list::ShuffleHash]
+    Visibility: public -/
+@[rust_trait "swap_or_not_shuffle::shuffle_list::ShuffleHash"]
+structure swap_or_not_shuffle.shuffle_list.ShuffleHash (Self : Type) where
+  hash : Slice Std.U8 → Result (Array Std.U8 32#usize)
+
+/-- [swap_or_not_shuffle::shuffle_list::Buf]
+    Source: 'consensus/swap_or_not_shuffle/src/shuffle_list.rs', lines 25:0-25:10
+    Name pattern: [swap_or_not_shuffle::shuffle_list::Buf] -/
+@[reducible, rust_type "swap_or_not_shuffle::shuffle_list::Buf"]
+def swap_or_not_shuffle.shuffle_list.Buf := Array Std.U8 37#usize
+
+/-- [swap_or_not_shuffle::shuffle_list::{swap_or_not_shuffle::shuffle_list::Buf}::new]:
+    Source: 'consensus/swap_or_not_shuffle/src/shuffle_list.rs', lines 33:4-33:31
+    Name pattern: [swap_or_not_shuffle::shuffle_list::{swap_or_not_shuffle::shuffle_list::Buf}::new] -/
+@[rust_fun
+  "swap_or_not_shuffle::shuffle_list::{swap_or_not_shuffle::shuffle_list::Buf}::new"]
+def swap_or_not_shuffle.shuffle_list.Buf.new
+  (seed : Slice Std.U8) : Result swap_or_not_shuffle.shuffle_list.Buf := do
+  let buf := Array.repeat 37#usize 0#u8
+  let (s, index_mut_back) ←
+    core.array.Array.index_mut (core.ops.index.IndexMutSlice
+      (core.slice.index.SliceIndexRangeUsizeSlice Std.U8)) buf
+      { start := 0#usize, «end» := swap_or_not_shuffle.shuffle_list.SEED_SIZE
+      }
+  let s1 ← core.slice.Slice.copy_from_slice core.marker.CopyU8 s seed
+  let buf1 := index_mut_back s1
+  ok buf1
+
+/-- [swap_or_not_shuffle::shuffle_list::{swap_or_not_shuffle::shuffle_list::Buf}::set_round]:
+    Source: 'consensus/swap_or_not_shuffle/src/shuffle_list.rs', lines 40:4-40:38
+    Name pattern: [swap_or_not_shuffle::shuffle_list::{swap_or_not_shuffle::shuffle_list::Buf}::set_round] -/
+@[rust_fun
+  "swap_or_not_shuffle::shuffle_list::{swap_or_not_shuffle::shuffle_list::Buf}::set_round"]
+def swap_or_not_shuffle.shuffle_list.Buf.set_round
+  (self : swap_or_not_shuffle.shuffle_list.Buf) (round : Std.U8) :
+  Result swap_or_not_shuffle.shuffle_list.Buf
+  := do
+  let a ← Array.update self swap_or_not_shuffle.shuffle_list.SEED_SIZE round
+  ok a
+
+/-- [swap_or_not_shuffle::shuffle_list::{swap_or_not_shuffle::shuffle_list::Buf}::raw_pivot]:
+    Source: 'consensus/swap_or_not_shuffle/src/shuffle_list.rs', lines 46:4-46:46
+    Name pattern: [swap_or_not_shuffle::shuffle_list::{swap_or_not_shuffle::shuffle_list::Buf}::raw_pivot] -/
+@[rust_fun
+  "swap_or_not_shuffle::shuffle_list::{swap_or_not_shuffle::shuffle_list::Buf}::raw_pivot"]
+def swap_or_not_shuffle.shuffle_list.Buf.raw_pivot
+  {H : Type} (ShuffleHashInst : swap_or_not_shuffle.shuffle_list.ShuffleHash H)
+  (self : swap_or_not_shuffle.shuffle_list.Buf) :
+  Result Std.U64
+  := do
+  let i ← swap_or_not_shuffle.shuffle_list.PIVOT_VIEW_SIZE
+  let s ←
+    core.array.Array.index (core.ops.index.IndexSlice
+      (core.slice.index.SliceIndexRangeUsizeSlice Std.U8)) self
+      { start := 0#usize, «end» := i }
+  let digest ← ShuffleHashInst.hash s
+  let i1 ← Array.index_usize digest 0#usize
+  let i2 ← lift (UScalar.cast .U64 i1)
+  let i3 ← Array.index_usize digest 1#usize
+  let i4 ← lift (UScalar.cast .U64 i3)
+  let i5 ← i4 <<< 8#i32
+  let i6 ← lift (i2 ||| i5)
+  let i7 ← Array.index_usize digest 2#usize
+  let i8 ← lift (UScalar.cast .U64 i7)
+  let i9 ← i8 <<< 16#i32
+  let i10 ← lift (i6 ||| i9)
+  let i11 ← Array.index_usize digest 3#usize
+  let i12 ← lift (UScalar.cast .U64 i11)
+  let i13 ← i12 <<< 24#i32
+  let i14 ← lift (i10 ||| i13)
+  let i15 ← Array.index_usize digest 4#usize
+  let i16 ← lift (UScalar.cast .U64 i15)
+  let i17 ← i16 <<< 32#i32
+  let i18 ← lift (i14 ||| i17)
+  let i19 ← Array.index_usize digest 5#usize
+  let i20 ← lift (UScalar.cast .U64 i19)
+  let i21 ← i20 <<< 40#i32
+  let i22 ← lift (i18 ||| i21)
+  let i23 ← Array.index_usize digest 6#usize
+  let i24 ← lift (UScalar.cast .U64 i23)
+  let i25 ← i24 <<< 48#i32
+  let i26 ← lift (i22 ||| i25)
+  let i27 ← Array.index_usize digest 7#usize
+  let i28 ← lift (UScalar.cast .U64 i27)
+  let i29 ← i28 <<< 56#i32
+  ok (i26 ||| i29)
+
+/-- [swap_or_not_shuffle::shuffle_list::{swap_or_not_shuffle::shuffle_list::Buf}::mix_in_position]:
+    Source: 'consensus/swap_or_not_shuffle/src/shuffle_list.rs', lines 60:4-60:50
+    Name pattern: [swap_or_not_shuffle::shuffle_list::{swap_or_not_shuffle::shuffle_list::Buf}::mix_in_position] -/
+@[rust_fun
+  "swap_or_not_shuffle::shuffle_list::{swap_or_not_shuffle::shuffle_list::Buf}::mix_in_position"]
+def swap_or_not_shuffle.shuffle_list.Buf.mix_in_position
+  (self : swap_or_not_shuffle.shuffle_list.Buf) (position : Std.Usize) :
+  Result swap_or_not_shuffle.shuffle_list.Buf
+  := do
+  let i ← swap_or_not_shuffle.shuffle_list.PIVOT_VIEW_SIZE
+  let i1 ← lift (UScalar.cast .U8 position)
+  let a ← Array.update self i i1
+  let i2 ← position >>> 8#i32
+  let i3 ← i + 1#usize
+  let i4 ← lift (UScalar.cast .U8 i2)
+  let a1 ← Array.update a i3 i4
+  let i5 ← position >>> 16#i32
+  let i6 ← i + 2#usize
+  let i7 ← lift (UScalar.cast .U8 i5)
+  let a2 ← Array.update a1 i6 i7
+  let i8 ← position >>> 24#i32
+  let i9 ← i + 3#usize
+  let i10 ← lift (UScalar.cast .U8 i8)
+  let a3 ← Array.update a2 i9 i10
+  ok a3
+
+/-- [swap_or_not_shuffle::shuffle_list::{swap_or_not_shuffle::shuffle_list::Buf}::hash]:
+    Source: 'consensus/swap_or_not_shuffle/src/shuffle_list.rs', lines 68:4-68:46
+    Name pattern: [swap_or_not_shuffle::shuffle_list::{swap_or_not_shuffle::shuffle_list::Buf}::hash] -/
+@[rust_fun
+  "swap_or_not_shuffle::shuffle_list::{swap_or_not_shuffle::shuffle_list::Buf}::hash"]
+def swap_or_not_shuffle.shuffle_list.Buf.hash
+  {H : Type} (ShuffleHashInst : swap_or_not_shuffle.shuffle_list.ShuffleHash H)
+  (self : swap_or_not_shuffle.shuffle_list.Buf) :
+  Result (Array Std.U8 32#usize)
+  := do
+  let s ← lift (Array.to_slice self)
+  ShuffleHashInst.hash s
+
+/-- [swap_or_not_shuffle::shuffle_list::bit_at]:
+    Source: 'consensus/swap_or_not_shuffle/src/shuffle_list.rs', lines 75:0-75:96
+    Name pattern: [swap_or_not_shuffle::shuffle_list::bit_at] -/
+@[rust_fun "swap_or_not_shuffle::shuffle_list::bit_at"]
+def swap_or_not_shuffle.shuffle_list.bit_at
+  {H : Type} (ShuffleHashInst : swap_or_not_shuffle.shuffle_list.ShuffleHash H)
+  (buf : swap_or_not_shuffle.shuffle_list.Buf) (source : Array Std.U8 32#usize)
+  (byte_v : Std.U8) (j : Std.Usize) :
+  Result (Std.U8 × swap_or_not_shuffle.shuffle_list.Buf × (Array Std.U8
+    32#usize) × Std.U8)
+  := do
+  let i ← lift (j &&& 255#usize)
+  let (buf1, source1) ←
+    if i = 255#usize
+    then
+      do
+      let i1 ← j >>> 8#i32
+      let buf2 ← swap_or_not_shuffle.shuffle_list.Buf.mix_in_position buf i1
+      let source2 ←
+        swap_or_not_shuffle.shuffle_list.Buf.hash ShuffleHashInst buf2
+      ok (buf2, source2)
+    else ok (buf, source)
+  let i1 ← lift (j &&& 7#usize)
+  let byte_v1 ←
+    if i1 = 7#usize
+    then
+      do
+      let i2 ← lift (j &&& 255#usize)
+      let i3 ← i2 >>> 3#i32
+      Array.index_usize source1 i3
+    else ok byte_v
+  let i2 ← lift (j &&& 7#usize)
+  let i3 ← byte_v1 >>> i2
+  let i4 ← lift (i3 &&& 1#u8)
+  ok (i4, buf1, source1, byte_v1)
+
+/-- [swap_or_not_shuffle::shuffle_list::masked_swap]:
+    Source: 'consensus/swap_or_not_shuffle/src/shuffle_list.rs', lines 89:0-89:64
+    Name pattern: [swap_or_not_shuffle::shuffle_list::masked_swap] -/
+@[rust_fun "swap_or_not_shuffle::shuffle_list::masked_swap"]
+def swap_or_not_shuffle.shuffle_list.masked_swap
+  (input : Slice Std.Usize) (i : Std.Usize) (j : Std.Usize) (bit : Std.U8) :
+  Result (Slice Std.Usize)
+  := do
+  massert (bit <= 1#u8)
+  let i1 ← lift (UScalar.cast .Usize bit)
+  let mask ← lift (core.num.Usize.wrapping_sub 0#usize i1)
+  let left ← Slice.index_usize input i
+  let right ← Slice.index_usize input j
+  let i2 ← lift (left ^^^ right)
+  let delta ← lift (i2 &&& mask)
+  let i3 ← lift (left ^^^ delta)
+  let input1 ← Slice.update input i i3
+  let i4 ← lift (right ^^^ delta)
+  Slice.update input1 j i4
+
+/-- [swap_or_not_shuffle::shuffle_list::shuffle_list_with]: loop body 1:
+    Source: 'consensus/swap_or_not_shuffle/src/shuffle_list.rs', lines 164:8-171:9
+    Name pattern: [swap_or_not_shuffle::shuffle_list::shuffle_list_with]
+    Visibility: public -/
+@[rust_loop_body, rust_fun
+  "swap_or_not_shuffle::shuffle_list::shuffle_list_with"]
+def swap_or_not_shuffle.shuffle_list.shuffle_list_with_loop0_loop0.body
+  {H : Type} (ShuffleHashInst : swap_or_not_shuffle.shuffle_list.ShuffleHash H)
+  (pivot : Std.Usize) (mirror : Std.Usize) (input : alloc.vec.Vec Std.Usize)
+  (buf : swap_or_not_shuffle.shuffle_list.Buf) (source : Array Std.U8 32#usize)
+  (byte_v : Std.U8) (i : Std.Usize) :
+  Result (ControlFlow ((alloc.vec.Vec Std.Usize) ×
+    swap_or_not_shuffle.shuffle_list.Buf × (Array Std.U8 32#usize) × Std.U8
+    × Std.Usize) ((alloc.vec.Vec Std.Usize) ×
+    swap_or_not_shuffle.shuffle_list.Buf))
+  := do
+  if i < mirror
+  then
+    let j ← pivot - i
+    let (bit_v, buf1, source1, byte_v1) ←
+      swap_or_not_shuffle.shuffle_list.bit_at ShuffleHashInst buf source byte_v
+        j
+    let (s, deref_mut_back) ← lift (alloc.vec.Vec.deref_mut input)
+    let s1 ← swap_or_not_shuffle.shuffle_list.masked_swap s i j bit_v
+    let i1 ← i + 1#usize
+    let input1 := deref_mut_back s1
+    ok (cont (input1, buf1, source1, byte_v1, i1))
+  else ok (done (input, buf))
+
+/-- [swap_or_not_shuffle::shuffle_list::shuffle_list_with]: loop 1:
+    Source: 'consensus/swap_or_not_shuffle/src/shuffle_list.rs', lines 164:8-171:9
+    Name pattern: [swap_or_not_shuffle::shuffle_list::shuffle_list_with]
+    Visibility: public -/
+@[rust_loop, rust_fun "swap_or_not_shuffle::shuffle_list::shuffle_list_with"]
+def swap_or_not_shuffle.shuffle_list.shuffle_list_with_loop0_loop0
+  {H : Type} (ShuffleHashInst : swap_or_not_shuffle.shuffle_list.ShuffleHash H)
+  (input : alloc.vec.Vec Std.Usize)
+  (buf : swap_or_not_shuffle.shuffle_list.Buf) (pivot : Std.Usize)
+  (mirror : Std.Usize) (source : Array Std.U8 32#usize) (byte_v : Std.U8)
+  (i : Std.Usize) :
+  Result ((alloc.vec.Vec Std.Usize) × swap_or_not_shuffle.shuffle_list.Buf)
+  := do
+  loop
+    (fun (input1, buf1, source1, byte_v1, i1) =>
+      swap_or_not_shuffle.shuffle_list.shuffle_list_with_loop0_loop0.body
+      ShuffleHashInst pivot mirror input1 buf1 source1 byte_v1 i1)
+    (input, buf, source, byte_v, i)
+
+/-- [swap_or_not_shuffle::shuffle_list::shuffle_list_with]: loop body 2:
+    Source: 'consensus/swap_or_not_shuffle/src/shuffle_list.rs', lines 181:8-188:9
+    Name pattern: [swap_or_not_shuffle::shuffle_list::shuffle_list_with]
+    Visibility: public -/
+@[rust_loop_body, rust_fun
+  "swap_or_not_shuffle::shuffle_list::shuffle_list_with"]
+def swap_or_not_shuffle.shuffle_list.shuffle_list_with_loop0_loop1.body
+  {H : Type} (ShuffleHashInst : swap_or_not_shuffle.shuffle_list.ShuffleHash H)
+  (pivot : Std.Usize) (mirror : Std.Usize) («end» : Std.Usize)
+  (input : alloc.vec.Vec Std.Usize)
+  (buf : swap_or_not_shuffle.shuffle_list.Buf) (source : Array Std.U8 32#usize)
+  (byte_v : Std.U8) (i : Std.Usize) :
+  Result (ControlFlow ((alloc.vec.Vec Std.Usize) ×
+    swap_or_not_shuffle.shuffle_list.Buf × (Array Std.U8 32#usize) × Std.U8
+    × Std.Usize) ((alloc.vec.Vec Std.Usize) ×
+    swap_or_not_shuffle.shuffle_list.Buf))
+  := do
+  if i < mirror
+  then
+    let i1 ← pivot + 1#usize
+    let i2 ← i - i1
+    let j ← «end» - i2
+    let (bit_v, buf1, source1, byte_v1) ←
+      swap_or_not_shuffle.shuffle_list.bit_at ShuffleHashInst buf source byte_v
+        j
+    let (s, deref_mut_back) ← lift (alloc.vec.Vec.deref_mut input)
+    let s1 ← swap_or_not_shuffle.shuffle_list.masked_swap s i j bit_v
+    let i3 ← i + 1#usize
+    let input1 := deref_mut_back s1
+    ok (cont (input1, buf1, source1, byte_v1, i3))
+  else ok (done (input, buf))
+
+/-- [swap_or_not_shuffle::shuffle_list::shuffle_list_with]: loop 2:
+    Source: 'consensus/swap_or_not_shuffle/src/shuffle_list.rs', lines 181:8-188:9
+    Name pattern: [swap_or_not_shuffle::shuffle_list::shuffle_list_with]
+    Visibility: public -/
+@[rust_loop, rust_fun "swap_or_not_shuffle::shuffle_list::shuffle_list_with"]
+def swap_or_not_shuffle.shuffle_list.shuffle_list_with_loop0_loop1
+  {H : Type} (ShuffleHashInst : swap_or_not_shuffle.shuffle_list.ShuffleHash H)
+  (input : alloc.vec.Vec Std.Usize)
+  (buf : swap_or_not_shuffle.shuffle_list.Buf) (pivot : Std.Usize)
+  (mirror : Std.Usize) («end» : Std.Usize) (source : Array Std.U8 32#usize)
+  (byte_v : Std.U8) (i : Std.Usize) :
+  Result ((alloc.vec.Vec Std.Usize) × swap_or_not_shuffle.shuffle_list.Buf)
+  := do
+  loop
+    (fun (input1, buf1, source1, byte_v1, i1) =>
+      swap_or_not_shuffle.shuffle_list.shuffle_list_with_loop0_loop1.body
+      ShuffleHashInst pivot mirror «end» input1 buf1 source1 byte_v1 i1)
+    (input, buf, source, byte_v, i)
+
+/-- [swap_or_not_shuffle::shuffle_list::shuffle_list_with]: loop body 0:
+    Source: 'consensus/swap_or_not_shuffle/src/shuffle_list.rs', lines 153:4-201:5
+    Name pattern: [swap_or_not_shuffle::shuffle_list::shuffle_list_with]
+    Visibility: public -/
+@[rust_loop_body, rust_fun
+  "swap_or_not_shuffle::shuffle_list::shuffle_list_with"]
+def swap_or_not_shuffle.shuffle_list.shuffle_list_with_loop0.body
+  {H : Type} (ShuffleHashInst : swap_or_not_shuffle.shuffle_list.ShuffleHash H)
+  (rounds : Std.U8) (list_size : Std.Usize) (input : alloc.vec.Vec Std.Usize)
+  (forwards : Bool) (buf : swap_or_not_shuffle.shuffle_list.Buf) (r : Std.U8) :
+  Result (ControlFlow ((alloc.vec.Vec Std.Usize) × Bool ×
+    swap_or_not_shuffle.shuffle_list.Buf × Std.U8) (alloc.vec.Vec Std.Usize))
+  := do
+  let buf1 ← swap_or_not_shuffle.shuffle_list.Buf.set_round buf r
+  let i ← swap_or_not_shuffle.shuffle_list.Buf.raw_pivot ShuffleHashInst buf1
+  let i1 ← lift (UScalar.cast .U64 list_size)
+  let i2 ← i % i1
+  let pivot ← lift (UScalar.cast .Usize i2)
+  let i3 ← pivot + 1#usize
+  let mirror ← i3 >>> 1#i32
+  let i4 ← pivot >>> 8#i32
+  let buf2 ← swap_or_not_shuffle.shuffle_list.Buf.mix_in_position buf1 i4
+  let source ← swap_or_not_shuffle.shuffle_list.Buf.hash ShuffleHashInst buf2
+  let i5 ← lift (pivot &&& 255#usize)
+  let i6 ← i5 >>> 3#i32
+  let byte_v ← Array.index_usize source i6
+  let (input1, buf3) ←
+    swap_or_not_shuffle.shuffle_list.shuffle_list_with_loop0_loop0
+      ShuffleHashInst input buf2 pivot mirror source byte_v 0#usize
+  let i7 ← pivot + list_size
+  let i8 ← i7 + 1#usize
+  let mirror1 ← i8 >>> 1#i32
+  let «end» ← list_size - 1#usize
+  let i9 ← «end» >>> 8#i32
+  let buf4 ← swap_or_not_shuffle.shuffle_list.Buf.mix_in_position buf3 i9
+  let source1 ←
+    swap_or_not_shuffle.shuffle_list.Buf.hash ShuffleHashInst buf4
+  let i10 ← lift («end» &&& 255#usize)
+  let i11 ← i10 >>> 3#i32
+  let byte_v1 ← Array.index_usize source1 i11
+  let i12 ← pivot + 1#usize
+  let (input2, buf5) ←
+    swap_or_not_shuffle.shuffle_list.shuffle_list_with_loop0_loop1
+      ShuffleHashInst input1 buf4 pivot mirror1 «end» source1 byte_v1 i12
+  if forwards
+  then
+    let r1 ← r + 1#u8
+    if r1 = rounds
+    then ok (done input2)
+    else ok (cont (input2, true, buf5, r1))
+  else
+    if r = 0#u8
+    then ok (done input2)
+    else let r1 ← r - 1#u8
+         ok (cont (input2, false, buf5, r1))
+
+/-- [swap_or_not_shuffle::shuffle_list::shuffle_list_with]: loop 0:
+    Source: 'consensus/swap_or_not_shuffle/src/shuffle_list.rs', lines 153:4-201:5
+    Name pattern: [swap_or_not_shuffle::shuffle_list::shuffle_list_with]
+    Visibility: public -/
+@[rust_loop, rust_fun "swap_or_not_shuffle::shuffle_list::shuffle_list_with"]
+def swap_or_not_shuffle.shuffle_list.shuffle_list_with_loop0
+  {H : Type} (ShuffleHashInst : swap_or_not_shuffle.shuffle_list.ShuffleHash H)
+  (input : alloc.vec.Vec Std.Usize) (rounds : Std.U8) (forwards : Bool)
+  (list_size : Std.Usize) (buf : swap_or_not_shuffle.shuffle_list.Buf)
+  (r : Std.U8) :
+  Result (alloc.vec.Vec Std.Usize)
+  := do
+  loop
+    (fun (input1, forwards1, buf1, r1) =>
+      swap_or_not_shuffle.shuffle_list.shuffle_list_with_loop0.body
+      ShuffleHashInst rounds list_size input1 forwards1 buf1 r1)
+    (input, forwards, buf, r)
+
+/-- [swap_or_not_shuffle::shuffle_list::shuffle_list_with]:
+    Source: 'consensus/swap_or_not_shuffle/src/shuffle_list.rs', lines 137:0-142:23
+    Name pattern: [swap_or_not_shuffle::shuffle_list::shuffle_list_with]
+    Visibility: public -/
+@[rust_fun "swap_or_not_shuffle::shuffle_list::shuffle_list_with"]
+def swap_or_not_shuffle.shuffle_list.shuffle_list_with
+  {H : Type} (ShuffleHashInst : swap_or_not_shuffle.shuffle_list.ShuffleHash H)
+  (input : alloc.vec.Vec Std.Usize) (rounds : Std.U8) (seed : Slice Std.U8)
+  (forwards : Bool) :
+  Result (Option (alloc.vec.Vec Std.Usize))
+  := do
+  let list_size := alloc.vec.Vec.len input
+  if list_size = 0#usize
+  then ok none
+  else
+    let i ← core.num.Usize.MAX / 2#usize
+    if list_size > i
+    then ok none
+    else
+      let i1 ← 1#usize <<< 24#i32
+      if list_size > i1
+      then ok none
+      else
+        if rounds = 0#u8
+        then ok none
+        else
+          let buf ← swap_or_not_shuffle.shuffle_list.Buf.new seed
+          let r ← if forwards
+                    then ok 0#u8
+                    else rounds - 1#u8
+          let input1 ←
+            swap_or_not_shuffle.shuffle_list.shuffle_list_with_loop0
+              ShuffleHashInst input rounds forwards list_size buf r
+          ok (some input1)
+
 /-- [types::core::consts::altair::NUM_FLAG_INDICES]
     Source: 'consensus/types/src/core/consts.rs', lines 20:4-20:42
     Visibility: public -/
@@ -972,6 +1388,20 @@ def state.committee_assignment.attestation_duty
     core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
       (Option (Std.Usize × Std.Usize × Std.Usize)) (core.convert.FromSame
       safe_arith.ArithError) residual
+
+/-- [types::state::committee_assignment::shuffling]:
+    Source: 'consensus/types/src/state/committee_assignment.rs', lines 120:0-131:1
+    Visibility: public -/
+def state.committee_assignment.shuffling
+  {H : Type} (swap_or_not_shuffleshuffle_listShuffleHashInst :
+  swap_or_not_shuffle.shuffle_list.ShuffleHash H)
+  (active_validator_indices : alloc.vec.Vec Std.Usize)
+  (shuffle_round_count : Std.U8) (seed : Slice Std.U8) :
+  Result (Option (alloc.vec.Vec Std.Usize))
+  := do
+  swap_or_not_shuffle.shuffle_list.shuffle_list_with
+    swap_or_not_shuffleshuffle_listShuffleHashInst active_validator_indices
+    shuffle_round_count seed false
 
 /-- [types::state::exit_queue::record_exit]:
     Source: 'consensus/types/src/state/exit_queue.rs', lines 9:0-21:1
