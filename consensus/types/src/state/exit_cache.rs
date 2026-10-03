@@ -1,10 +1,6 @@
-use std::cmp::Ordering;
-
-use safe_arith::SafeArith;
-
 use crate::{
     core::{ChainSpec, Epoch},
-    state::BeaconStateError,
+    state::{BeaconStateError, exit_queue},
     validator::Validator,
 };
 
@@ -51,19 +47,13 @@ impl ExitCache {
     /// Record the exit epoch of a validator. Must be called only once per exiting validator.
     pub fn record_validator_exit(&mut self, exit_epoch: Epoch) -> Result<(), BeaconStateError> {
         self.check_initialized()?;
-        match exit_epoch.cmp(&self.max_exit_epoch) {
-            // Update churn for the current maximum epoch.
-            Ordering::Equal => {
-                self.max_exit_epoch_churn.safe_add_assign(1)?;
-            }
-            // Increase the max exit epoch, reset the churn to 1.
-            Ordering::Greater => {
-                self.max_exit_epoch = exit_epoch;
-                self.max_exit_epoch_churn = 1;
-            }
-            // Older exit epochs are not relevant.
-            Ordering::Less => (),
-        }
+        let (max_exit_epoch, max_exit_epoch_churn) = exit_queue::record_exit(
+            self.max_exit_epoch.as_u64(),
+            self.max_exit_epoch_churn,
+            exit_epoch.as_u64(),
+        )?;
+        self.max_exit_epoch = Epoch::new(max_exit_epoch);
+        self.max_exit_epoch_churn = max_exit_epoch_churn;
         Ok(())
     }
 
@@ -76,19 +66,15 @@ impl ExitCache {
     /// Get number of validators with the given exit epoch. (Return 0 for the default exit epoch.)
     pub fn get_churn_at(&self, exit_epoch: Epoch) -> Result<u64, BeaconStateError> {
         self.check_initialized()?;
-        match exit_epoch.cmp(&self.max_exit_epoch) {
-            // Epochs are equal, we know the churn exactly.
-            Ordering::Equal => Ok(self.max_exit_epoch_churn),
-            // If exiting at an epoch later than the cached epoch then the churn is 0. This is a
-            // common case which happens when there are no exits for an epoch.
-            Ordering::Greater => Ok(0),
-            // Consensus code should never require the churn at an epoch prior to the cached epoch.
-            // That's a bug.
-            Ordering::Less => Err(BeaconStateError::ExitCacheInvalidEpoch {
-                max_exit_epoch: self.max_exit_epoch,
-                request_epoch: exit_epoch,
-            }),
-        }
+        exit_queue::churn_at(
+            self.max_exit_epoch.as_u64(),
+            self.max_exit_epoch_churn,
+            exit_epoch.as_u64(),
+        )
+        .ok_or(BeaconStateError::ExitCacheInvalidEpoch {
+            max_exit_epoch: self.max_exit_epoch,
+            request_epoch: exit_epoch,
+        })
     }
 }
 

@@ -1,0 +1,35 @@
+name: beacon-state-cache-proofs
+
+# The Lean proofs that the BeaconState caches agree with the spec. The toolchain is heavy, so
+# this only runs when a translated module or the proofs change.
+on:
+  push:
+    branches:
+      - unstable
+      - stable
+    paths:
+      - 'consensus/types/src/state/exit_queue.rs'
+      - 'consensus/types/proofs/**'
+      - '.github/workflows/lean-proofs.yml'
+      - '.github/workflows/beacon-state-cache-proofs.yml'
+  pull_request:
+    paths:
+      - 'consensus/types/src/state/exit_queue.rs'
+      - 'consensus/types/proofs/**'
+      - '.github/workflows/lean-proofs.yml'
+      - '.github/workflows/beacon-state-cache-proofs.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  proofs:
+    uses: ./.github/workflows/lean-proofs.yml
+    with:
+      proofs-dir: consensus/types/proofs
+      lib: CacheProofs
