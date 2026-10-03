@@ -27,6 +27,7 @@ pub mod registry_updates;
 pub mod resets;
 pub mod single_pass;
 pub mod slashings;
+pub mod slashings_penalty;
 pub mod tests;
 pub mod weigh_justification_and_finalization;
 

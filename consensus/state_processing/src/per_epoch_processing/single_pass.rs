@@ -7,13 +7,13 @@ use crate::{
     per_block_processing::is_valid_deposit_signature,
     per_epoch_processing::{
         Delta, Error, ParticipationEpochSummary, builder_pending_payments, effective_balance,
-        inactivity_updates,
+        inactivity_updates, slashings_penalty,
     },
 };
 use itertools::izip;
 use milhouse::{Cow, List, Vector};
 use safe_arith::{SafeArith, SafeArithIter};
-use std::cmp::{max, min};
+use std::cmp::max;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use tracing::instrument;
@@ -1003,24 +1003,22 @@ impl SlashingsContext {
         spec: &ChainSpec,
     ) -> Result<Self, Error> {
         let sum_slashings = state.get_all_slashings().iter().copied().safe_sum()?;
-        let adjusted_total_slashing_balance = min(
-            sum_slashings.safe_mul(state.get_proportional_slashing_multiplier(spec))?,
+        let (
+            adjusted_total_slashing_balance,
+            target_withdrawable_epoch,
+            penalty_per_effective_balance_increment,
+        ) = slashings_penalty::slashings_context(
+            sum_slashings,
+            state.get_proportional_slashing_multiplier(spec),
             state_ctxt.total_active_balance,
-        );
-
-        let target_withdrawable_epoch = state_ctxt
-            .current_epoch
-            .safe_add(E::EpochsPerSlashingsVector::to_u64().safe_div(2)?)?;
-
-        let penalty_per_effective_balance_increment = adjusted_total_slashing_balance.safe_div(
-            state_ctxt
-                .total_active_balance
-                .safe_div(spec.effective_balance_increment)?,
+            state_ctxt.current_epoch.as_u64(),
+            E::EpochsPerSlashingsVector::to_u64(),
+            spec.effective_balance_increment,
         )?;
 
         Ok(Self {
             adjusted_total_slashing_balance,
-            target_withdrawable_epoch,
+            target_withdrawable_epoch: Epoch::new(target_withdrawable_epoch),
             penalty_per_effective_balance_increment,
         })
     }
@@ -1033,24 +1031,20 @@ fn process_single_slashing(
     state_ctxt: &StateContext,
     spec: &ChainSpec,
 ) -> Result<(), Error> {
-    if validator.slashed && slashings_ctxt.target_withdrawable_epoch == validator.withdrawable_epoch
-    {
-        let increment = spec.effective_balance_increment;
-        let penalty = if state_ctxt.fork_name.electra_enabled() {
-            let effective_balance_increments = validator.effective_balance.safe_div(increment)?;
-            slashings_ctxt
-                .penalty_per_effective_balance_increment
-                .safe_mul(effective_balance_increments)?
-        } else {
-            let penalty_numerator = validator
-                .effective_balance
-                .safe_div(increment)?
-                .safe_mul(slashings_ctxt.adjusted_total_slashing_balance)?;
-            penalty_numerator
-                .safe_div(state_ctxt.total_active_balance)?
-                .safe_mul(increment)?
-        };
-        *balance.make_mut()? = balance.saturating_sub(penalty);
+    let new_balance = slashings_penalty::new_balance_after_slashing(
+        **balance,
+        validator.slashed,
+        validator.withdrawable_epoch.as_u64(),
+        validator.effective_balance,
+        slashings_ctxt.target_withdrawable_epoch.as_u64(),
+        slashings_ctxt.adjusted_total_slashing_balance,
+        slashings_ctxt.penalty_per_effective_balance_increment,
+        state_ctxt.total_active_balance,
+        spec.effective_balance_increment,
+        state_ctxt.fork_name.electra_enabled(),
+    )?;
+    if new_balance != **balance {
+        *balance.make_mut()? = new_balance;
     }
     Ok(())
 }

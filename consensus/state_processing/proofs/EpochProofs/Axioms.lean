@@ -1,6 +1,7 @@
 import EpochProofs.Equiv.BuilderPendingPayments
 import EpochProofs.Equiv.EffectiveBalanceUpdates
 import EpochProofs.Equiv.InactivityUpdates
+import EpochProofs.Equiv.Slashings
 open EpochProofs.Spec
 #print axioms EpochProofs.Spec.withdrawals_loop
 #print axioms EpochProofs.Spec.process_builder_pending_payments_eq
@@ -23,3 +24,8 @@ open EpochProofs.Spec
 #print axioms EpochProofs.Spec.inactivityScoreStep_leak_missed
 #print axioms EpochProofs.Spec.inactivityScoreStep_participating_le
 #print axioms EpochProofs.new_inactivity_score_equiv
+#print axioms EpochProofs.Spec.process_slashings_eq
+#print axioms EpochProofs.Spec.slashingBalanceStep_not_slashed
+#print axioms EpochProofs.Spec.slashingBalanceStep_le
+#print axioms EpochProofs.slashings_context_equiv
+#print axioms EpochProofs.new_balance_after_slashing_equiv

@@ -67,9 +67,11 @@ structure Preset where
   MIN_EPOCHS_TO_INACTIVITY_PENALTY : Uint64 := 4
   INACTIVITY_SCORE_BIAS : Uint64 := 4
   INACTIVITY_SCORE_RECOVERY_RATE : Uint64 := 16
+  EPOCHS_PER_SLASHINGS_VECTOR : Uint64 := 8192
+  PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX : Uint64 := 3
 
 def Preset.mainnet : Preset := { SLOTS_PER_EPOCH := 32 }
-def Preset.minimal : Preset := { SLOTS_PER_EPOCH := 8 }
+def Preset.minimal : Preset := { SLOTS_PER_EPOCH := 8, EPOCHS_PER_SLASHINGS_VECTOR := 64 }
 
 def BUILDER_PAYMENT_THRESHOLD_NUMERATOR : Uint64 := 6
 def BUILDER_PAYMENT_THRESHOLD_DENOMINATOR : Uint64 := 10
@@ -126,6 +128,7 @@ structure BeaconState where
   previous_epoch_participation : List ParticipationFlags := []
   current_epoch_participation : List ParticipationFlags := []
   inactivity_scores : List Uint64 := []
+  slashings : List Gwei := []
   builder_pending_payments : List BuilderPendingPayment
   builder_pending_withdrawals : List BuilderPendingWithdrawal
   deriving DecidableEq, Repr

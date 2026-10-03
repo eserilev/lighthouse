@@ -3,7 +3,7 @@
 Goal: prove that Lighthouse's Gloas epoch processing equals the consensus spec for every state.
 
 ```
-../src/per_epoch_processing/{builder_pending_payments,effective_balance,inactivity_updates}.rs
+../src/per_epoch_processing/{builder_pending_payments,effective_balance,inactivity_updates,slashings_penalty}.rs
    --charon--> .llbc --aeneas--> EpochProofs/Generated.lean
                                           |
                      EpochProofs/Equiv/*.lean (equivalence proof)
@@ -18,6 +18,7 @@ EpochProofs/Spec/*.lean  <-- written by hand from the consensus specs
 | `process_builder_pending_payments` | Done | Done | Done |
 | `process_effective_balance_updates` (per validator) | Done | Done | Done |
 | `process_inactivity_updates` (per validator) | Done | Done | Done |
+| `process_slashings` (context and per validator) | Done | Done | Done |
 
 ## The theorems
 
@@ -57,6 +58,8 @@ For every input, Lighthouse returns `ok`, so it does not panic. Its result maps 
 reference result. An overflow or a division by zero maps to the same spec error.
 
 `hysteresis_thresholds_equiv` does the same for the threshold computation.
+`slashings_context_equiv` and `new_balance_after_slashing_equiv` do the same for slashings,
+after Electra.
 
 `absState` maps Aeneas types to reference types. Rust `Default` maps to spec `empty()`.
 
@@ -89,6 +92,9 @@ Rules:
 | `process_inactivity_updates_eq` | If the eligible set, the participating set and the leak flag evaluate, the loop is a `foldlM` of one step per eligible index |
 | `inactivityScoreStep_leak_missed` | In a leak, a validator that missed the target gains exactly `INACTIVITY_SCORE_BIAS` |
 | `inactivityScoreStep_participating_le` | The score of a validator that hit the target never goes up |
+| `process_slashings_eq` | The loop is a `foldlM` of one step per validator, with the preamble computed once |
+| `slashingBalanceStep_not_slashed` | A validator that is not slashed keeps its balance |
+| `slashingBalanceStep_le` | The penalty never raises a balance |
 
 `get_total_active_balance(state)` is a parameter. Lighthouse reads it from a cache.
 
@@ -113,6 +119,7 @@ charon cargo --preset=aeneas \
   --start-from 'state_processing::per_epoch_processing::builder_pending_payments' \
   --start-from 'state_processing::per_epoch_processing::effective_balance' \
   --start-from 'state_processing::per_epoch_processing::inactivity_updates' \
+  --start-from 'state_processing::per_epoch_processing::slashings_penalty' \
   --include safe_arith --include types::builder --include alloy_primitives::bits \
   --dest-file "$out/pure.llbc" -- --lib
 aeneas -backend lean "$out/pure.llbc" -dest "$out"
@@ -151,6 +158,12 @@ Aeneas rejected the original code in `single_pass.rs` for two reasons:
   Electra. `single_pass.rs` passes its result to `new_effective_balance`.
 - `single_pass.rs` passes three flags to `new_inactivity_score`: `is_eligible`, the timely
   target check, and `is_in_inactivity_leak`. Each equals its spec predicate.
+- `single_pass.rs` sums `state.slashings` with `safe_sum`. The theorem takes the sum as an input.
+- Lighthouse computes the slashings target epoch once per epoch. The spec computes it once per
+  slashed validator. The theorems assume that `epoch + EPOCHS_PER_SLASHINGS_VECTOR / 2` fits in a
+  `u64`.
+- The slashings proof covers Electra and later. The pre-Electra branch is translated but not
+  proved.
 - Lighthouse computes the hysteresis thresholds once per epoch. The spec computes them once per
   validator. The values are the same.
 - The reference matches pyspec.
