@@ -18,13 +18,14 @@
     "lib": "EpochProofs",
     "entrypoint": "state_processing::per_epoch_processing::builder_pending_payments",
     "generated": "EpochProofs/Generated.lean",
-    "charon_extra": "--start-from state_processing::per_epoch_processing::effective_balance --start-from state_processing::per_epoch_processing::inactivity_updates --start-from state_processing::per_epoch_processing::slashings_penalty --start-from state_processing::per_epoch_processing::rewards_penalties --include safe_arith --include types::builder --include alloy_primitives::bits --include types::core::consts -- --lib",
+    "charon_extra": "--start-from state_processing::per_epoch_processing::effective_balance --start-from state_processing::per_epoch_processing::inactivity_updates --start-from state_processing::per_epoch_processing::slashings_penalty --start-from state_processing::per_epoch_processing::rewards_penalties --start-from state_processing::per_epoch_processing::registry_update --include safe_arith --include types::builder --include alloy_primitives::bits --include types::core::consts -- --lib",
     "sources": [
       "consensus/state_processing/src/per_epoch_processing/builder_pending_payments.rs",
       "consensus/state_processing/src/per_epoch_processing/effective_balance.rs",
       "consensus/state_processing/src/per_epoch_processing/inactivity_updates.rs",
       "consensus/state_processing/src/per_epoch_processing/slashings_penalty.rs",
-      "consensus/state_processing/src/per_epoch_processing/rewards_penalties.rs"
+      "consensus/state_processing/src/per_epoch_processing/rewards_penalties.rs",
+      "consensus/state_processing/src/per_epoch_processing/registry_update.rs"
     ]
   }
 ]

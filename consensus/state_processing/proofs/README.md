@@ -3,7 +3,8 @@
 Goal: prove that Lighthouse's Gloas epoch processing equals the consensus spec for every state.
 
 ```
-../src/per_epoch_processing/{builder_pending_payments,effective_balance,inactivity_updates,slashings_penalty,rewards_penalties}.rs
+../src/per_epoch_processing/{builder_pending_payments,effective_balance,inactivity_updates,slashings_penalty,
+   rewards_penalties,registry_update}.rs
    --charon--> .llbc --aeneas--> EpochProofs/Generated.lean
                                           |
                      EpochProofs/Equiv/*.lean (equivalence proof)
@@ -20,6 +21,7 @@ EpochProofs/Spec/*.lean  <-- written by hand from the consensus specs
 | `process_inactivity_updates` (per validator) | Done | Done | Done |
 | `process_slashings` (context and per validator) | Done | Done | Done |
 | `process_rewards_and_penalties` (per validator) | Done | Done | Done, with a condition |
+| `process_registry_updates` (per validator, after Electra) | Done | Done | Done, with conditions |
 
 ## The theorems
 
@@ -70,6 +72,13 @@ penalties and no addition overflows. `rewards_saturation_example` shows an input
 differ: a balance of 3, a source penalty of 5 and a target reward of 10 give 10 in the spec
 and 8 in Lighthouse. Prysm uses the same order as Lighthouse.
 
+`registry_update_equiv` relates `registry_update` to `registryStepIndependent`: three
+independent steps (queue eligibility, ejection, activation). The spec uses `if`/`elif`/`elif`
+instead (`registryStepExclusive`). `registry_update_eq_spec` shows that the two agree when
+`EJECTION_BALANCE < MIN_ACTIVATION_BALANCE`, the finalized epoch is not after the current
+epoch, and the epochs fit in a `u64`. The theorems cover Gloas, where the exit churn has no
+upper limit.
+
 `absState` maps Aeneas types to reference types. Rust `Default` maps to spec `empty()`.
 
 ## The reference
@@ -107,6 +116,7 @@ Rules:
 | `rewardsSequential_eq_combined` | Without saturation, the four-round order is `balance + rewards - penalties` |
 | `rewardsCombined_eq_sequential` | Under the same condition, the Lighthouse order equals the spec order |
 | `rewards_saturation_example` | Without the condition, the two orders differ |
+| `registryStepIndependent_eq_exclusive` | On valid states, three independent steps equal the spec's `if`/`elif`/`elif` |
 
 `get_total_active_balance(state)` is a parameter. Lighthouse reads it from a cache.
 
@@ -133,6 +143,7 @@ charon cargo --preset=aeneas \
   --start-from 'state_processing::per_epoch_processing::inactivity_updates' \
   --start-from 'state_processing::per_epoch_processing::slashings_penalty' \
   --start-from 'state_processing::per_epoch_processing::rewards_penalties' \
+  --start-from 'state_processing::per_epoch_processing::registry_update' \
   --include safe_arith --include types::builder --include alloy_primitives::bits \
   --include types::core::consts \
   --dest-file "$out/pure.llbc" -- --lib
@@ -157,6 +168,9 @@ Aeneas rejected the original code in `single_pass.rs` for two reasons:
 `state_processing` denies indexing and unchecked arithmetic, so the module uses `get` and
 `saturating_add`.
 
+`registry_update.rs` splits the update into three step functions. In one function, Aeneas
+copies the rest of the body into each branch, and the generated code grows exponentially.
+
 `effective_balance.rs` takes plain `u64` values. If a function takes `&Validator` or
 `&ChainSpec`, Aeneas turns `Epoch`, `Slot`, `PublicKey`, `Option::map` and more into axioms.
 
@@ -176,6 +190,9 @@ Aeneas rejected the original code in `single_pass.rs` for two reasons:
 - `single_pass.rs` passes `base_reward` from the epoch cache, the participation flags, the leak
   flag and the participating increments from the progressive balances cache to
   `new_balance_after_rewards`. Each equals its spec value.
+- `single_pass.rs` passes the validator epochs, the churn state, the finalized epoch and the
+  chain constants to `registry_update`. `ConstantsMatch` states the constants.
+- The registry proof covers Electra and later. The pre-Electra path is unchanged and not proved.
 - Lighthouse computes the slashings target epoch once per epoch. The spec computes it once per
   slashed validator. The theorems assume that `epoch + EPOCHS_PER_SLASHINGS_VECTOR / 2` fits in a
   `u64`.

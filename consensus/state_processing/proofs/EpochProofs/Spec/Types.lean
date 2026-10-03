@@ -71,9 +71,16 @@ structure Preset where
   PROPORTIONAL_SLASHING_MULTIPLIER_BELLATRIX : Uint64 := 3
   BASE_REWARD_FACTOR : Uint64 := 64
   INACTIVITY_PENALTY_QUOTIENT_BELLATRIX : Uint64 := 16777216
+  MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA : Gwei := 128000000000
+  CHURN_LIMIT_QUOTIENT_GLOAS : Uint64 := 32768
+  EJECTION_BALANCE : Gwei := 16000000000
+  MAX_SEED_LOOKAHEAD : Uint64 := 4
+  MIN_VALIDATOR_WITHDRAWABILITY_DELAY : Uint64 := 256
 
 def Preset.mainnet : Preset := { SLOTS_PER_EPOCH := 32 }
-def Preset.minimal : Preset := { SLOTS_PER_EPOCH := 8, EPOCHS_PER_SLASHINGS_VECTOR := 64 }
+def Preset.minimal : Preset :=
+  { SLOTS_PER_EPOCH := 8, EPOCHS_PER_SLASHINGS_VECTOR := 64,
+    MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA := 64000000000, CHURN_LIMIT_QUOTIENT_GLOAS := 16 }
 
 def BUILDER_PAYMENT_THRESHOLD_NUMERATOR : Uint64 := 6
 def BUILDER_PAYMENT_THRESHOLD_DENOMINATOR : Uint64 := 10
@@ -81,6 +88,8 @@ def BUILDER_PAYMENT_THRESHOLD_DENOMINATOR : Uint64 := 10
 def COMPOUNDING_WITHDRAWAL_PREFIX : UInt8 := 0x02
 
 def GENESIS_EPOCH : Epoch := 0
+
+def FAR_FUTURE_EPOCH : Epoch := 2 ^ 64 - 1
 
 def TIMELY_SOURCE_FLAG_INDEX : Nat := 0
 def TIMELY_TARGET_FLAG_INDEX : Nat := 1
@@ -103,6 +112,7 @@ structure Validator where
   withdrawal_credentials : Bytes32
   effective_balance : Gwei
   slashed : Bool
+  activation_eligibility_epoch : Epoch
   activation_epoch : Epoch
   exit_epoch : Epoch
   withdrawable_epoch : Epoch
@@ -143,6 +153,8 @@ structure BeaconState where
   current_epoch_participation : List ParticipationFlags := []
   inactivity_scores : List Uint64 := []
   slashings : List Gwei := []
+  earliest_exit_epoch : Epoch := 0
+  exit_balance_to_consume : Gwei := 0
   builder_pending_payments : List BuilderPendingPayment
   builder_pending_withdrawals : List BuilderPendingWithdrawal
   deriving DecidableEq, Repr

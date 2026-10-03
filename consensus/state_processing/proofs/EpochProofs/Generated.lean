@@ -662,6 +662,358 @@ def per_epoch_processing.inactivity_updates.new_inactivity_score
           Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
   else ok (core.result.Result.Ok inactivity_score)
 
+/-- [state_processing::per_epoch_processing::registry_update::RegistryFields]
+    Source: 'consensus/state_processing/src/per_epoch_processing/registry_update.rs', lines 9:0-16:1
+    Visibility: public -/
+structure per_epoch_processing.registry_update.RegistryFields where
+  activation_eligibility_epoch : Std.U64
+  activation_epoch : Std.U64
+  exit_epoch : Std.U64
+  withdrawable_epoch : Std.U64
+  earliest_exit_epoch : Std.U64
+  exit_balance_to_consume : Std.U64
+
+/-- [state_processing::per_epoch_processing::registry_update::RegistryConstants]
+    Source: 'consensus/state_processing/src/per_epoch_processing/registry_update.rs', lines 19:0-30:1
+    Visibility: public -/
+structure per_epoch_processing.registry_update.RegistryConstants where
+  far_future_epoch : Std.U64
+  min_activation_balance : Std.U64
+  ejection_balance : Std.U64
+  max_seed_lookahead : Std.U64
+  min_validator_withdrawability_delay : Std.U64
+  min_per_epoch_churn_limit : Std.U64
+  churn_limit_quotient : Std.U64
+  effective_balance_increment : Std.U64
+  exit_churn_cap : Std.U64
+
+/-- [state_processing::per_epoch_processing::registry_update::compute_activation_exit_epoch]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/registry_update.rs', lines 32:0-37:1
+    Visibility: public -/
+def per_epoch_processing.registry_update.compute_activation_exit_epoch
+  (epoch : Std.U64) (max_seed_lookahead : Std.U64) :
+  Result (core.result.Result Std.U64 safe_arith.ArithError)
+  := do
+  let r ← U64.Insts.Safe_arithSafeArithU64.safe_add epoch 1#u64
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    U64.Insts.Safe_arithSafeArithU64.safe_add val max_seed_lookahead
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+
+/-- [state_processing::per_epoch_processing::registry_update::exit_churn_limit]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/registry_update.rs', lines 40:0-50:1
+    Visibility: public -/
+def per_epoch_processing.registry_update.exit_churn_limit
+  (total_active_balance : Std.U64)
+  (constants : per_epoch_processing.registry_update.RegistryConstants) :
+  Result (core.result.Result Std.U64 safe_arith.ArithError)
+  := do
+  let r ←
+    U64.Insts.Safe_arithSafeArithU64.safe_div total_active_balance
+      constants.churn_limit_quotient
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let churn ←
+      core.cmp.max core.cmp.OrdU64 constants.min_per_epoch_churn_limit val
+    let r1 ←
+      U64.Insts.Safe_arithSafeArithU64.safe_rem churn
+        constants.effective_balance_increment
+    let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+    match cf1 with
+    | core.ops.control_flow.ControlFlow.Continue val1 =>
+      let r2 ← U64.Insts.Safe_arithSafeArithU64.safe_sub churn val1
+      let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
+      match cf2 with
+      | core.ops.control_flow.ControlFlow.Continue val2 =>
+        let i ← core.cmp.min core.cmp.OrdU64 constants.exit_churn_cap val2
+        ok (core.result.Result.Ok i)
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+
+/-- [state_processing::per_epoch_processing::registry_update::compute_exit_epoch_and_update_churn]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/registry_update.rs', lines 53:0-89:1
+    Visibility: public -/
+def per_epoch_processing.registry_update.compute_exit_epoch_and_update_churn
+  (exit_balance : Std.U64) (current_epoch : Std.U64)
+  (earliest_exit_epoch_state : Std.U64)
+  (exit_balance_to_consume_state : Std.U64) (total_active_balance : Std.U64)
+  (constants : per_epoch_processing.registry_update.RegistryConstants) :
+  Result (core.result.Result (Std.U64 × Std.U64 × Std.U64)
+    safe_arith.ArithError)
+  := do
+  let r ←
+    per_epoch_processing.registry_update.compute_activation_exit_epoch
+      current_epoch constants.max_seed_lookahead
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let earliest_exit_epoch ←
+      core.cmp.max core.cmp.OrdU64 earliest_exit_epoch_state val
+    let r1 ←
+      per_epoch_processing.registry_update.exit_churn_limit
+        total_active_balance constants
+    let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+    match cf1 with
+    | core.ops.control_flow.ControlFlow.Continue val1 =>
+      let exit_balance_to_consume ←
+        if earliest_exit_epoch_state < earliest_exit_epoch
+        then ok val1
+        else ok exit_balance_to_consume_state
+      if exit_balance > exit_balance_to_consume
+      then
+        let r2 ←
+          U64.Insts.Safe_arithSafeArithU64.safe_sub exit_balance
+            exit_balance_to_consume
+        let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
+        match cf2 with
+        | core.ops.control_flow.ControlFlow.Continue val2 =>
+          let r3 ← U64.Insts.Safe_arithSafeArithU64.safe_sub val2 1#u64
+          let cf3 ← core.result.Result.Insts.CoreOpsTry.branch r3
+          match cf3 with
+          | core.ops.control_flow.ControlFlow.Continue val3 =>
+            let r4 ← U64.Insts.Safe_arithSafeArithU64.safe_div val3 val1
+            let cf4 ← core.result.Result.Insts.CoreOpsTry.branch r4
+            match cf4 with
+            | core.ops.control_flow.ControlFlow.Continue val4 =>
+              let r5 ← U64.Insts.Safe_arithSafeArithU64.safe_add val4 1#u64
+              let cf5 ← core.result.Result.Insts.CoreOpsTry.branch r5
+              match cf5 with
+              | core.ops.control_flow.ControlFlow.Continue val5 =>
+                let r6 ←
+                  U64.Insts.Safe_arithSafeArithU64.safe_add earliest_exit_epoch
+                    val5
+                let cf6 ← core.result.Result.Insts.CoreOpsTry.branch r6
+                match cf6 with
+                | core.ops.control_flow.ControlFlow.Continue val6 =>
+                  let r7 ←
+                    U64.Insts.Safe_arithSafeArithU64.safe_mul val5 val1
+                  let cf7 ← core.result.Result.Insts.CoreOpsTry.branch r7
+                  match cf7 with
+                  | core.ops.control_flow.ControlFlow.Continue val7 =>
+                    let r8 ←
+                      U64.Insts.Safe_arithSafeArithU64.safe_add
+                        exit_balance_to_consume val7
+                    let cf8 ← core.result.Result.Insts.CoreOpsTry.branch r8
+                    match cf8 with
+                    | core.ops.control_flow.ControlFlow.Continue val8 =>
+                      let r9 ←
+                        U64.Insts.Safe_arithSafeArithU64.safe_sub val8
+                          exit_balance
+                      let cf9 ← core.result.Result.Insts.CoreOpsTry.branch r9
+                      match cf9 with
+                      | core.ops.control_flow.ControlFlow.Continue val9 =>
+                        ok (core.result.Result.Ok (val6, val6, val9))
+                      | core.ops.control_flow.ControlFlow.Break residual =>
+                        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                          (Std.U64 × Std.U64 × Std.U64)
+                          (core.convert.FromSame safe_arith.ArithError)
+                          residual
+                    | core.ops.control_flow.ControlFlow.Break residual =>
+                      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                        (Std.U64 × Std.U64 × Std.U64) (core.convert.FromSame
+                        safe_arith.ArithError) residual
+                  | core.ops.control_flow.ControlFlow.Break residual =>
+                    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                      (Std.U64 × Std.U64 × Std.U64) (core.convert.FromSame
+                      safe_arith.ArithError) residual
+                | core.ops.control_flow.ControlFlow.Break residual =>
+                  core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                    (Std.U64 × Std.U64 × Std.U64) (core.convert.FromSame
+                    safe_arith.ArithError) residual
+              | core.ops.control_flow.ControlFlow.Break residual =>
+                core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                  (Std.U64 × Std.U64 × Std.U64) (core.convert.FromSame
+                  safe_arith.ArithError) residual
+            | core.ops.control_flow.ControlFlow.Break residual =>
+              core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                (Std.U64 × Std.U64 × Std.U64) (core.convert.FromSame
+                safe_arith.ArithError) residual
+          | core.ops.control_flow.ControlFlow.Break residual =>
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+              (Std.U64 × Std.U64 × Std.U64) (core.convert.FromSame
+              safe_arith.ArithError) residual
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            (Std.U64 × Std.U64 × Std.U64) (core.convert.FromSame
+            safe_arith.ArithError) residual
+      else
+        let r2 ←
+          U64.Insts.Safe_arithSafeArithU64.safe_sub exit_balance_to_consume
+            exit_balance
+        let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
+        match cf2 with
+        | core.ops.control_flow.ControlFlow.Continue val2 =>
+          ok (core.result.Result.Ok (earliest_exit_epoch, earliest_exit_epoch,
+            val2))
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            (Std.U64 × Std.U64 × Std.U64) (core.convert.FromSame
+            safe_arith.ArithError) residual
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        (Std.U64 × Std.U64 × Std.U64) (core.convert.FromSame
+        safe_arith.ArithError) residual
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      (Std.U64 × Std.U64 × Std.U64) (core.convert.FromSame
+      safe_arith.ArithError) residual
+
+/-- [state_processing::per_epoch_processing::registry_update::eligibility_step]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/registry_update.rs', lines 92:0-105:1
+    Visibility: public -/
+def per_epoch_processing.registry_update.eligibility_step
+  (fields : per_epoch_processing.registry_update.RegistryFields)
+  (effective_balance : Std.U64) (current_epoch : Std.U64)
+  (constants : per_epoch_processing.registry_update.RegistryConstants) :
+  Result (core.result.Result
+    per_epoch_processing.registry_update.RegistryFields safe_arith.ArithError)
+  := do
+  if fields.activation_eligibility_epoch = constants.far_future_epoch
+  then
+    if effective_balance >= constants.min_activation_balance
+    then
+      let r ← U64.Insts.Safe_arithSafeArithU64.safe_add current_epoch 1#u64
+      let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+      match cf with
+      | core.ops.control_flow.ControlFlow.Continue val =>
+        ok (core.result.Result.Ok
+          { fields with activation_eligibility_epoch := val })
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          per_epoch_processing.registry_update.RegistryFields
+          (core.convert.FromSame safe_arith.ArithError) residual
+    else ok (core.result.Result.Ok fields)
+  else ok (core.result.Result.Ok fields)
+
+/-- [state_processing::per_epoch_processing::registry_update::ejection_step]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/registry_update.rs', lines 108:0-137:1
+    Visibility: public -/
+def per_epoch_processing.registry_update.ejection_step
+  (fields : per_epoch_processing.registry_update.RegistryFields)
+  (effective_balance : Std.U64) (current_epoch : Std.U64)
+  (total_active_balance : Std.U64)
+  (constants : per_epoch_processing.registry_update.RegistryConstants) :
+  Result (core.result.Result
+    per_epoch_processing.registry_update.RegistryFields safe_arith.ArithError)
+  := do
+  let is_active ←
+    if fields.activation_epoch <= current_epoch
+    then ok (current_epoch < fields.exit_epoch)
+    else ok false
+  if is_active
+  then
+    if effective_balance <= constants.ejection_balance
+    then
+      if fields.exit_epoch = constants.far_future_epoch
+      then
+        let r ←
+          per_epoch_processing.registry_update.compute_exit_epoch_and_update_churn
+            effective_balance current_epoch fields.earliest_exit_epoch
+            fields.exit_balance_to_consume total_active_balance constants
+        let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+        match cf with
+        | core.ops.control_flow.ControlFlow.Continue val =>
+          let (exit_epoch, earliest_exit_epoch, exit_balance_to_consume) := val
+          let r1 ←
+            U64.Insts.Safe_arithSafeArithU64.safe_add exit_epoch
+              constants.min_validator_withdrawability_delay
+          let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+          match cf1 with
+          | core.ops.control_flow.ControlFlow.Continue val1 =>
+            ok (core.result.Result.Ok
+              {
+                fields
+                  with
+                  exit_epoch,
+                  withdrawable_epoch := val1,
+                  earliest_exit_epoch,
+                  exit_balance_to_consume
+              })
+          | core.ops.control_flow.ControlFlow.Break residual =>
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+              per_epoch_processing.registry_update.RegistryFields
+              (core.convert.FromSame safe_arith.ArithError) residual
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            per_epoch_processing.registry_update.RegistryFields
+            (core.convert.FromSame safe_arith.ArithError) residual
+      else ok (core.result.Result.Ok fields)
+    else ok (core.result.Result.Ok fields)
+  else ok (core.result.Result.Ok fields)
+
+/-- [state_processing::per_epoch_processing::registry_update::activation_step]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/registry_update.rs', lines 140:0-154:1
+    Visibility: public -/
+def per_epoch_processing.registry_update.activation_step
+  (fields : per_epoch_processing.registry_update.RegistryFields)
+  (current_epoch : Std.U64) (finalized_epoch : Std.U64)
+  (constants : per_epoch_processing.registry_update.RegistryConstants) :
+  Result (core.result.Result
+    per_epoch_processing.registry_update.RegistryFields safe_arith.ArithError)
+  := do
+  if fields.activation_eligibility_epoch <= finalized_epoch
+  then
+    if fields.activation_epoch = constants.far_future_epoch
+    then
+      let r ←
+        per_epoch_processing.registry_update.compute_activation_exit_epoch
+          current_epoch constants.max_seed_lookahead
+      let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+      match cf with
+      | core.ops.control_flow.ControlFlow.Continue val =>
+        ok (core.result.Result.Ok { fields with activation_epoch := val })
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          per_epoch_processing.registry_update.RegistryFields
+          (core.convert.FromSame safe_arith.ArithError) residual
+    else ok (core.result.Result.Ok fields)
+  else ok (core.result.Result.Ok fields)
+
+/-- [state_processing::per_epoch_processing::registry_update::registry_update]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/registry_update.rs', lines 160:0-177:1
+    Visibility: public -/
+def per_epoch_processing.registry_update.registry_update
+  (fields : per_epoch_processing.registry_update.RegistryFields)
+  (effective_balance : Std.U64) (current_epoch : Std.U64)
+  (finalized_epoch : Std.U64) (total_active_balance : Std.U64)
+  (constants : per_epoch_processing.registry_update.RegistryConstants) :
+  Result (core.result.Result
+    per_epoch_processing.registry_update.RegistryFields safe_arith.ArithError)
+  := do
+  let r ←
+    per_epoch_processing.registry_update.eligibility_step fields
+      effective_balance current_epoch constants
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let r1 ←
+      per_epoch_processing.registry_update.ejection_step val effective_balance
+        current_epoch total_active_balance constants
+    let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+    match cf1 with
+    | core.ops.control_flow.ControlFlow.Continue val1 =>
+      per_epoch_processing.registry_update.activation_step val1 current_epoch
+        finalized_epoch constants
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        per_epoch_processing.registry_update.RegistryFields
+        (core.convert.FromSame safe_arith.ArithError) residual
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      per_epoch_processing.registry_update.RegistryFields
+      (core.convert.FromSame safe_arith.ArithError) residual
+
 /-- [state_processing::per_epoch_processing::rewards_penalties::flag_delta]:
     Source: 'consensus/state_processing/src/per_epoch_processing/rewards_penalties.rs', lines 11:0-37:1
     Visibility: public -/

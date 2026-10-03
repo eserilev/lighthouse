@@ -7,7 +7,7 @@ use crate::{
     per_block_processing::is_valid_deposit_signature,
     per_epoch_processing::{
         Error, ParticipationEpochSummary, builder_pending_payments, effective_balance,
-        inactivity_updates, rewards_penalties, slashings_penalty,
+        inactivity_updates, registry_update, rewards_penalties, slashings_penalty,
     },
 };
 use itertools::izip;
@@ -786,31 +786,60 @@ fn process_single_registry_update_post_electra(
     exit_balance_to_consume: &mut u64,
     spec: &ChainSpec,
 ) -> Result<(), Error> {
-    let current_epoch = state_ctxt.current_epoch;
+    let gloas = state_ctxt.fork_name.gloas_enabled();
+    let constants = registry_update::RegistryConstants {
+        far_future_epoch: spec.far_future_epoch.as_u64(),
+        min_activation_balance: spec.min_activation_balance,
+        ejection_balance: spec.ejection_balance,
+        max_seed_lookahead: spec.max_seed_lookahead.as_u64(),
+        min_validator_withdrawability_delay: spec.min_validator_withdrawability_delay.as_u64(),
+        min_per_epoch_churn_limit: spec.min_per_epoch_churn_limit_electra,
+        churn_limit_quotient: if gloas {
+            spec.churn_limit_quotient_gloas
+        } else {
+            spec.churn_limit_quotient
+        },
+        effective_balance_increment: spec.effective_balance_increment,
+        exit_churn_cap: if gloas {
+            u64::MAX
+        } else {
+            spec.max_per_epoch_activation_exit_churn_limit
+        },
+    };
+    let old_exit_epoch = validator.exit_epoch;
+    let fields = registry_update::RegistryFields {
+        activation_eligibility_epoch: validator.activation_eligibility_epoch.as_u64(),
+        activation_epoch: validator.activation_epoch.as_u64(),
+        exit_epoch: validator.exit_epoch.as_u64(),
+        withdrawable_epoch: validator.withdrawable_epoch.as_u64(),
+        earliest_exit_epoch: earliest_exit_epoch.as_u64(),
+        exit_balance_to_consume: *exit_balance_to_consume,
+    };
+    let new = registry_update::registry_update(
+        fields,
+        validator.effective_balance,
+        state_ctxt.current_epoch.as_u64(),
+        state_ctxt.finalized_checkpoint.epoch.as_u64(),
+        state_ctxt.total_active_balance,
+        &constants,
+    )?;
 
-    if validator.is_eligible_for_activation_queue(spec, state_ctxt.fork_name) {
-        validator.make_mut()?.activation_eligibility_epoch = current_epoch.safe_add(1)?;
-    }
-
-    if validator.is_active_at(current_epoch) && validator.effective_balance <= spec.ejection_balance
+    if new.activation_eligibility_epoch != validator.activation_eligibility_epoch.as_u64()
+        || new.activation_epoch != validator.activation_epoch.as_u64()
+        || new.exit_epoch != validator.exit_epoch.as_u64()
+        || new.withdrawable_epoch != validator.withdrawable_epoch.as_u64()
     {
-        initiate_validator_exit(
-            validator,
-            exit_cache,
-            state_ctxt,
-            Some(earliest_exit_epoch),
-            Some(exit_balance_to_consume),
-            spec,
-        )?;
+        let validator = validator.make_mut()?;
+        validator.activation_eligibility_epoch = Epoch::new(new.activation_eligibility_epoch);
+        validator.activation_epoch = Epoch::new(new.activation_epoch);
+        validator.exit_epoch = Epoch::new(new.exit_epoch);
+        validator.withdrawable_epoch = Epoch::new(new.withdrawable_epoch);
     }
-
-    if validator.is_eligible_for_activation_with_finalized_checkpoint(
-        &state_ctxt.finalized_checkpoint,
-        spec,
-    ) {
-        validator.make_mut()?.activation_epoch =
-            spec.compute_activation_exit_epoch(current_epoch)?;
+    if new.exit_epoch != old_exit_epoch.as_u64() {
+        exit_cache.record_validator_exit(Epoch::new(new.exit_epoch))?;
     }
+    *earliest_exit_epoch = Epoch::new(new.earliest_exit_epoch);
+    *exit_balance_to_consume = new.exit_balance_to_consume;
 
     Ok(())
 }
