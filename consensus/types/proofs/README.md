@@ -494,6 +494,96 @@ attestations in the genesis epoch. The spec does not use the previous totals at 
 (justification returns early, and rewards skip genesis), so consensus is not affected.
 `read_previous_eq_spec` has the hypothesis `GENESIS_EPOCH < current_epoch`.
 
+## CommitteeCache
+
+Rust: `../src/state/committee_assignment.rs`. Reference: `Spec/CommitteeCache.lean`.
+Proofs: `Equiv/CommitteeCache.lean`.
+
+### Theorems
+
+```lean
+-- Build: the builder's committee count is `get_committee_count_per_slot`, errors included.
+theorem committee_count_per_slot_equiv (p : Spec.Preset) (active_count spe max_cps target : Usize)
+    (hspe : spe.val = p.SLOTS_PER_EPOCH) (hmax : max_cps.val = p.MAX_COMMITTEES_PER_SLOT)
+    (htarget : target.val = p.TARGET_COMMITTEE_SIZE) :
+    committee_count_per_slot active_count spe max_cps target ⦃ r =>
+      absResult (·.val) r = Spec.get_committee_count_per_slot p active_count.val ⦄
+
+-- Read: `get_beacon_committee` returns `Some`, and the committee is the spec committee.
+theorem get_beacon_committee_equiv (p : Preset) (sha256 : List Nat → List Nat)
+    (indices seed : List Nat) (shuffling : Slice Usize)
+    (hshuf : IsShuffling p sha256 indices seed (shuffling.val.map (·.val)))
+    (committees_per_slot slots_per_epoch slot index : Usize)
+    (hcps : get_committee_count_per_slot p indices.length = .ok committees_per_slot.val)
+    (hspe : slots_per_epoch.val = p.SLOTS_PER_EPOCH) (hspe0 : 0 < slots_per_epoch.val)
+    (hindex : index.val < committees_per_slot.val) (hn : 0 < indices.length)
+    (hfit : indices.length * (committees_per_slot.val * slots_per_epoch.val) ≤ Usize.max) :
+    ∃ committee,
+      lhGetBeaconCommittee (some (slot.val / slots_per_epoch.val)) shuffling committees_per_slot
+        slots_per_epoch slot index = ok (some committee) ∧
+      get_beacon_committee p sha256 indices seed slot.val index.val = .ok (committee.map (·.val))
+
+-- Build and read: the stored positions invert the shuffling. No false error.
+theorem shuffled_position_inverse (shuffling : Slice Usize) (validator_count : Usize)
+    (hnodup : (shuffling.val.map (·.val)).Nodup)
+    (hrange : ∀ x ∈ shuffling.val, x.val < validator_count.val) :
+    ∃ positions, shuffling_positions shuffling validator_count = ok (.Ok positions) ∧
+      positions.val.length = validator_count.val ∧
+      (∀ i (h : i < shuffling.val.length),
+        lhShuffledPosition positions.val shuffling.val[i].val = some i) ∧
+      (∀ v, v ∉ shuffling.val.map (·.val) → lhShuffledPosition positions.val v = none)
+
+-- Read: `get_attestation_duties` agrees with `get_committee_assignment`.
+theorem get_attestation_duties_equiv ... :
+    ∃ duty, lhGetAttestationDuties position (Slice.len shuffling) committees_per_slot
+        slots_per_epoch epoch = ok (.Ok duty) ∧
+      match duty with
+      | none => get_committee_assignment p sha256 indices seed current_epoch epoch v = .ok none
+      | some (slot, index, committee_position, committee_len, committees_at_slot) =>
+        committees_at_slot = committees_per_slot.val ∧
+        ∃ committee,
+          get_committee_assignment p sha256 indices seed current_epoch epoch v =
+            .ok (some (committee, index, slot)) ∧
+          committee.length = committee_len ∧ committee[committee_position]? = some v
+```
+
+`shuffling_positions_spec` is the same build fact in `⦃ ⦄` form.
+
+`IsShuffling p sha256 indices seed shuffling` says that entry `i` of `shuffling` is
+`indices[compute_shuffled_index(i, len(indices), seed)]`. `sha256` is a parameter, so the
+theorems hold for every hash function.
+
+### The reference
+
+`Spec/CommitteeCache.lean` transcribes `compute_shuffled_permutation`,
+`compute_shuffled_index`, `compute_committee`, `get_committee_count_per_slot`,
+`get_beacon_committee` and `get_committee_assignment` from phase0. The caller gives the active
+indices, the seed and `get_current_epoch(state)`. The dict `source_by_bucket` in
+`compute_shuffled_permutation` is a memo of a pure function. The reference calls `sha256`
+directly.
+
+### Trusted base
+
+- Charon, Aeneas and the Aeneas Lean library.
+- The glue models `lhGetBeaconCommittee`, `lhShuffledPosition` and `lhGetAttestationDuties`.
+  They model `get_beacon_committee`, `shuffled_position`, `get_attestation_duties` and
+  `convert_to_slot_and_index` in `committee_cache.rs`.
+- `u64 as usize` and `Slot::as_usize` do not truncate (64-bit target).
+- `NonZeroUsize::new(p)` is `None` if and only if `p = 0`. The builder maps the pure function output
+  through it.
+- `Epoch::start_slot` does not saturate and `convert_to_slot_and_index` does not overflow when
+  `(epoch + 1) * SLOTS_PER_EPOCH < 2^64`.
+- The cache holds the inputs that the theorems assume:
+  - `shuffling` is the spec shuffling of the active indices for `initialized_epoch` (`IsShuffling`).
+  - The active indices are distinct, so the shuffling has no duplicates (`hnodup`).
+  - Each shuffled index is below `state.validators().len()` (`hrange`).
+  - `committees_per_slot` comes from `committee_count_per_slot` with the spec preset values.
+  - `slots_per_epoch` is `SLOTS_PER_EPOCH` and is not 0. There is at least one active validator.
+  - `len(indices) * committees_per_slot * SLOTS_PER_EPOCH` fits in `usize`.
+- The caller checks `index < committees_per_slot` and the epoch bound of
+  `get_committee_assignment`. For `index >= committees_per_slot`, Lighthouse returns `None`.
+  The spec `get_beacon_committee` does not check the index. `process_attestation` checks it.
+
 ## Trusted base for all caches
 
 - Charon and Aeneas.

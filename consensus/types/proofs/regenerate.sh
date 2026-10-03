@@ -23,6 +23,7 @@ trap 'rm -rf "$out"' EXIT
   --start-from types::state::base_rewards \
   --start-from types::state::balance \
   --start-from types::state::participation_totals \
+  --start-from types::state::committee_assignment \
   --include safe_arith \
   --dest-file "$out/pure.llbc" -- --lib)
 

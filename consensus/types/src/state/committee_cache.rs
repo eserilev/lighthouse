@@ -10,7 +10,7 @@ use swap_or_not_shuffle::shuffle_list;
 use crate::{
     attestation::{AttestationDuty, BeaconCommittee, CommitteeIndex},
     core::{ChainSpec, Domain, Epoch, EthSpec, Slot},
-    state::{BeaconState, BeaconStateError},
+    state::{BeaconState, BeaconStateError, committee_assignment},
     validator::Validator,
 };
 
@@ -152,13 +152,12 @@ impl CommitteeCache {
         )
         .ok_or(BeaconStateError::UnableToShuffle)?;
 
-        let mut shuffling_positions = vec![<_>::default(); state.validators().len()];
-        for (i, &v) in shuffling.iter().enumerate() {
-            *shuffling_positions
-                .get_mut(v)
-                .ok_or(BeaconStateError::ShuffleIndexOutOfBounds(v))? =
-                NonZeroUsize::new(i.safe_add(1).map_err(BeaconStateError::ArithError)?).into();
-        }
+        let shuffling_positions =
+            committee_assignment::shuffling_positions(&shuffling, state.validators().len())
+                .map_err(BeaconStateError::ShuffleIndexOutOfBounds)?
+                .into_iter()
+                .map(|p| NonZeroUsize::new(p).into())
+                .collect();
 
         Ok(Arc::new(CommitteeCache {
             initialized_epoch: Some(epoch),
@@ -300,31 +299,27 @@ impl CommitteeCache {
             return Ok(None);
         };
 
-        for nth_committee in 0..self.epoch_committee_count()? {
-            let Some(range) = self.compute_committee_range(nth_committee)? else {
-                continue;
-            };
+        let Some((nth_committee, committee_position, committee_len)) =
+            committee_assignment::attestation_duty(
+                i,
+                self.epoch_committee_count()?,
+                self.shuffling.len(),
+            )?
+        else {
+            return Ok(None);
+        };
 
-            if range.start <= i && range.end > i {
-                let Some((slot, index)) = self.convert_to_slot_and_index(nth_committee as u64)?
-                else {
-                    return Ok(None);
-                };
+        let Some((slot, index)) = self.convert_to_slot_and_index(nth_committee as u64)? else {
+            return Ok(None);
+        };
 
-                let committee_position = i.safe_sub(range.start)?;
-                let committee_len = range.end.safe_sub(range.start)?;
-
-                return Ok(Some(AttestationDuty {
-                    slot,
-                    index,
-                    committee_position,
-                    committee_len,
-                    committees_at_slot: self.committees_per_slot(),
-                }));
-            }
-        }
-
-        Ok(None)
+        Ok(Some(AttestationDuty {
+            slot,
+            index,
+            committee_position,
+            committee_len,
+            committees_at_slot: self.committees_per_slot(),
+        }))
     }
 
     /// Convert an index addressing the list of all epoch committees into a slot and per-slot index.
@@ -356,7 +351,10 @@ impl CommitteeCache {
     ///
     /// Spec v0.12.1
     pub fn epoch_committee_count(&self) -> Result<usize, ArithError> {
-        (self.committees_per_slot as usize).safe_mul(self.slots_per_epoch as usize)
+        committee_assignment::epoch_committee_count(
+            self.committees_per_slot as usize,
+            self.slots_per_epoch as usize,
+        )
     }
 
     /// Returns the number of committees per slot for this cache's epoch.
@@ -408,9 +406,12 @@ pub fn compute_committee_index_in_epoch(
     committees_per_slot: usize,
     committee_index: usize,
 ) -> Result<usize, ArithError> {
-    (slot.as_usize().safe_rem(slots_per_epoch)?)
-        .safe_mul(committees_per_slot)?
-        .safe_add(committee_index)
+    committee_assignment::committee_index_in_epoch(
+        slot.as_usize(),
+        slots_per_epoch,
+        committees_per_slot,
+        committee_index,
+    )
 }
 
 /// Computes the range for slicing the shuffled indices to determine the members of a committee.
@@ -422,15 +423,12 @@ pub fn compute_committee_range_in_epoch(
     index_in_epoch: usize,
     shuffling_len: usize,
 ) -> Result<Option<Range<usize>>, ArithError> {
-    if epoch_committee_count == 0 || index_in_epoch >= epoch_committee_count {
-        return Ok(None);
-    }
-
-    let start = (shuffling_len.safe_mul(index_in_epoch))?.safe_div(epoch_committee_count)?;
-    let end =
-        (shuffling_len.safe_mul(index_in_epoch.safe_add(1)?))?.safe_div(epoch_committee_count)?;
-
-    Ok(Some(start..end))
+    Ok(committee_assignment::committee_range_in_epoch(
+        epoch_committee_count,
+        index_in_epoch,
+        shuffling_len,
+    )?
+    .map(|(start, end)| start..end))
 }
 
 /// Returns a list of all `validators` indices where the validator is active at the given

@@ -86,6 +86,18 @@ def U64.Insts.Safe_arithSafeArithU64.safe_add
   let o ← lift (U64.checked_add self other)
   core.option.Option.ok_or o safe_arith.ArithError.Overflow
 
+/-- [safe_arith::{impl safe_arith::SafeArith<usize> for usize}::safe_add]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/safe_arith-0.1.0/src/lib.rs', lines 140:12-140:59
+    Name pattern: [safe_arith::{safe_arith::SafeArith<usize, usize>}::safe_add]
+    Visibility: public -/
+@[rust_fun "safe_arith::{safe_arith::SafeArith<usize, usize>}::safe_add"]
+def Usize.Insts.Safe_arithSafeArithUsize.safe_add
+  (self : Std.Usize) (other : Std.Usize) :
+  Result (core.result.Result Std.Usize safe_arith.ArithError)
+  := do
+  let o ← lift (Usize.checked_add self other)
+  core.option.Option.ok_or o safe_arith.ArithError.Overflow
+
 /-- [safe_arith::{impl safe_arith::SafeArith<u64> for u64}::safe_sub]:
     Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/safe_arith-0.1.0/src/lib.rs', lines 145:12-145:59
     Name pattern: [safe_arith::{safe_arith::SafeArith<u64, u64>}::safe_sub]
@@ -96,6 +108,18 @@ def U64.Insts.Safe_arithSafeArithU64.safe_sub
   Result (core.result.Result Std.U64 safe_arith.ArithError)
   := do
   let o ← lift (U64.checked_sub self other)
+  core.option.Option.ok_or o safe_arith.ArithError.Overflow
+
+/-- [safe_arith::{impl safe_arith::SafeArith<usize> for usize}::safe_sub]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/safe_arith-0.1.0/src/lib.rs', lines 145:12-145:59
+    Name pattern: [safe_arith::{safe_arith::SafeArith<usize, usize>}::safe_sub]
+    Visibility: public -/
+@[rust_fun "safe_arith::{safe_arith::SafeArith<usize, usize>}::safe_sub"]
+def Usize.Insts.Safe_arithSafeArithUsize.safe_sub
+  (self : Std.Usize) (other : Std.Usize) :
+  Result (core.result.Result Std.Usize safe_arith.ArithError)
+  := do
+  let o ← lift (Usize.checked_sub self other)
   core.option.Option.ok_or o safe_arith.ArithError.Overflow
 
 /-- [safe_arith::{impl safe_arith::SafeArith<u64> for u64}::safe_mul]:
@@ -110,6 +134,18 @@ def U64.Insts.Safe_arithSafeArithU64.safe_mul
   let o ← lift (U64.checked_mul self other)
   core.option.Option.ok_or o safe_arith.ArithError.Overflow
 
+/-- [safe_arith::{impl safe_arith::SafeArith<usize> for usize}::safe_mul]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/safe_arith-0.1.0/src/lib.rs', lines 150:12-150:59
+    Name pattern: [safe_arith::{safe_arith::SafeArith<usize, usize>}::safe_mul]
+    Visibility: public -/
+@[rust_fun "safe_arith::{safe_arith::SafeArith<usize, usize>}::safe_mul"]
+def Usize.Insts.Safe_arithSafeArithUsize.safe_mul
+  (self : Std.Usize) (other : Std.Usize) :
+  Result (core.result.Result Std.Usize safe_arith.ArithError)
+  := do
+  let o ← lift (Usize.checked_mul self other)
+  core.option.Option.ok_or o safe_arith.ArithError.Overflow
+
 /-- [safe_arith::{impl safe_arith::SafeArith<u64> for u64}::safe_div]:
     Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/safe_arith-0.1.0/src/lib.rs', lines 155:12-155:59
     Name pattern: [safe_arith::{safe_arith::SafeArith<u64, u64>}::safe_div]
@@ -120,6 +156,30 @@ def U64.Insts.Safe_arithSafeArithU64.safe_div
   Result (core.result.Result Std.U64 safe_arith.ArithError)
   := do
   let o ← lift (U64.checked_div self other)
+  core.option.Option.ok_or o safe_arith.ArithError.DivisionByZero
+
+/-- [safe_arith::{impl safe_arith::SafeArith<usize> for usize}::safe_div]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/safe_arith-0.1.0/src/lib.rs', lines 155:12-155:59
+    Name pattern: [safe_arith::{safe_arith::SafeArith<usize, usize>}::safe_div]
+    Visibility: public -/
+@[rust_fun "safe_arith::{safe_arith::SafeArith<usize, usize>}::safe_div"]
+def Usize.Insts.Safe_arithSafeArithUsize.safe_div
+  (self : Std.Usize) (other : Std.Usize) :
+  Result (core.result.Result Std.Usize safe_arith.ArithError)
+  := do
+  let o ← lift (Usize.checked_div self other)
+  core.option.Option.ok_or o safe_arith.ArithError.DivisionByZero
+
+/-- [safe_arith::{impl safe_arith::SafeArith<usize> for usize}::safe_rem]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/safe_arith-0.1.0/src/lib.rs', lines 160:12-160:59
+    Name pattern: [safe_arith::{safe_arith::SafeArith<usize, usize>}::safe_rem]
+    Visibility: public -/
+@[rust_fun "safe_arith::{safe_arith::SafeArith<usize, usize>}::safe_rem"]
+def Usize.Insts.Safe_arithSafeArithUsize.safe_rem
+  (self : Std.Usize) (other : Std.Usize) :
+  Result (core.result.Result Std.Usize safe_arith.ArithError)
+  := do
+  let o ← lift (Usize.checked_rem self other)
   core.option.Option.ok_or o safe_arith.ArithError.DivisionByZero
 
 /-- [types::core::consts::altair::NUM_FLAG_INDICES]
@@ -621,6 +681,297 @@ def state.base_rewards.get_base_reward
   | core.ops.control_flow.ControlFlow.Break residual =>
     core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
       Std.U64 (core.convert.FromSame state.base_rewards.ReadError) residual
+
+/-- [types::state::committee_assignment::committee_count_per_slot]:
+    Source: 'consensus/types/src/state/committee_assignment.rs', lines 10:0-25:1
+    Visibility: public -/
+def state.committee_assignment.committee_count_per_slot
+  (active_validator_count : Std.Usize) (slots_per_epoch : Std.Usize)
+  (max_committees_per_slot : Std.Usize) (target_committee_size : Std.Usize) :
+  Result (core.result.Result Std.Usize safe_arith.ArithError)
+  := do
+  let r ←
+    Usize.Insts.Safe_arithSafeArithUsize.safe_div active_validator_count
+      slots_per_epoch
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let r1 ←
+      Usize.Insts.Safe_arithSafeArithUsize.safe_div val target_committee_size
+    let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+    match cf1 with
+    | core.ops.control_flow.ControlFlow.Continue val1 =>
+      let i ← core.cmp.min core.cmp.OrdUsize max_committees_per_slot val1
+      let i1 ← core.cmp.max core.cmp.OrdUsize 1#usize i
+      ok (core.result.Result.Ok i1)
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        Std.Usize (core.convert.FromSame safe_arith.ArithError) residual
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      Std.Usize (core.convert.FromSame safe_arith.ArithError) residual
+
+/-- [types::state::committee_assignment::committee_index_in_epoch]:
+    Source: 'consensus/types/src/state/committee_assignment.rs', lines 28:0-37:1
+    Visibility: public -/
+def state.committee_assignment.committee_index_in_epoch
+  (slot : Std.Usize) (slots_per_epoch : Std.Usize)
+  (committees_per_slot : Std.Usize) (committee_index : Std.Usize) :
+  Result (core.result.Result Std.Usize safe_arith.ArithError)
+  := do
+  let r ← Usize.Insts.Safe_arithSafeArithUsize.safe_rem slot slots_per_epoch
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let r1 ←
+      Usize.Insts.Safe_arithSafeArithUsize.safe_mul val committees_per_slot
+    let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+    match cf1 with
+    | core.ops.control_flow.ControlFlow.Continue val1 =>
+      Usize.Insts.Safe_arithSafeArithUsize.safe_add val1 committee_index
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        Std.Usize (core.convert.FromSame safe_arith.ArithError) residual
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      Std.Usize (core.convert.FromSame safe_arith.ArithError) residual
+
+/-- [types::state::committee_assignment::epoch_committee_count]:
+    Source: 'consensus/types/src/state/committee_assignment.rs', lines 40:0-45:1
+    Visibility: public -/
+def state.committee_assignment.epoch_committee_count
+  (committees_per_slot : Std.Usize) (slots_per_epoch : Std.Usize) :
+  Result (core.result.Result Std.Usize safe_arith.ArithError)
+  := do
+  Usize.Insts.Safe_arithSafeArithUsize.safe_mul committees_per_slot
+    slots_per_epoch
+
+/-- [types::state::committee_assignment::committee_range_in_epoch]:
+    Source: 'consensus/types/src/state/committee_assignment.rs', lines 48:0-62:1
+    Visibility: public -/
+def state.committee_assignment.committee_range_in_epoch
+  (epoch_committee_count : Std.Usize) (index_in_epoch : Std.Usize)
+  (shuffling_len : Std.Usize) :
+  Result (core.result.Result (Option (Std.Usize × Std.Usize))
+    safe_arith.ArithError)
+  := do
+  if epoch_committee_count = 0#usize
+  then ok (core.result.Result.Ok none)
+  else
+    if index_in_epoch >= epoch_committee_count
+    then ok (core.result.Result.Ok none)
+    else
+      let r ←
+        Usize.Insts.Safe_arithSafeArithUsize.safe_mul shuffling_len
+          index_in_epoch
+      let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+      match cf with
+      | core.ops.control_flow.ControlFlow.Continue val =>
+        let r1 ←
+          Usize.Insts.Safe_arithSafeArithUsize.safe_div val
+            epoch_committee_count
+        let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+        match cf1 with
+        | core.ops.control_flow.ControlFlow.Continue val1 =>
+          let r2 ←
+            Usize.Insts.Safe_arithSafeArithUsize.safe_add index_in_epoch
+              1#usize
+          let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
+          match cf2 with
+          | core.ops.control_flow.ControlFlow.Continue val2 =>
+            let r3 ←
+              Usize.Insts.Safe_arithSafeArithUsize.safe_mul shuffling_len val2
+            let cf3 ← core.result.Result.Insts.CoreOpsTry.branch r3
+            match cf3 with
+            | core.ops.control_flow.ControlFlow.Continue val3 =>
+              let r4 ←
+                Usize.Insts.Safe_arithSafeArithUsize.safe_div val3
+                  epoch_committee_count
+              let cf4 ← core.result.Result.Insts.CoreOpsTry.branch r4
+              match cf4 with
+              | core.ops.control_flow.ControlFlow.Continue val4 =>
+                ok (core.result.Result.Ok (some (val1, val4)))
+              | core.ops.control_flow.ControlFlow.Break residual =>
+                core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                  (Option (Std.Usize × Std.Usize)) (core.convert.FromSame
+                  safe_arith.ArithError) residual
+            | core.ops.control_flow.ControlFlow.Break residual =>
+              core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                (Option (Std.Usize × Std.Usize)) (core.convert.FromSame
+                safe_arith.ArithError) residual
+          | core.ops.control_flow.ControlFlow.Break residual =>
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+              (Option (Std.Usize × Std.Usize)) (core.convert.FromSame
+              safe_arith.ArithError) residual
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            (Option (Std.Usize × Std.Usize)) (core.convert.FromSame
+            safe_arith.ArithError) residual
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          (Option (Std.Usize × Std.Usize)) (core.convert.FromSame
+          safe_arith.ArithError) residual
+
+/-- [types::state::committee_assignment::shuffling_positions]: loop body 0:
+    Source: 'consensus/types/src/state/committee_assignment.rs', lines 72:4-82:5
+    Visibility: public -/
+@[rust_loop_body]
+def state.committee_assignment.shuffling_positions_loop.body
+  (shuffling : Slice Std.Usize) (positions : alloc.vec.Vec Std.Usize)
+  (i : Std.Usize) :
+  Result (ControlFlow ((alloc.vec.Vec Std.Usize) × Std.Usize) ((alloc.vec.Vec
+    Std.Usize) × (Option Std.Usize)))
+  := do
+  let i1 := Slice.len shuffling
+  if i < i1
+  then
+    let o ←
+      core.slice.Slice.get (core.slice.index.SliceIndexUsizeSlice Std.Usize)
+        shuffling i
+    match o with
+    | none =>
+      let i2 ← lift (core.num.Usize.saturating_add i 1#usize)
+      ok (cont (positions, i2))
+    | some v =>
+      let (s, deref_mut_back) ← lift (alloc.vec.Vec.deref_mut positions)
+      let (o1, get_mut_back) ←
+        core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice
+          Std.Usize) s v
+      match o1 with
+      | none =>
+        let s1 := get_mut_back none
+        let positions1 := deref_mut_back s1
+        ok (done (positions1, o))
+      | some _ =>
+        let p ← lift (core.num.Usize.saturating_add i 1#usize)
+        let i2 ← lift (core.num.Usize.saturating_add i 1#usize)
+        let s1 := get_mut_back (some p)
+        let positions1 := deref_mut_back s1
+        ok (cont (positions1, i2))
+  else ok (done (positions, none))
+
+/-- [types::state::committee_assignment::shuffling_positions]: loop 0:
+    Source: 'consensus/types/src/state/committee_assignment.rs', lines 72:4-82:5
+    Visibility: public -/
+@[rust_loop]
+def state.committee_assignment.shuffling_positions_loop
+  (shuffling : Slice Std.Usize) (positions : alloc.vec.Vec Std.Usize)
+  (i : Std.Usize) :
+  Result ((alloc.vec.Vec Std.Usize) × (Option Std.Usize))
+  := do
+  loop
+    (fun (positions1, i1) =>
+      state.committee_assignment.shuffling_positions_loop.body shuffling
+      positions1 i1)
+    (positions, i)
+
+/-- [types::state::committee_assignment::shuffling_positions]:
+    Source: 'consensus/types/src/state/committee_assignment.rs', lines 65:0-87:1
+    Visibility: public -/
+def state.committee_assignment.shuffling_positions
+  (shuffling : Slice Std.Usize) (validator_count : Std.Usize) :
+  Result (core.result.Result (alloc.vec.Vec Std.Usize) Std.Usize)
+  := do
+  let positions ←
+    alloc.vec.from_elem core.clone.CloneUsize 0#usize validator_count
+  let (positions1, out_of_range) ←
+    state.committee_assignment.shuffling_positions_loop shuffling positions
+      0#usize
+  match out_of_range with
+  | none => ok (core.result.Result.Ok positions1)
+  | some v => ok (core.result.Result.Err v)
+
+/-- [types::state::committee_assignment::attestation_duty]: loop body 0:
+    Source: 'consensus/types/src/state/committee_assignment.rs', lines 97:4-112:5
+    Visibility: public -/
+@[rust_loop_body]
+def state.committee_assignment.attestation_duty_loop.body
+  (position : Std.Usize) (epoch_committee_count : Std.Usize)
+  (shuffling_len : Std.Usize) (nth : Std.Usize) :
+  Result (ControlFlow Std.Usize (core.result.Result (Option (Std.Usize ×
+    Std.Usize × Std.Usize)) safe_arith.ArithError))
+  := do
+  if nth < epoch_committee_count
+  then
+    let r ←
+      state.committee_assignment.committee_range_in_epoch epoch_committee_count
+        nth shuffling_len
+    match r with
+    | core.result.Result.Ok o =>
+      match o with
+      | none =>
+        let nth1 ← lift (core.num.Usize.saturating_add nth 1#usize)
+        ok (cont nth1)
+      | some p =>
+        let (start, «end») := p
+        if start <= position
+        then
+          if «end» > position
+          then ok (done (core.result.Result.Ok (some (nth, start, «end»))))
+          else
+            let nth1 ← lift (core.num.Usize.saturating_add nth 1#usize)
+            ok (cont nth1)
+        else
+          let nth1 ← lift (core.num.Usize.saturating_add nth 1#usize)
+          ok (cont nth1)
+    | core.result.Result.Err e => ok (done (core.result.Result.Err e))
+  else ok (done (core.result.Result.Ok none))
+
+/-- [types::state::committee_assignment::attestation_duty]: loop 0:
+    Source: 'consensus/types/src/state/committee_assignment.rs', lines 97:4-112:5
+    Visibility: public -/
+@[rust_loop]
+def state.committee_assignment.attestation_duty_loop
+  (position : Std.Usize) (epoch_committee_count : Std.Usize)
+  (shuffling_len : Std.Usize) (nth : Std.Usize) :
+  Result (core.result.Result (Option (Std.Usize × Std.Usize × Std.Usize))
+    safe_arith.ArithError)
+  := do
+  loop
+    (fun nth1 => state.committee_assignment.attestation_duty_loop.body position
+      epoch_committee_count shuffling_len nth1)
+    nth
+
+/-- [types::state::committee_assignment::attestation_duty]:
+    Source: 'consensus/types/src/state/committee_assignment.rs', lines 90:0-117:1
+    Visibility: public -/
+def state.committee_assignment.attestation_duty
+  (position : Std.Usize) (epoch_committee_count : Std.Usize)
+  (shuffling_len : Std.Usize) :
+  Result (core.result.Result (Option (Std.Usize × Std.Usize × Std.Usize))
+    safe_arith.ArithError)
+  := do
+  let found ←
+    state.committee_assignment.attestation_duty_loop position
+      epoch_committee_count shuffling_len 0#usize
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch found
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    match val with
+    | none => ok (core.result.Result.Ok none)
+    | some t =>
+      let (nth, start, «end») := t
+      let r ← Usize.Insts.Safe_arithSafeArithUsize.safe_sub position start
+      let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r
+      match cf1 with
+      | core.ops.control_flow.ControlFlow.Continue val1 =>
+        let r1 ← Usize.Insts.Safe_arithSafeArithUsize.safe_sub «end» start
+        let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r1
+        match cf2 with
+        | core.ops.control_flow.ControlFlow.Continue val2 =>
+          ok (core.result.Result.Ok (some (nth, val1, val2)))
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            (Option (Std.Usize × Std.Usize × Std.Usize))
+            (core.convert.FromSame safe_arith.ArithError) residual
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          (Option (Std.Usize × Std.Usize × Std.Usize)) (core.convert.FromSame
+          safe_arith.ArithError) residual
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      (Option (Std.Usize × Std.Usize × Std.Usize)) (core.convert.FromSame
+      safe_arith.ArithError) residual
 
 /-- [types::state::exit_queue::record_exit]:
     Source: 'consensus/types/src/state/exit_queue.rs', lines 9:0-21:1

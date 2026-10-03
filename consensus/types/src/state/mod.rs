@@ -2,6 +2,7 @@ mod activation_queue;
 mod balance;
 pub mod base_rewards;
 mod beacon_state;
+pub mod committee_assignment;
 #[macro_use]
 mod committee_cache;
 mod epoch_cache;

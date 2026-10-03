@@ -4,8 +4,10 @@ import CacheProofs.Spec.ExitCache
 import CacheProofs.Spec.ActivationQueue
 import CacheProofs.Spec.EpochCache
 import CacheProofs.Spec.ProgressiveBalances
+import CacheProofs.Spec.CommitteeCache
 import CacheProofs.Equiv.ExitCache
 import CacheProofs.Equiv.ActivationQueue
 import CacheProofs.Equiv.EpochCache
 import CacheProofs.Equiv.ProgressiveBalances
+import CacheProofs.Equiv.CommitteeCache
 import CacheProofs.AxiomAudit

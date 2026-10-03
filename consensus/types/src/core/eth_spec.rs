@@ -214,17 +214,12 @@ pub trait EthSpec: 'static + Default + Sync + Send + Clone + Debug + PartialEq +
         max_committees_per_slot: usize,
         target_committee_size: usize,
     ) -> Result<usize, ArithError> {
-        let slots_per_epoch = Self::SlotsPerEpoch::to_usize();
-
-        Ok(std::cmp::max(
-            1,
-            std::cmp::min(
-                max_committees_per_slot,
-                active_validator_count
-                    .safe_div(slots_per_epoch)?
-                    .safe_div(target_committee_size)?,
-            ),
-        ))
+        crate::state::committee_assignment::committee_count_per_slot(
+            active_validator_count,
+            Self::SlotsPerEpoch::to_usize(),
+            max_committees_per_slot,
+            target_committee_size,
+        )
     }
 
     /// Returns the minimum number of validators required for this spec.
