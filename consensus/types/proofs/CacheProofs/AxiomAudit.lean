@@ -2,6 +2,7 @@ import CacheProofs.Equiv.ExitCache
 import CacheProofs.Equiv.ActivationQueue
 import CacheProofs.Equiv.EpochCache
 import CacheProofs.Equiv.ProgressiveBalances
+import CacheProofs.Equiv.CommitteeCache
 import Lean.Util.CollectAxioms
 
 /-!
