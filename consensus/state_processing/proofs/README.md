@@ -72,7 +72,7 @@ penalties and no addition overflows. `rewards_saturation_example` shows an input
 differ: a balance of 3, a source penalty of 5 and a target reward of 10 give 10 in the spec
 and 8 in Lighthouse. Prysm uses the same order as Lighthouse.
 
-`registry_update_equiv` relates the registry kernel to `registryStepIndependent`: three
+`registry_update_equiv` relates `registry_update` to `registryStepIndependent`: three
 independent steps (queue eligibility, ejection, activation). The spec uses `if`/`elif`/`elif`
 instead (`registryStepExclusive`). `registry_update_eq_spec` shows that the two agree when
 `EJECTION_BALANCE < MIN_ACTIVATION_BALANCE`, the finalized epoch is not after the current

@@ -2,7 +2,7 @@ import EpochProofs.Equiv.RewardsAndPenalties
 import EpochProofs.Sanity.RegistryUpdates
 
 /-!
-# Lighthouse registry update kernel equals the reference
+# Lighthouse registry update equals the reference
 
 `registry_update_equiv` relates `registry_update` in `registry_update.rs` to
 `registryStepIndependent`. `registry_update_eq_spec` then uses
