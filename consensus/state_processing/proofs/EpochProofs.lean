@@ -1,6 +1,9 @@
 import EpochProofs.Generated
 import EpochProofs.Spec.Types
 import EpochProofs.Spec.BuilderPendingPayments
+import EpochProofs.Spec.EffectiveBalanceUpdates
 import EpochProofs.Sanity.BuilderPendingPayments
+import EpochProofs.Sanity.EffectiveBalanceUpdates
 import EpochProofs.Equiv.BuilderPendingPayments
+import EpochProofs.Equiv.EffectiveBalanceUpdates
 import EpochProofs.Axioms

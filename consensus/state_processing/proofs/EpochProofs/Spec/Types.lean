@@ -1,7 +1,7 @@
 /-!
 # Gloas types and `Uint64` arithmetic
 
-Transcribed from `specs/gloas/beacon-chain.md` (v1.7.0-beta.0). Names match the spec.
+Transcribed from the consensus specs (v1.7.0-beta.2). Names match the spec.
 
 pyspec raises on `Uint64` overflow and on division by zero. Here a raise is `Except.error`.
 
@@ -19,11 +19,21 @@ abbrev ExecutionAddress := Vector UInt8 20
 inductive SpecError where
   | overflow
   | divisionByZero
+  | indexOutOfRange
   deriving DecidableEq, Repr
 
 abbrev SpecM := Except SpecError
 
 def UINT64_SIZE : Nat := 2 ^ 64
+
+def uint64Add (a b : Uint64) : SpecM Uint64 :=
+  if a + b < UINT64_SIZE then pure (a + b) else throw .overflow
+
+def uint64Sub (a b : Uint64) : SpecM Uint64 :=
+  if b ≤ a then pure (a - b) else throw .overflow
+
+def uint64Mod (a b : Uint64) : SpecM Uint64 :=
+  if b = 0 then throw .divisionByZero else pure (a % b)
 
 def uint64Mul (a b : Uint64) : SpecM Uint64 :=
   if a * b < UINT64_SIZE then pure (a * b) else throw .overflow
@@ -31,15 +41,31 @@ def uint64Mul (a b : Uint64) : SpecM Uint64 :=
 def uint64Div (a b : Uint64) : SpecM Uint64 :=
   if b = 0 then throw .divisionByZero else pure (a / b)
 
-/-- Preset values that the reference reads. -/
+/-- Preset values that the reference reads. The defaults are the mainnet values. -/
 structure Preset where
   SLOTS_PER_EPOCH : Nat
+  EFFECTIVE_BALANCE_INCREMENT : Gwei := 1000000000
+  HYSTERESIS_QUOTIENT : Uint64 := 4
+  HYSTERESIS_DOWNWARD_MULTIPLIER : Uint64 := 1
+  HYSTERESIS_UPWARD_MULTIPLIER : Uint64 := 5
+  MIN_ACTIVATION_BALANCE : Gwei := 32000000000
+  MAX_EFFECTIVE_BALANCE_ELECTRA : Gwei := 2048000000000
 
 def Preset.mainnet : Preset := { SLOTS_PER_EPOCH := 32 }
 def Preset.minimal : Preset := { SLOTS_PER_EPOCH := 8 }
 
 def BUILDER_PAYMENT_THRESHOLD_NUMERATOR : Uint64 := 6
 def BUILDER_PAYMENT_THRESHOLD_DENOMINATOR : Uint64 := 10
+
+def COMPOUNDING_WITHDRAWAL_PREFIX : UInt8 := 0x02
+
+abbrev Bytes32 := Vector UInt8 32
+
+/-- Only the fields that the reference reads or writes. -/
+structure Validator where
+  withdrawal_credentials : Bytes32
+  effective_balance : Gwei
+  deriving DecidableEq, Repr
 
 structure BuilderPendingWithdrawal where
   fee_recipient : ExecutionAddress
@@ -64,6 +90,8 @@ def BuilderPendingPayment.empty : BuilderPendingPayment :=
 `builder_pending_withdrawals` is a `ProgressiveList`. It has no limit.
 A `List` has no fixed length, so `WellFormed` gives the vector length. -/
 structure BeaconState where
+  validators : List Validator := []
+  balances : List Gwei := []
   builder_pending_payments : List BuilderPendingPayment
   builder_pending_withdrawals : List BuilderPendingWithdrawal
   deriving DecidableEq, Repr

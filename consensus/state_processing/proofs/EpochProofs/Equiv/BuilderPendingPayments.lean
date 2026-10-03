@@ -232,15 +232,15 @@ def absResult {α β : Type} (f : α → β) : core.result.Result α safe_arith.
   | .Ok x => .ok (f x)
   | .Err e => .error (absArithError e)
 
-theorem quorum_equiv (total_active_balance slots_per_epoch : U64) :
+theorem quorum_equiv (p : Spec.Preset) (total_active_balance slots_per_epoch : U64)
+    (hslots : slots_per_epoch.val = p.SLOTS_PER_EPOCH) :
     per_epoch_processing.builder_pending_payments.get_builder_payment_quorum_threshold
       total_active_balance slots_per_epoch 6#u64 10#u64 ⦃ r =>
         absResult (·.val) r =
-          Spec.get_builder_payment_quorum_threshold ⟨slots_per_epoch.val⟩
-            total_active_balance.val ⦄ := by
+          Spec.get_builder_payment_quorum_threshold p total_active_balance.val ⦄ := by
   unfold per_epoch_processing.builder_pending_payments.get_builder_payment_quorum_threshold
     U64.Insts.Safe_arithSafeArithU64.safe_div U64.Insts.Safe_arithSafeArithU64.safe_mul
-  simp only [Spec.get_builder_payment_quorum_threshold, Spec.uint64Div, Spec.uint64Mul,
+  simp only [Spec.get_builder_payment_quorum_threshold, Spec.uint64Div, Spec.uint64Mul, ← hslots,
     Spec.BUILDER_PAYMENT_THRESHOLD_NUMERATOR, Spec.BUILDER_PAYMENT_THRESHOLD_DENOMINATOR,
     Spec.UINT64_SIZE, lift, bind_tc_ok]
   have h1 := U64.checked_div_bv_spec total_active_balance slots_per_epoch
@@ -327,21 +327,21 @@ def absState (x : List LhWithdrawal × List LhPayment) : Spec.BeaconState :=
 
 /-- Lighthouse equals the reference. An error maps to the same spec error.
 
-`hspe`: `E::slots_per_epoch()` and `E::SlotsPerEpoch::to_usize()` are the same number. -/
-theorem builder_pending_payments_equiv
+`hslots` and `hspe`: `E::slots_per_epoch()` and `E::SlotsPerEpoch::to_usize()` are both
+`SLOTS_PER_EPOCH`. -/
+theorem builder_pending_payments_equiv (p : Spec.Preset)
     (total_active_balance slots_per_epoch : U64) (spe : Usize)
-    (hspe : slots_per_epoch.val = spe.val)
+    (hslots : slots_per_epoch.val = p.SLOTS_PER_EPOCH) (hspe : spe.val = p.SLOTS_PER_EPOCH)
     (payments : Slice LhPayment) (withdrawals : List LhWithdrawal)
-    (hlen : payments.val.length = 2 * spe.val) :
+    (hlen : payments.val.length = 2 * p.SLOTS_PER_EPOCH) :
     lighthouseBuilderPendingPayments total_active_balance slots_per_epoch spe payments withdrawals
       ⦃ r => absResult absState r =
-        Spec.process_builder_pending_payments ⟨spe.val⟩ total_active_balance.val
+        Spec.process_builder_pending_payments p total_active_balance.val
           (absState (withdrawals, payments.val)) ⦄ := by
   unfold lighthouseBuilderPendingPayments
   rw [Spec.process_builder_pending_payments_eq _ _ _
     (by simp [absState, Spec.BeaconState.WellFormed, hlen])]
-  step with quorum_equiv as ⟨r, hr⟩
-  rw [hspe] at hr
+  step with quorum_equiv p _ _ hslots as ⟨r, hr⟩
   cases r with
   | Err e =>
     simp only [spec_ok]
@@ -351,6 +351,6 @@ theorem builder_pending_payments_equiv
     step with process_builder_pending_payments_spec as ⟨res, h1, h2⟩
     rw [← hr]
     simp only [absResult, Except.map, absState, Spec.builderPendingPaymentsResult, List.map_append,
-      h1, h2, map_newWithdrawals, List.map_drop, List.map_replicate, absPayment_default]
+      h1, h2, map_newWithdrawals, List.map_drop, List.map_replicate, absPayment_default, ← hspe]
 
 end EpochProofs

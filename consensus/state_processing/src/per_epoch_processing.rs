@@ -16,6 +16,7 @@ pub mod altair;
 pub mod base;
 pub mod builder_pending_payments;
 pub mod capella;
+pub mod effective_balance;
 pub mod effective_balance_updates;
 pub mod epoch_processing_summary;
 pub mod errors;
