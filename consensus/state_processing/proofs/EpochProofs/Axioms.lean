@@ -1,5 +1,6 @@
 import EpochProofs.Equiv.BuilderPendingPayments
 import EpochProofs.Equiv.EffectiveBalanceUpdates
+import EpochProofs.Equiv.InactivityUpdates
 open EpochProofs.Spec
 #print axioms EpochProofs.Spec.withdrawals_loop
 #print axioms EpochProofs.Spec.process_builder_pending_payments_eq
@@ -18,3 +19,7 @@ open EpochProofs.Spec
 #print axioms EpochProofs.Spec.newEffectiveBalance_in_band
 #print axioms EpochProofs.hysteresis_thresholds_equiv
 #print axioms EpochProofs.new_effective_balance_equiv
+#print axioms EpochProofs.Spec.process_inactivity_updates_eq
+#print axioms EpochProofs.Spec.inactivityScoreStep_leak_missed
+#print axioms EpochProofs.Spec.inactivityScoreStep_participating_le
+#print axioms EpochProofs.new_inactivity_score_equiv

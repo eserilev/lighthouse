@@ -14,12 +14,16 @@ abbrev Gwei := Nat
 abbrev Uint64 := Nat
 abbrev ValidatorIndex := Nat
 abbrev BuilderIndex := Nat
+abbrev Epoch := Nat
+abbrev Slot := Nat
+abbrev ParticipationFlags := UInt8
 abbrev ExecutionAddress := Vector UInt8 20
 
 inductive SpecError where
   | overflow
   | divisionByZero
   | indexOutOfRange
+  | assertionFailed
   deriving DecidableEq, Repr
 
 abbrev SpecM := Except SpecError
@@ -41,7 +45,17 @@ def uint64Mul (a b : Uint64) : SpecM Uint64 :=
 def uint64Div (a b : Uint64) : SpecM Uint64 :=
   if b = 0 then throw .divisionByZero else pure (a / b)
 
-/-- Preset values that the reference reads. The defaults are the mainnet values. -/
+/-- `l[i]` in Python. -/
+def listGet {α : Type} (l : List α) (i : Nat) : SpecM α :=
+  match l[i]? with
+  | some a => pure a
+  | none => throw .indexOutOfRange
+
+/-- `l[i] = a` in Python. -/
+def listSet {α : Type} (l : List α) (i : Nat) (a : α) : SpecM (List α) :=
+  if i < l.length then pure (l.set i a) else throw .indexOutOfRange
+
+/-- Preset and config values that the reference reads. The defaults are the mainnet values. -/
 structure Preset where
   SLOTS_PER_EPOCH : Nat
   EFFECTIVE_BALANCE_INCREMENT : Gwei := 1000000000
@@ -50,6 +64,9 @@ structure Preset where
   HYSTERESIS_UPWARD_MULTIPLIER : Uint64 := 5
   MIN_ACTIVATION_BALANCE : Gwei := 32000000000
   MAX_EFFECTIVE_BALANCE_ELECTRA : Gwei := 2048000000000
+  MIN_EPOCHS_TO_INACTIVITY_PENALTY : Uint64 := 4
+  INACTIVITY_SCORE_BIAS : Uint64 := 4
+  INACTIVITY_SCORE_RECOVERY_RATE : Uint64 := 16
 
 def Preset.mainnet : Preset := { SLOTS_PER_EPOCH := 32 }
 def Preset.minimal : Preset := { SLOTS_PER_EPOCH := 8 }
@@ -59,12 +76,24 @@ def BUILDER_PAYMENT_THRESHOLD_DENOMINATOR : Uint64 := 10
 
 def COMPOUNDING_WITHDRAWAL_PREFIX : UInt8 := 0x02
 
+def GENESIS_EPOCH : Epoch := 0
+
+def TIMELY_TARGET_FLAG_INDEX : Nat := 1
+
 abbrev Bytes32 := Vector UInt8 32
 
 /-- Only the fields that the reference reads or writes. -/
 structure Validator where
   withdrawal_credentials : Bytes32
   effective_balance : Gwei
+  slashed : Bool
+  activation_epoch : Epoch
+  exit_epoch : Epoch
+  withdrawable_epoch : Epoch
+  deriving DecidableEq, Repr
+
+structure Checkpoint where
+  epoch : Epoch
   deriving DecidableEq, Repr
 
 structure BuilderPendingWithdrawal where
@@ -90,8 +119,13 @@ def BuilderPendingPayment.empty : BuilderPendingPayment :=
 `builder_pending_withdrawals` is a `ProgressiveList`. It has no limit.
 A `List` has no fixed length, so `WellFormed` gives the vector length. -/
 structure BeaconState where
+  slot : Slot := 0
   validators : List Validator := []
   balances : List Gwei := []
+  finalized_checkpoint : Checkpoint := ⟨0⟩
+  previous_epoch_participation : List ParticipationFlags := []
+  current_epoch_participation : List ParticipationFlags := []
+  inactivity_scores : List Uint64 := []
   builder_pending_payments : List BuilderPendingPayment
   builder_pending_withdrawals : List BuilderPendingWithdrawal
   deriving DecidableEq, Repr
