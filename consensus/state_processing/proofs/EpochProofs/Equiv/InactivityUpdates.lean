@@ -2,7 +2,7 @@ import EpochProofs.Equiv.EffectiveBalanceUpdates
 import EpochProofs.Sanity.InactivityUpdates
 
 /-!
-# Lighthouse inactivity score kernel equals the reference
+# Lighthouse inactivity score update equals the reference
 
 `new_inactivity_score_equiv` relates `new_inactivity_score` in `inactivity_updates.rs` to
 `inactivityScoreStep`. This covers the early return for a participating validator with a
