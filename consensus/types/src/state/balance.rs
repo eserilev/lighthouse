@@ -20,16 +20,22 @@ impl Balance {
 
     /// Returns the balance with respect to the initialization `minimum`.
     pub fn get(&self) -> u64 {
-        std::cmp::max(self.raw, self.minimum)
+        if self.raw > self.minimum {
+            self.raw
+        } else {
+            self.minimum
+        }
     }
 
     /// Add-assign to the balance.
     pub fn safe_add_assign(&mut self, other: u64) -> Result<(), ArithError> {
-        self.raw.safe_add_assign(other)
+        self.raw = self.raw.safe_add(other)?;
+        Ok(())
     }
 
     /// Sub-assign to the balance.
     pub fn safe_sub_assign(&mut self, other: u64) -> Result<(), ArithError> {
-        self.raw.safe_sub_assign(other)
+        self.raw = self.raw.safe_sub(other)?;
+        Ok(())
     }
 }

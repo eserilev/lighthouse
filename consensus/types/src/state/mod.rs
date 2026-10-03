@@ -10,6 +10,7 @@ mod exit_queue;
 mod historical_batch;
 mod historical_summary;
 mod iter;
+pub mod participation_totals;
 mod progressive_balances_cache;
 mod pubkey_cache;
 mod slashings_cache;

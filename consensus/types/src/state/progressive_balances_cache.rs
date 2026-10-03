@@ -9,7 +9,7 @@ use crate::{
         TIMELY_TARGET_FLAG_INDEX,
     },
     core::{ChainSpec, Epoch, EthSpec},
-    state::{Balance, BeaconState, BeaconStateError},
+    state::{Balance, BeaconState, BeaconStateError, participation_totals},
 };
 
 /// This cache keeps track of the accumulated target attestation balance for the current & previous
@@ -52,10 +52,10 @@ impl EpochTotalBalances {
 
     /// Returns the total balance of attesters who have `flag_index` set.
     pub fn total_flag_balance(&self, flag_index: usize) -> Result<u64, BeaconStateError> {
-        self.total_flag_balances
-            .get(flag_index)
-            .map(Balance::get)
-            .ok_or(BeaconStateError::InvalidFlagIndex(flag_index))
+        Ok(participation_totals::total_flag_balance(
+            &self.total_flag_balances,
+            flag_index,
+        )?)
     }
 
     /// Returns the raw total balance of attesters who have `flag_index` set.
@@ -72,15 +72,12 @@ impl EpochTotalBalances {
         flag_index: usize,
         validator_effective_balance: u64,
     ) -> Result<(), BeaconStateError> {
-        if is_slashed {
-            return Ok(());
-        }
-        let balance = self
-            .total_flag_balances
-            .get_mut(flag_index)
-            .ok_or(BeaconStateError::InvalidFlagIndex(flag_index))?;
-        balance.safe_add_assign(validator_effective_balance)?;
-        Ok(())
+        Ok(participation_totals::on_new_attestation(
+            &mut self.total_flag_balances,
+            is_slashed,
+            flag_index,
+            validator_effective_balance,
+        )?)
     }
 
     pub fn on_slashing(
@@ -88,15 +85,11 @@ impl EpochTotalBalances {
         participation_flags: ParticipationFlags,
         validator_effective_balance: u64,
     ) -> Result<(), BeaconStateError> {
-        for flag_index in 0..NUM_FLAG_INDICES {
-            if participation_flags.has_flag(flag_index)? {
-                self.total_flag_balances
-                    .get_mut(flag_index)
-                    .ok_or(BeaconStateError::InvalidFlagIndex(flag_index))?
-                    .safe_sub_assign(validator_effective_balance)?;
-            }
-        }
-        Ok(())
+        Ok(participation_totals::on_slashing(
+            &mut self.total_flag_balances,
+            participation_flags.into_u8(),
+            validator_effective_balance,
+        )?)
     }
 
     pub fn on_effective_balance_change(
@@ -106,27 +99,24 @@ impl EpochTotalBalances {
         old_effective_balance: u64,
         new_effective_balance: u64,
     ) -> Result<(), BeaconStateError> {
-        // If the validator is slashed then we should not update the effective balance, because this
-        // validator's effective balance has already been removed from the totals.
-        if is_slashed {
-            return Ok(());
-        }
-        for flag_index in 0..NUM_FLAG_INDICES {
-            if current_epoch_participation_flags.has_flag(flag_index)? {
-                let total = self
-                    .total_flag_balances
-                    .get_mut(flag_index)
-                    .ok_or(BeaconStateError::InvalidFlagIndex(flag_index))?;
-                if new_effective_balance > old_effective_balance {
-                    total
-                        .safe_add_assign(new_effective_balance.safe_sub(old_effective_balance)?)?;
-                } else {
-                    total
-                        .safe_sub_assign(old_effective_balance.safe_sub(new_effective_balance)?)?;
-                }
+        Ok(participation_totals::on_effective_balance_change(
+            &mut self.total_flag_balances,
+            is_slashed,
+            current_epoch_participation_flags.into_u8(),
+            old_effective_balance,
+            new_effective_balance,
+        )?)
+    }
+}
+
+impl From<participation_totals::Error> for BeaconStateError {
+    fn from(e: participation_totals::Error) -> Self {
+        match e {
+            participation_totals::Error::InvalidFlagIndex(flag_index) => {
+                BeaconStateError::InvalidFlagIndex(flag_index)
             }
+            participation_totals::Error::Arith(e) => BeaconStateError::ArithError(e),
         }
-        Ok(())
     }
 }
 

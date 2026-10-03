@@ -21,6 +21,8 @@ trap 'rm -rf "$out"' EXIT
   --start-from types::validator::activation_eligibility \
   --start-from types::state::total_active_balance \
   --start-from types::state::base_rewards \
+  --start-from types::state::balance \
+  --start-from types::state::participation_totals \
   --include safe_arith \
   --dest-file "$out/pure.llbc" -- --lib)
 
