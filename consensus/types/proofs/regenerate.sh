@@ -19,6 +19,8 @@ trap 'rm -rf "$out"' EXIT
 (cd "$crate_dir" && "$CHARON" cargo --preset=aeneas \
   --start-from types::state::exit_queue \
   --start-from types::validator::activation_eligibility \
+  --start-from types::state::total_active_balance \
+  --start-from types::state::base_rewards \
   --include safe_arith \
   --dest-file "$out/pure.llbc" -- --lib)
 

@@ -1,5 +1,5 @@
-use integer_sqrt::IntegerSquareRoot;
-use safe_arith::{ArithError, SafeArith};
+use safe_arith::ArithError;
+use types::state::base_rewards;
 use types::*;
 
 /// This type exists to avoid confusing `total_active_balance` with `base_reward_per_increment`,
@@ -29,10 +29,12 @@ pub fn get_base_reward(
     base_reward_per_increment: BaseRewardPerIncrement,
     spec: &ChainSpec,
 ) -> Result<u64, BeaconStateError> {
-    validator_effective_balance
-        .safe_div(spec.effective_balance_increment)?
-        .safe_mul(base_reward_per_increment.as_u64())
-        .map_err(Into::into)
+    base_rewards::altair_base_reward(
+        validator_effective_balance,
+        spec.effective_balance_increment,
+        base_reward_per_increment.as_u64(),
+    )
+    .map_err(Into::into)
 }
 
 /// Returns the base reward for some validator.
@@ -42,7 +44,9 @@ fn get_base_reward_per_increment(
     total_active_balance: u64,
     spec: &ChainSpec,
 ) -> Result<u64, ArithError> {
-    spec.effective_balance_increment
-        .safe_mul(spec.base_reward_factor)?
-        .safe_div(total_active_balance.integer_sqrt())
+    base_rewards::base_reward_per_increment(
+        total_active_balance,
+        spec.effective_balance_increment,
+        spec.base_reward_factor,
+    )
 }

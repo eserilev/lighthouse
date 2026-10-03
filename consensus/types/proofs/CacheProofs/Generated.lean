@@ -38,6 +38,406 @@ def U64.Insts.Safe_arithSafeArithU64.safe_add
   let o ← lift (U64.checked_add self other)
   core.option.Option.ok_or o safe_arith.ArithError.Overflow
 
+/-- [safe_arith::{impl safe_arith::SafeArith<u64> for u64}::safe_sub]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/safe_arith-0.1.0/src/lib.rs', lines 145:12-145:59
+    Name pattern: [safe_arith::{safe_arith::SafeArith<u64, u64>}::safe_sub]
+    Visibility: public -/
+@[rust_fun "safe_arith::{safe_arith::SafeArith<u64, u64>}::safe_sub"]
+def U64.Insts.Safe_arithSafeArithU64.safe_sub
+  (self : Std.U64) (other : Std.U64) :
+  Result (core.result.Result Std.U64 safe_arith.ArithError)
+  := do
+  let o ← lift (U64.checked_sub self other)
+  core.option.Option.ok_or o safe_arith.ArithError.Overflow
+
+/-- [safe_arith::{impl safe_arith::SafeArith<u64> for u64}::safe_mul]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/safe_arith-0.1.0/src/lib.rs', lines 150:12-150:59
+    Name pattern: [safe_arith::{safe_arith::SafeArith<u64, u64>}::safe_mul]
+    Visibility: public -/
+@[rust_fun "safe_arith::{safe_arith::SafeArith<u64, u64>}::safe_mul"]
+def U64.Insts.Safe_arithSafeArithU64.safe_mul
+  (self : Std.U64) (other : Std.U64) :
+  Result (core.result.Result Std.U64 safe_arith.ArithError)
+  := do
+  let o ← lift (U64.checked_mul self other)
+  core.option.Option.ok_or o safe_arith.ArithError.Overflow
+
+/-- [safe_arith::{impl safe_arith::SafeArith<u64> for u64}::safe_div]:
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/safe_arith-0.1.0/src/lib.rs', lines 155:12-155:59
+    Name pattern: [safe_arith::{safe_arith::SafeArith<u64, u64>}::safe_div]
+    Visibility: public -/
+@[rust_fun "safe_arith::{safe_arith::SafeArith<u64, u64>}::safe_div"]
+def U64.Insts.Safe_arithSafeArithU64.safe_div
+  (self : Std.U64) (other : Std.U64) :
+  Result (core.result.Result Std.U64 safe_arith.ArithError)
+  := do
+  let o ← lift (U64.checked_div self other)
+  core.option.Option.ok_or o safe_arith.ArithError.DivisionByZero
+
+/-- [types::state::base_rewards::ReadError]
+    Source: 'consensus/types/src/state/base_rewards.rs', lines 11:0-15:1
+    Visibility: public -/
+@[discriminant isize]
+inductive state.base_rewards.ReadError where
+| ValidatorIndexOutOfBounds : state.base_rewards.ReadError
+| EffectiveBalanceOutOfBounds : Std.Usize → state.base_rewards.ReadError
+| Arith : safe_arith.ArithError → state.base_rewards.ReadError
+
+/-- [types::state::base_rewards::BaseRewardsError]
+    Source: 'consensus/types/src/state/base_rewards.rs', lines 18:0-21:1
+    Visibility: public -/
+@[discriminant isize]
+inductive state.base_rewards.BaseRewardsError where
+| Arith : safe_arith.ArithError → state.base_rewards.BaseRewardsError
+| AltairBaseReward :
+  safe_arith.ArithError →
+  state.base_rewards.BaseRewardsError
+
+/-- [types::state::base_rewards::{impl core::convert::From<safe_arith::ArithError> for types::state::base_rewards::BaseRewardsError}::from]:
+    Source: 'consensus/types/src/state/base_rewards.rs', lines 24:4-26:5
+    Visibility: public -/
+def state.base_rewards.BaseRewardsError.Insts.CoreConvertFromArithError.from
+  (e : safe_arith.ArithError) :
+  Result state.base_rewards.BaseRewardsError
+  := do
+  ok (state.base_rewards.BaseRewardsError.Arith e)
+
+/-- Trait implementation: [types::state::base_rewards::{impl core::convert::From<safe_arith::ArithError> for types::state::base_rewards::BaseRewardsError}]
+    Source: 'consensus/types/src/state/base_rewards.rs', lines 23:0-27:1 -/
+@[reducible]
+def state.base_rewards.BaseRewardsError.Insts.CoreConvertFromArithError :
+  core.convert.From state.base_rewards.BaseRewardsError safe_arith.ArithError
+  := {
+  «from» :=
+    state.base_rewards.BaseRewardsError.Insts.CoreConvertFromArithError.from
+}
+
+/-- [types::state::base_rewards::integer_sqrt]: loop body 0:
+    Source: 'consensus/types/src/state/base_rewards.rs', lines 36:4-39:5
+    Visibility: public -/
+@[rust_loop_body]
+def state.base_rewards.integer_sqrt_loop.body
+  (n : Std.U64) (x : Std.U64) (y : Std.U64) :
+  Result (ControlFlow (Std.U64 × Std.U64) Std.U64)
+  := do
+  if y < x
+  then
+    let o ← lift (U64.checked_div n y)
+    let i ← lift (core.option.Option.unwrap_or o 0#u64)
+    let i1 ← lift (core.num.U64.saturating_add y i)
+    let y1 ← i1 / 2#u64
+    ok (cont (y, y1))
+  else ok (done x)
+
+/-- [types::state::base_rewards::integer_sqrt]: loop 0:
+    Source: 'consensus/types/src/state/base_rewards.rs', lines 36:4-39:5
+    Visibility: public -/
+@[rust_loop]
+def state.base_rewards.integer_sqrt_loop
+  (n : Std.U64) (x : Std.U64) (y : Std.U64) : Result Std.U64 := do
+  loop
+    (fun (x1, y1) => state.base_rewards.integer_sqrt_loop.body n x1 y1)
+    (x, y)
+
+/-- [types::state::base_rewards::integer_sqrt]:
+    Source: 'consensus/types/src/state/base_rewards.rs', lines 30:0-41:1
+    Visibility: public -/
+def state.base_rewards.integer_sqrt (n : Std.U64) : Result Std.U64 := do
+  if n = core.num.U64.MAX
+  then ok 4294967295#u64
+  else
+    let i ← lift (core.num.U64.saturating_add n 1#u64)
+    let y ← i / 2#u64
+    state.base_rewards.integer_sqrt_loop n n y
+
+/-- [types::state::base_rewards::base_reward_per_increment]:
+    Source: 'consensus/types/src/state/base_rewards.rs', lines 44:0-52:1
+    Visibility: public -/
+def state.base_rewards.base_reward_per_increment
+  (total_active_balance : Std.U64) (effective_balance_increment : Std.U64)
+  (base_reward_factor : Std.U64) :
+  Result (core.result.Result Std.U64 safe_arith.ArithError)
+  := do
+  let r ←
+    U64.Insts.Safe_arithSafeArithU64.safe_mul effective_balance_increment
+      base_reward_factor
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let i ← state.base_rewards.integer_sqrt total_active_balance
+    U64.Insts.Safe_arithSafeArithU64.safe_div val i
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+
+/-- [types::state::base_rewards::altair_base_reward]:
+    Source: 'consensus/types/src/state/base_rewards.rs', lines 55:0-63:1
+    Visibility: public -/
+def state.base_rewards.altair_base_reward
+  (effective_balance : Std.U64) (effective_balance_increment : Std.U64)
+  (base_reward_per_increment : Std.U64) :
+  Result (core.result.Result Std.U64 safe_arith.ArithError)
+  := do
+  let r ←
+    U64.Insts.Safe_arithSafeArithU64.safe_div effective_balance
+      effective_balance_increment
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    U64.Insts.Safe_arithSafeArithU64.safe_mul val base_reward_per_increment
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+
+/-- [types::state::base_rewards::phase0_base_reward]:
+    Source: 'consensus/types/src/state/base_rewards.rs', lines 66:0-76:1
+    Visibility: public -/
+def state.base_rewards.phase0_base_reward
+  (effective_balance : Std.U64) (sqrt_total_active_balance : Std.U64)
+  (base_reward_factor : Std.U64) (base_rewards_per_epoch : Std.U64) :
+  Result (core.result.Result Std.U64 safe_arith.ArithError)
+  := do
+  let r ←
+    U64.Insts.Safe_arithSafeArithU64.safe_mul effective_balance
+      base_reward_factor
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let r1 ←
+      U64.Insts.Safe_arithSafeArithU64.safe_div val sqrt_total_active_balance
+    let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+    match cf1 with
+    | core.ops.control_flow.ControlFlow.Continue val1 =>
+      U64.Insts.Safe_arithSafeArithU64.safe_div val1 base_rewards_per_epoch
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+
+/-- [types::state::base_rewards::base_reward_at]:
+    Source: 'consensus/types/src/state/base_rewards.rs', lines 80:0-107:1
+    Visibility: public -/
+def state.base_rewards.base_reward_at
+  (effective_balance_eth : Std.U64) (effective_balance_increment : Std.U64)
+  (is_phase0 : Bool) (sqrt_total_active_balance : Std.U64)
+  (base_reward_per_increment : Std.U64) (base_reward_factor : Std.U64)
+  (base_rewards_per_epoch : Std.U64) :
+  Result (core.result.Result Std.U64 state.base_rewards.BaseRewardsError)
+  := do
+  let r ←
+    U64.Insts.Safe_arithSafeArithU64.safe_mul effective_balance_eth
+      effective_balance_increment
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    if is_phase0
+    then
+      let r1 ←
+        state.base_rewards.phase0_base_reward val sqrt_total_active_balance
+          base_reward_factor base_rewards_per_epoch
+      let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+      match cf1 with
+      | core.ops.control_flow.ControlFlow.Continue val1 =>
+        ok (core.result.Result.Ok val1)
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          Std.U64
+          state.base_rewards.BaseRewardsError.Insts.CoreConvertFromArithError
+          residual
+    else
+      let r1 ←
+        state.base_rewards.altair_base_reward val effective_balance_increment
+          base_reward_per_increment
+      match r1 with
+      | core.result.Result.Ok base_reward =>
+        ok (core.result.Result.Ok base_reward)
+      | core.result.Result.Err e =>
+        ok (core.result.Result.Err
+          (state.base_rewards.BaseRewardsError.AltairBaseReward e))
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      Std.U64
+      state.base_rewards.BaseRewardsError.Insts.CoreConvertFromArithError
+      residual
+
+/-- [types::state::total_active_balance::floor_total_active_balance]:
+    Source: 'consensus/types/src/state/total_active_balance.rs', lines 9:0-18:1
+    Visibility: public -/
+def state.total_active_balance.floor_total_active_balance
+  (total_active_balance : Std.U64) (effective_balance_increment : Std.U64) :
+  Result Std.U64
+  := do
+  if total_active_balance > effective_balance_increment
+  then ok total_active_balance
+  else ok effective_balance_increment
+
+/-- [types::state::base_rewards::base_rewards]: loop body 0:
+    Source: 'consensus/types/src/state/base_rewards.rs', lines 132:4-146:5
+    Visibility: public -/
+@[rust_loop_body]
+def state.base_rewards.base_rewards_loop.body
+  (effective_balance_increment : Std.U64) (base_reward_factor : Std.U64)
+  (base_rewards_per_epoch : Std.U64) (is_phase0 : Bool)
+  (sqrt_total_active_balance : Std.U64) (base_reward_per_increment : Std.U64)
+  (max_effective_balance_eth : Std.U64) (base_rewards : alloc.vec.Vec Std.U64)
+  (error : Option state.base_rewards.BaseRewardsError)
+  (effective_balance_eth : Std.U64) :
+  Result (ControlFlow ((alloc.vec.Vec Std.U64) × (Option
+    state.base_rewards.BaseRewardsError) × Std.U64) ((alloc.vec.Vec Std.U64)
+    × (Option state.base_rewards.BaseRewardsError)))
+  := do
+  if effective_balance_eth <= max_effective_balance_eth
+  then
+    let b := core.option.Option.is_none error
+    if b
+    then
+      let r ←
+        state.base_rewards.base_reward_at effective_balance_eth
+          effective_balance_increment is_phase0 sqrt_total_active_balance
+          base_reward_per_increment base_reward_factor base_rewards_per_epoch
+      let (base_rewards1, error1) ←
+        match r with
+        | core.result.Result.Ok base_reward =>
+          do
+          let base_rewards2 ← alloc.vec.Vec.push base_rewards base_reward
+          ok (base_rewards2, error)
+        | core.result.Result.Err e => ok (base_rewards, some e)
+      let effective_balance_eth1 ←
+        lift (core.num.U64.saturating_add effective_balance_eth 1#u64)
+      ok (cont (base_rewards1, error1, effective_balance_eth1))
+    else ok (done (base_rewards, error))
+  else ok (done (base_rewards, error))
+
+/-- [types::state::base_rewards::base_rewards]: loop 0:
+    Source: 'consensus/types/src/state/base_rewards.rs', lines 132:4-146:5
+    Visibility: public -/
+@[rust_loop]
+def state.base_rewards.base_rewards_loop
+  (effective_balance_increment : Std.U64) (base_reward_factor : Std.U64)
+  (base_rewards_per_epoch : Std.U64) (is_phase0 : Bool)
+  (sqrt_total_active_balance : Std.U64) (base_reward_per_increment : Std.U64)
+  (max_effective_balance_eth : Std.U64) (base_rewards : alloc.vec.Vec Std.U64)
+  (error : Option state.base_rewards.BaseRewardsError)
+  (effective_balance_eth : Std.U64) :
+  Result ((alloc.vec.Vec Std.U64) × (Option
+    state.base_rewards.BaseRewardsError))
+  := do
+  loop
+    (fun (base_rewards1, error1, effective_balance_eth1) =>
+      state.base_rewards.base_rewards_loop.body effective_balance_increment
+      base_reward_factor base_rewards_per_epoch is_phase0
+      sqrt_total_active_balance base_reward_per_increment
+      max_effective_balance_eth base_rewards1 error1 effective_balance_eth1)
+    (base_rewards, error, effective_balance_eth)
+
+/-- [types::state::base_rewards::base_rewards]:
+    Source: 'consensus/types/src/state/base_rewards.rs', lines 110:0-152:1
+    Visibility: public -/
+def state.base_rewards.base_rewards
+  (total_active_balance : Std.U64) (effective_balance_increment : Std.U64)
+  (max_effective_balance : Std.U64) (base_reward_factor : Std.U64)
+  (base_rewards_per_epoch : Std.U64) (is_phase0 : Bool) :
+  Result (core.result.Result (alloc.vec.Vec Std.U64)
+    state.base_rewards.BaseRewardsError)
+  := do
+  let total_active_balance1 ←
+    state.total_active_balance.floor_total_active_balance total_active_balance
+      effective_balance_increment
+  let sqrt_total_active_balance ←
+    state.base_rewards.integer_sqrt total_active_balance1
+  let r ←
+    state.base_rewards.base_reward_per_increment total_active_balance1
+      effective_balance_increment base_reward_factor
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let r1 ←
+      U64.Insts.Safe_arithSafeArithU64.safe_div max_effective_balance
+        effective_balance_increment
+    let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+    match cf1 with
+    | core.ops.control_flow.ControlFlow.Continue val1 =>
+      let r2 ← U64.Insts.Safe_arithSafeArithU64.safe_add val1 1#u64
+      let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
+      match cf2 with
+      | core.ops.control_flow.ControlFlow.Continue val2 =>
+        let i ← lift (UScalar.cast .Usize val2)
+        let base_rewards := alloc.vec.Vec.with_capacity Std.U64 i
+        let (base_rewards1, error) ←
+          state.base_rewards.base_rewards_loop effective_balance_increment
+            base_reward_factor base_rewards_per_epoch is_phase0
+            sqrt_total_active_balance val val1 base_rewards none 0#u64
+        match error with
+        | none => ok (core.result.Result.Ok base_rewards1)
+        | some e => ok (core.result.Result.Err e)
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          (alloc.vec.Vec Std.U64)
+          state.base_rewards.BaseRewardsError.Insts.CoreConvertFromArithError
+          residual
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        (alloc.vec.Vec Std.U64)
+        state.base_rewards.BaseRewardsError.Insts.CoreConvertFromArithError
+        residual
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      (alloc.vec.Vec Std.U64)
+      state.base_rewards.BaseRewardsError.Insts.CoreConvertFromArithError
+      residual
+
+/-- [types::state::base_rewards::get_effective_balance]:
+    Source: 'consensus/types/src/state/base_rewards.rs', lines 155:0-163:1
+    Visibility: public -/
+def state.base_rewards.get_effective_balance
+  (effective_balances : Slice Std.U64) (validator_index : Std.Usize) :
+  Result (core.result.Result Std.U64 state.base_rewards.ReadError)
+  := do
+  let o ←
+    core.slice.Slice.get (core.slice.index.SliceIndexUsizeSlice Std.U64)
+      effective_balances validator_index
+  match o with
+  | none =>
+    ok (core.result.Result.Err
+      state.base_rewards.ReadError.ValidatorIndexOutOfBounds)
+  | some effective_balance => ok (core.result.Result.Ok effective_balance)
+
+/-- [types::state::base_rewards::get_base_reward]:
+    Source: 'consensus/types/src/state/base_rewards.rs', lines 166:0-183:1
+    Visibility: public -/
+def state.base_rewards.get_base_reward
+  (effective_balances : Slice Std.U64) (base_rewards : Slice Std.U64)
+  (effective_balance_increment : Std.U64) (validator_index : Std.Usize) :
+  Result (core.result.Result Std.U64 state.base_rewards.ReadError)
+  := do
+  let r ←
+    state.base_rewards.get_effective_balance effective_balances validator_index
+  let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let r1 ←
+      U64.Insts.Safe_arithSafeArithU64.safe_div val effective_balance_increment
+    match r1 with
+    | core.result.Result.Ok effective_balance_eth =>
+      let effective_balance_eth1 ←
+        lift (UScalar.cast .Usize effective_balance_eth)
+      let o ←
+        core.slice.Slice.get (core.slice.index.SliceIndexUsizeSlice Std.U64)
+          base_rewards effective_balance_eth1
+      match o with
+      | none =>
+        ok (core.result.Result.Err
+          (state.base_rewards.ReadError.EffectiveBalanceOutOfBounds
+          effective_balance_eth1))
+      | some base_reward => ok (core.result.Result.Ok base_reward)
+    | core.result.Result.Err e =>
+      ok (core.result.Result.Err (state.base_rewards.ReadError.Arith e))
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+      Std.U64 (core.convert.FromSame state.base_rewards.ReadError) residual
+
 /-- [types::state::exit_queue::record_exit]:
     Source: 'consensus/types/src/state/exit_queue.rs', lines 9:0-21:1
     Visibility: public -/
@@ -76,6 +476,87 @@ def state.exit_queue.churn_at
   else if exit_epoch > max_exit_epoch
        then ok (some 0#u64)
        else ok none
+
+/-- [types::state::total_active_balance::update_effective_balance]:
+    Source: 'consensus/types/src/state/total_active_balance.rs', lines 21:0-44:1
+    Visibility: public -/
+def state.total_active_balance.update_effective_balance
+  (effective_balances : alloc.vec.Vec Std.U64) (total_active_balance : Std.U64)
+  (validator_index : Std.Usize) (effective_balance : Std.U64)
+  (is_active_next_epoch : Bool) :
+  Result ((core.result.Result Bool safe_arith.ArithError) × (alloc.vec.Vec
+    Std.U64) × Std.U64)
+  := do
+  let i := alloc.vec.Vec.len effective_balances
+  if validator_index = i
+  then
+    let effective_balances1 ←
+      alloc.vec.Vec.push effective_balances effective_balance
+    if is_active_next_epoch
+    then
+      let r ←
+        U64.Insts.Safe_arithSafeArithU64.safe_add total_active_balance
+          effective_balance
+      let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+      match cf with
+      | core.ops.control_flow.ControlFlow.Continue val =>
+        ok (core.result.Result.Ok true, effective_balances1, val)
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        let r1 ←
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            Bool (core.convert.FromSame safe_arith.ArithError) residual
+        ok (r1, effective_balances1, total_active_balance)
+    else
+      ok (core.result.Result.Ok true, effective_balances1,
+        total_active_balance)
+  else
+    let (s, deref_mut_back) ←
+      lift (alloc.vec.Vec.deref_mut effective_balances)
+    let (o, get_mut_back) ←
+      core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice Std.U64)
+        s validator_index
+    match o with
+    | none =>
+      let s1 := get_mut_back none
+      let effective_balances1 := deref_mut_back s1
+      ok (core.result.Result.Ok false, effective_balances1,
+        total_active_balance)
+    | some existing_balance =>
+      if is_active_next_epoch
+      then
+        let r ←
+          U64.Insts.Safe_arithSafeArithU64.safe_add total_active_balance
+            effective_balance
+        let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+        match cf with
+        | core.ops.control_flow.ControlFlow.Continue val =>
+          let r1 ←
+            U64.Insts.Safe_arithSafeArithU64.safe_sub val existing_balance
+          let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+          match cf1 with
+          | core.ops.control_flow.ControlFlow.Continue val1 =>
+            let s1 := get_mut_back (some effective_balance)
+            let effective_balances1 := deref_mut_back s1
+            ok (core.result.Result.Ok true, effective_balances1, val1)
+          | core.ops.control_flow.ControlFlow.Break residual =>
+            let r2 ←
+              core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                Bool (core.convert.FromSame safe_arith.ArithError) residual
+            let s1 := get_mut_back o
+            let effective_balances1 := deref_mut_back s1
+            ok (r2, effective_balances1, val)
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          let r1 ←
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+              Bool (core.convert.FromSame safe_arith.ArithError) residual
+          let s1 := get_mut_back o
+          let effective_balances1 := deref_mut_back s1
+          ok (r1, effective_balances1, total_active_balance)
+      else
+        let s1 := get_mut_back (some effective_balance)
+        let effective_balances1 := deref_mut_back s1
+        ok (core.result.Result.Ok true, effective_balances1,
+          total_active_balance)
 
 /-- [types::validator::activation_eligibility::could_be_eligible_for_activation_at]:
     Source: 'consensus/types/src/validator/activation_eligibility.rs', lines 7:0-14:1

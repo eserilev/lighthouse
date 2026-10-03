@@ -10,6 +10,8 @@ on:
     paths:
       - 'consensus/types/src/state/exit_queue.rs'
       - 'consensus/types/src/validator/activation_eligibility.rs'
+      - 'consensus/types/src/state/total_active_balance.rs'
+      - 'consensus/types/src/state/base_rewards.rs'
       - 'consensus/types/proofs/**'
       - '.github/workflows/lean-proofs.yml'
       - '.github/workflows/beacon-state-cache-proofs.yml'
@@ -17,6 +19,8 @@ on:
     paths:
       - 'consensus/types/src/state/exit_queue.rs'
       - 'consensus/types/src/validator/activation_eligibility.rs'
+      - 'consensus/types/src/state/total_active_balance.rs'
+      - 'consensus/types/src/state/base_rewards.rs'
       - 'consensus/types/proofs/**'
       - '.github/workflows/lean-proofs.yml'
       - '.github/workflows/beacon-state-cache-proofs.yml'

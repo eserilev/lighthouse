@@ -1,5 +1,5 @@
-use integer_sqrt::IntegerSquareRoot;
-use safe_arith::{ArithError, SafeArith};
+use safe_arith::ArithError;
+use types::state::base_rewards;
 use types::*;
 
 /// This type exists to avoid confusing `total_active_balance` with `sqrt_total_active_balance`,
@@ -9,7 +9,7 @@ pub struct SqrtTotalActiveBalance(u64);
 
 impl SqrtTotalActiveBalance {
     pub fn new(total_active_balance: u64) -> Self {
-        Self(total_active_balance.integer_sqrt())
+        Self(base_rewards::integer_sqrt(total_active_balance))
     }
 
     pub fn as_u64(&self) -> u64 {
@@ -23,8 +23,10 @@ pub fn get_base_reward(
     sqrt_total_active_balance: SqrtTotalActiveBalance,
     spec: &ChainSpec,
 ) -> Result<u64, ArithError> {
-    validator_effective_balance
-        .safe_mul(spec.base_reward_factor)?
-        .safe_div(sqrt_total_active_balance.as_u64())?
-        .safe_div(spec.base_rewards_per_epoch)
+    base_rewards::phase0_base_reward(
+        validator_effective_balance,
+        sqrt_total_active_balance.as_u64(),
+        spec.base_reward_factor,
+        spec.base_rewards_per_epoch,
+    )
 }

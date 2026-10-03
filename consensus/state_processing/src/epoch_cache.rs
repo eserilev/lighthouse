@@ -1,10 +1,8 @@
-use crate::common::altair::BaseRewardPerIncrement;
-use crate::common::base::SqrtTotalActiveBalance;
-use crate::common::{altair, base};
 use crate::metrics;
 use fixed_bytes::FixedBytesExtended;
-use safe_arith::SafeArith;
 use tracing::instrument;
+use types::state::base_rewards::{self, BaseRewardsError};
+use types::state::total_active_balance;
 use types::state::{EpochCache, EpochCacheError, EpochCacheKey};
 use types::{ActivationQueue, BeaconState, ChainSpec, EthSpec, ForkName, Hash256};
 
@@ -50,24 +48,13 @@ impl PreEpochCache {
         effective_balance: u64,
         is_active_next_epoch: bool,
     ) -> Result<(), EpochCacheError> {
-        if validator_index == self.effective_balances.len() {
-            self.effective_balances.push(effective_balance);
-            if is_active_next_epoch {
-                self.total_active_balance
-                    .safe_add_assign(effective_balance)?;
-            }
-
-            Ok(())
-        } else if let Some(existing_balance) = self.effective_balances.get_mut(validator_index) {
-            // Update total active balance for a late change in effective balance. This happens when
-            // processing consolidations.
-            if is_active_next_epoch {
-                self.total_active_balance
-                    .safe_add_assign(effective_balance)?;
-                self.total_active_balance
-                    .safe_sub_assign(*existing_balance)?;
-            }
-            *existing_balance = effective_balance;
+        if total_active_balance::update_effective_balance(
+            &mut self.effective_balances,
+            &mut self.total_active_balance,
+            validator_index,
+            effective_balance,
+            is_active_next_epoch,
+        )? {
             Ok(())
         } else {
             Err(EpochCacheError::ValidatorIndexOutOfBounds { validator_index })
@@ -85,33 +72,19 @@ impl PreEpochCache {
         activation_queue: ActivationQueue,
         spec: &ChainSpec,
     ) -> Result<EpochCache, EpochCacheError> {
-        let epoch = self.epoch_key.epoch;
-        // Apply the spec-mandated floor from `get_total_balance`:
-        //   max(EFFECTIVE_BALANCE_INCREMENT, sum(...))
-        // This prevents division by zero in base reward calculation when all
-        // validators have zero effective balance.
-        let total_active_balance =
-            std::cmp::max(self.total_active_balance, spec.effective_balance_increment);
-        let sqrt_total_active_balance = SqrtTotalActiveBalance::new(total_active_balance);
-        let base_reward_per_increment = BaseRewardPerIncrement::new(total_active_balance, spec)?;
-
-        let effective_balance_increment = spec.effective_balance_increment;
-        let max_effective_balance =
-            spec.max_effective_balance_for_fork(spec.fork_name_at_epoch(epoch));
-        let max_effective_balance_eth =
-            max_effective_balance.safe_div(effective_balance_increment)?;
-
-        let mut base_rewards = Vec::with_capacity(max_effective_balance_eth.safe_add(1)? as usize);
-
-        for effective_balance_eth in 0..=max_effective_balance_eth {
-            let effective_balance = effective_balance_eth.safe_mul(effective_balance_increment)?;
-            let base_reward = if spec.fork_name_at_epoch(epoch) == ForkName::Base {
-                base::get_base_reward(effective_balance, sqrt_total_active_balance, spec)?
-            } else {
-                altair::get_base_reward(effective_balance, base_reward_per_increment, spec)?
-            };
-            base_rewards.push(base_reward);
-        }
+        let fork_name = spec.fork_name_at_epoch(self.epoch_key.epoch);
+        let base_rewards = base_rewards::base_rewards(
+            self.total_active_balance,
+            spec.effective_balance_increment,
+            spec.max_effective_balance_for_fork(fork_name),
+            spec.base_reward_factor,
+            spec.base_rewards_per_epoch,
+            fork_name == ForkName::Base,
+        )
+        .map_err(|e| match e {
+            BaseRewardsError::Arith(e) => EpochCacheError::Arith(e),
+            BaseRewardsError::AltairBaseReward(e) => EpochCacheError::BeaconState(e.into()),
+        })?;
 
         Ok(EpochCache::new(
             self.epoch_key,
