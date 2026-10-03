@@ -3,6 +3,7 @@ import EpochProofs.Equiv.EffectiveBalanceUpdates
 import EpochProofs.Equiv.InactivityUpdates
 import EpochProofs.Equiv.Slashings
 import EpochProofs.Equiv.RewardsAndPenalties
+import EpochProofs.Equiv.RegistryUpdates
 open EpochProofs.Spec
 #print axioms EpochProofs.Spec.withdrawals_loop
 #print axioms EpochProofs.Spec.process_builder_pending_payments_eq
@@ -37,3 +38,12 @@ open EpochProofs.Spec
 #print axioms EpochProofs.inactivity_penalty_equiv
 #print axioms EpochProofs.new_balance_after_rewards_equiv
 #print axioms EpochProofs.new_balance_after_rewards_eq_spec
+#print axioms EpochProofs.Spec.registryStepIndependent_eq_exclusive
+#print axioms EpochProofs.compute_activation_exit_epoch_equiv
+#print axioms EpochProofs.exit_churn_limit_equiv
+#print axioms EpochProofs.compute_exit_epoch_and_update_churn_equiv
+#print axioms EpochProofs.eligibility_step_equiv
+#print axioms EpochProofs.ejection_step_equiv
+#print axioms EpochProofs.activation_step_equiv
+#print axioms EpochProofs.registry_update_equiv
+#print axioms EpochProofs.registry_update_eq_spec

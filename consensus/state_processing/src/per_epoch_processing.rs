@@ -23,6 +23,7 @@ pub mod errors;
 pub mod historical_roots_update;
 pub mod inactivity_updates;
 pub mod justification_and_finalization_state;
+pub mod registry_update;
 pub mod registry_updates;
 pub mod resets;
 pub mod rewards_penalties;
