@@ -5,6 +5,7 @@ mod beacon_state;
 mod committee_cache;
 mod epoch_cache;
 mod exit_cache;
+mod exit_queue;
 mod historical_batch;
 mod historical_summary;
 mod iter;
