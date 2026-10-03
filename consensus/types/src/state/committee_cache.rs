@@ -5,7 +5,7 @@ use safe_arith::{ArithError, SafeArith};
 use serde::{Deserialize, Serialize};
 use ssz::{Decode, DecodeError, Encode, four_byte_option_impl};
 use ssz_derive::{Decode, Encode};
-use swap_or_not_shuffle::shuffle_list;
+use swap_or_not_shuffle::Sha256Hash;
 
 use crate::{
     attestation::{AttestationDuty, BeaconCommittee, CommitteeIndex},
@@ -144,11 +144,10 @@ impl CommitteeCache {
 
         let seed = state.get_seed(epoch, Domain::BeaconAttester, spec)?;
 
-        let shuffling = shuffle_list(
+        let shuffling = committee_assignment::shuffling::<Sha256Hash>(
             active_validator_indices,
             spec.shuffle_round_count,
             &seed[..],
-            false,
         )
         .ok_or(BeaconStateError::UnableToShuffle)?;
 

@@ -18,6 +18,6 @@ mod compute_shuffled_index;
 mod shuffle_list;
 
 pub use compute_shuffled_index::compute_shuffled_index;
-pub use shuffle_list::shuffle_list;
+pub use shuffle_list::{Sha256Hash, ShuffleHash, shuffle_list, shuffle_list_with};
 
 type Hash256 = fixed_bytes::Hash256;

@@ -115,3 +115,17 @@ pub fn attestation_duty(
     };
     Ok(Some((nth, position.safe_sub(start)?, end.safe_sub(start)?)))
 }
+
+/// Returns the committee shuffling of `active_validator_indices` with `H` as the hash function.
+pub fn shuffling<H: swap_or_not_shuffle::ShuffleHash>(
+    active_validator_indices: Vec<usize>,
+    shuffle_round_count: u8,
+    seed: &[u8],
+) -> Option<Vec<usize>> {
+    swap_or_not_shuffle::shuffle_list_with::<H>(
+        active_validator_indices,
+        shuffle_round_count,
+        seed,
+        false,
+    )
+}

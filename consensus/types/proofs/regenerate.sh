@@ -25,6 +25,7 @@ trap 'rm -rf "$out"' EXIT
   --start-from types::state::participation_totals \
   --start-from types::state::committee_assignment \
   --include safe_arith \
+  --include swap_or_not_shuffle \
   --dest-file "$out/pure.llbc" -- --lib)
 
 # Aeneas names the output after the llbc file.
