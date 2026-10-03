@@ -5,7 +5,7 @@ use crate::{
     },
     epoch_cache::{PreEpochCache, initialize_epoch_cache},
     per_block_processing::is_valid_deposit_signature,
-    per_epoch_processing::{Delta, Error, ParticipationEpochSummary},
+    per_epoch_processing::{Delta, Error, ParticipationEpochSummary, builder_pending_payments},
 };
 use itertools::izip;
 use milhouse::{Cow, List, Vector};
@@ -16,9 +16,9 @@ use std::sync::Arc;
 use tracing::instrument;
 use typenum::Unsigned;
 use types::{
-    ActivationQueue, BeaconState, BeaconStateError, BuilderPendingPayment, ChainSpec, Checkpoint,
-    CommitteeCache, DepositData, Epoch, EthSpec, ExitCache, ForkName, ParticipationFlags,
-    PendingDeposit, ProgressiveBalancesCache, RelativeEpoch, Validator,
+    ActivationQueue, BeaconState, BeaconStateError, ChainSpec, Checkpoint, CommitteeCache,
+    DepositData, Epoch, EthSpec, ExitCache, ForkName, ParticipationFlags, PendingDeposit,
+    ProgressiveBalancesCache, RelativeEpoch, Validator,
     consts::altair::{
         NUM_FLAG_INDICES, PARTICIPATION_FLAG_WEIGHTS, TIMELY_HEAD_FLAG_INDEX,
         TIMELY_TARGET_FLAG_INDEX, WEIGHT_DENOMINATOR,
@@ -579,53 +579,36 @@ pub fn process_ptc_window<E: EthSpec>(
     Ok(committee_cache)
 }
 
-/// Calculate the quorum threshold for builder payments based on total active balance.
-fn get_builder_payment_quorum_threshold<E: EthSpec>(
-    state_ctxt: &StateContext,
-    spec: &ChainSpec,
-) -> Result<u64, Error> {
-    let per_slot_balance = state_ctxt
-        .total_active_balance
-        .safe_div(E::slots_per_epoch())?;
-    let quorum = per_slot_balance.safe_mul(spec.builder_payment_threshold_numerator)?;
-    quorum
-        .safe_div(spec.builder_payment_threshold_denominator)
-        .map_err(Error::from)
-}
-
 /// Processes the builder pending payments from the previous epoch.
 fn process_builder_pending_payments<E: EthSpec>(
     state: &mut BeaconState<E>,
     state_ctxt: &StateContext,
     spec: &ChainSpec,
 ) -> Result<(), Error> {
-    let quorum = get_builder_payment_quorum_threshold::<E>(state_ctxt, spec)?;
+    let quorum = builder_pending_payments::get_builder_payment_quorum_threshold(
+        state_ctxt.total_active_balance,
+        E::slots_per_epoch(),
+        spec.builder_payment_threshold_numerator,
+        spec.builder_payment_threshold_denominator,
+    )?;
 
-    // Collect qualifying payments and append to `builder_pending_withdrawals`.
-    // We use this pattern rather than a loop to avoid multiple borrows of the state's fields.
-    let new_pending_builder_withdrawals = state
+    let payments = state
         .builder_pending_payments()?
         .iter()
-        .take(E::SlotsPerEpoch::to_usize())
-        .filter(|payment| payment.weight >= quorum)
-        .map(|payment| payment.withdrawal.clone())
+        .cloned()
         .collect::<Vec<_>>();
+    let (new_pending_builder_withdrawals, updated_payments) =
+        builder_pending_payments::process_builder_pending_payments(
+            &payments,
+            E::SlotsPerEpoch::to_usize(),
+            quorum,
+        );
+
     for payment_withdrawal in new_pending_builder_withdrawals {
         state
             .builder_pending_withdrawals_mut()?
             .push(payment_withdrawal)?;
     }
-
-    // NOTE: this could be a little more memory-efficient with some juggling to reuse parts
-    // of the persistent tree (could convert to list, use pop_front, convert back).
-    let updated_payments = state
-        .builder_pending_payments()?
-        .iter()
-        .skip(E::SlotsPerEpoch::to_usize())
-        .cloned()
-        .chain((0..E::SlotsPerEpoch::to_usize()).map(|_| BuilderPendingPayment::default()))
-        .collect::<Vec<_>>();
-
     *state.builder_pending_payments_mut()? = Vector::new(updated_payments)?;
 
     Ok(())
