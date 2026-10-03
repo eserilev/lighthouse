@@ -2,7 +2,7 @@ import EpochProofs.Equiv.InactivityUpdates
 import EpochProofs.Sanity.Slashings
 
 /-!
-# Lighthouse slashings kernel equals the reference
+# Lighthouse slashings penalty equals the reference
 
 `slashings_context_equiv` relates `slashings_context` to `slashingsPreamble` and the target
 epoch. `new_balance_after_slashing_equiv` relates `new_balance_after_slashing` to
