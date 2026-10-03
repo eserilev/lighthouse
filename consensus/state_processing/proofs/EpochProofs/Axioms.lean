@@ -2,6 +2,7 @@ import EpochProofs.Equiv.BuilderPendingPayments
 import EpochProofs.Equiv.EffectiveBalanceUpdates
 import EpochProofs.Equiv.InactivityUpdates
 import EpochProofs.Equiv.Slashings
+import EpochProofs.Equiv.RewardsAndPenalties
 open EpochProofs.Spec
 #print axioms EpochProofs.Spec.withdrawals_loop
 #print axioms EpochProofs.Spec.process_builder_pending_payments_eq
@@ -29,3 +30,10 @@ open EpochProofs.Spec
 #print axioms EpochProofs.Spec.slashingBalanceStep_le
 #print axioms EpochProofs.slashings_context_equiv
 #print axioms EpochProofs.new_balance_after_slashing_equiv
+#print axioms EpochProofs.Spec.rewardsSequential_eq_combined
+#print axioms EpochProofs.Spec.rewards_saturation_example
+#print axioms EpochProofs.Spec.rewardsCombined_eq_sequential
+#print axioms EpochProofs.flag_delta_equiv
+#print axioms EpochProofs.inactivity_penalty_equiv
+#print axioms EpochProofs.new_balance_after_rewards_equiv
+#print axioms EpochProofs.new_balance_after_rewards_eq_spec

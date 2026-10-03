@@ -4,12 +4,15 @@ import EpochProofs.Spec.BuilderPendingPayments
 import EpochProofs.Spec.EffectiveBalanceUpdates
 import EpochProofs.Spec.InactivityUpdates
 import EpochProofs.Spec.Slashings
+import EpochProofs.Spec.RewardsAndPenalties
 import EpochProofs.Sanity.BuilderPendingPayments
 import EpochProofs.Sanity.EffectiveBalanceUpdates
 import EpochProofs.Sanity.InactivityUpdates
 import EpochProofs.Sanity.Slashings
+import EpochProofs.Sanity.RewardsAndPenalties
 import EpochProofs.Equiv.BuilderPendingPayments
 import EpochProofs.Equiv.EffectiveBalanceUpdates
 import EpochProofs.Equiv.InactivityUpdates
 import EpochProofs.Equiv.Slashings
+import EpochProofs.Equiv.RewardsAndPenalties
 import EpochProofs.Axioms

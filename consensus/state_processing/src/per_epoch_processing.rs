@@ -25,6 +25,7 @@ pub mod inactivity_updates;
 pub mod justification_and_finalization_state;
 pub mod registry_updates;
 pub mod resets;
+pub mod rewards_penalties;
 pub mod single_pass;
 pub mod slashings;
 pub mod slashings_penalty;

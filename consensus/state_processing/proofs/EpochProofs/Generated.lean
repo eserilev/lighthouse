@@ -244,6 +244,38 @@ def
       proposer_index := (core.default.DefaultU64.default)
     }
 
+/-- [types::core::consts::altair::TIMELY_SOURCE_WEIGHT]
+    Source: 'consensus/types/src/core/consts.rs', lines 5:4-5:39
+    Name pattern: [types::core::consts::altair::TIMELY_SOURCE_WEIGHT]
+    Visibility: public -/
+@[global_simps, irreducible, rust_const
+  "types::core::consts::altair::TIMELY_SOURCE_WEIGHT"]
+def types.core.consts.altair.TIMELY_SOURCE_WEIGHT : Std.U64 := 14#u64
+
+/-- [types::core::consts::altair::TIMELY_TARGET_WEIGHT]
+    Source: 'consensus/types/src/core/consts.rs', lines 6:4-6:39
+    Name pattern: [types::core::consts::altair::TIMELY_TARGET_WEIGHT]
+    Visibility: public -/
+@[global_simps, irreducible, rust_const
+  "types::core::consts::altair::TIMELY_TARGET_WEIGHT"]
+def types.core.consts.altair.TIMELY_TARGET_WEIGHT : Std.U64 := 26#u64
+
+/-- [types::core::consts::altair::TIMELY_HEAD_WEIGHT]
+    Source: 'consensus/types/src/core/consts.rs', lines 7:4-7:37
+    Name pattern: [types::core::consts::altair::TIMELY_HEAD_WEIGHT]
+    Visibility: public -/
+@[global_simps, irreducible, rust_const
+  "types::core::consts::altair::TIMELY_HEAD_WEIGHT"]
+def types.core.consts.altair.TIMELY_HEAD_WEIGHT : Std.U64 := 14#u64
+
+/-- [types::core::consts::altair::WEIGHT_DENOMINATOR]
+    Source: 'consensus/types/src/core/consts.rs', lines 10:4-10:37
+    Name pattern: [types::core::consts::altair::WEIGHT_DENOMINATOR]
+    Visibility: public -/
+@[global_simps, irreducible, rust_const
+  "types::core::consts::altair::WEIGHT_DENOMINATOR"]
+def types.core.consts.altair.WEIGHT_DENOMINATOR : Std.U64 := 64#u64
+
 /-- [state_processing::per_epoch_processing::builder_pending_payments::get_builder_payment_quorum_threshold]:
     Source: 'consensus/state_processing/src/per_epoch_processing/builder_pending_payments.rs', lines 9:0-18:1
     Visibility: public -/
@@ -629,6 +661,231 @@ def per_epoch_processing.inactivity_updates.new_inactivity_score
         core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
           Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
   else ok (core.result.Result.Ok inactivity_score)
+
+/-- [state_processing::per_epoch_processing::rewards_penalties::flag_delta]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/rewards_penalties.rs', lines 11:0-37:1
+    Visibility: public -/
+def per_epoch_processing.rewards_penalties.flag_delta
+  (base_reward : Std.U64) (weight : Std.U64) (is_participating : Bool)
+  (is_head_flag : Bool) (is_in_inactivity_leak : Bool)
+  (unslashed_participating_increments : Std.U64) (active_increments : Std.U64)
+  :
+  Result (core.result.Result (Std.U64 × Std.U64) safe_arith.ArithError)
+  := do
+  if is_participating
+  then
+    if is_in_inactivity_leak
+    then ok (core.result.Result.Ok (0#u64, 0#u64))
+    else
+      let r ← U64.Insts.Safe_arithSafeArithU64.safe_mul base_reward weight
+      let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+      match cf with
+      | core.ops.control_flow.ControlFlow.Continue val =>
+        let r1 ←
+          U64.Insts.Safe_arithSafeArithU64.safe_mul val
+            unslashed_participating_increments
+        let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+        match cf1 with
+        | core.ops.control_flow.ControlFlow.Continue val1 =>
+          let r2 ←
+            U64.Insts.Safe_arithSafeArithU64.safe_mul active_increments
+              types.core.consts.altair.WEIGHT_DENOMINATOR
+          let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
+          match cf2 with
+          | core.ops.control_flow.ControlFlow.Continue val2 =>
+            let r3 ← U64.Insts.Safe_arithSafeArithU64.safe_div val1 val2
+            let cf3 ← core.result.Result.Insts.CoreOpsTry.branch r3
+            match cf3 with
+            | core.ops.control_flow.ControlFlow.Continue val3 =>
+              ok (core.result.Result.Ok (val3, 0#u64))
+            | core.ops.control_flow.ControlFlow.Break residual =>
+              core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                (Std.U64 × Std.U64) (core.convert.FromSame
+                safe_arith.ArithError) residual
+          | core.ops.control_flow.ControlFlow.Break residual =>
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+              (Std.U64 × Std.U64) (core.convert.FromSame
+              safe_arith.ArithError) residual
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            (Std.U64 × Std.U64) (core.convert.FromSame safe_arith.ArithError)
+            residual
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          (Std.U64 × Std.U64) (core.convert.FromSame safe_arith.ArithError)
+          residual
+  else
+    if is_head_flag
+    then ok (core.result.Result.Ok (0#u64, 0#u64))
+    else
+      let r ← U64.Insts.Safe_arithSafeArithU64.safe_mul base_reward weight
+      let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+      match cf with
+      | core.ops.control_flow.ControlFlow.Continue val =>
+        let r1 ←
+          U64.Insts.Safe_arithSafeArithU64.safe_div val
+            types.core.consts.altair.WEIGHT_DENOMINATOR
+        let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+        match cf1 with
+        | core.ops.control_flow.ControlFlow.Continue val1 =>
+          ok (core.result.Result.Ok (0#u64, val1))
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            (Std.U64 × Std.U64) (core.convert.FromSame safe_arith.ArithError)
+            residual
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          (Std.U64 × Std.U64) (core.convert.FromSame safe_arith.ArithError)
+          residual
+
+/-- [state_processing::per_epoch_processing::rewards_penalties::inactivity_penalty]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/rewards_penalties.rs', lines 40:0-53:1
+    Visibility: public -/
+def per_epoch_processing.rewards_penalties.inactivity_penalty
+  (effective_balance : Std.U64) (inactivity_score : Std.U64)
+  (is_participating_target : Bool) (inactivity_score_bias : Std.U64)
+  (inactivity_penalty_quotient : Std.U64) :
+  Result (core.result.Result Std.U64 safe_arith.ArithError)
+  := do
+  if is_participating_target
+  then ok (core.result.Result.Ok 0#u64)
+  else
+    let r ←
+      U64.Insts.Safe_arithSafeArithU64.safe_mul effective_balance
+        inactivity_score
+    let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+    match cf with
+    | core.ops.control_flow.ControlFlow.Continue val =>
+      let r1 ←
+        U64.Insts.Safe_arithSafeArithU64.safe_mul inactivity_score_bias
+          inactivity_penalty_quotient
+      let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+      match cf1 with
+      | core.ops.control_flow.ControlFlow.Continue val1 =>
+        U64.Insts.Safe_arithSafeArithU64.safe_div val val1
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+
+/-- [state_processing::per_epoch_processing::rewards_penalties::new_balance_after_rewards]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/rewards_penalties.rs', lines 59:0-121:1
+    Visibility: public -/
+def per_epoch_processing.rewards_penalties.new_balance_after_rewards
+  (balance : Std.U64) (is_eligible : Bool) (base_reward : Std.U64)
+  (effective_balance : Std.U64) (inactivity_score : Std.U64)
+  (is_participating_source : Bool) (is_participating_target : Bool)
+  (is_participating_head : Bool) (is_in_inactivity_leak : Bool)
+  (source_increments : Std.U64) (target_increments : Std.U64)
+  (head_increments : Std.U64) (active_increments : Std.U64)
+  (inactivity_score_bias : Std.U64) (inactivity_penalty_quotient : Std.U64) :
+  Result (core.result.Result Std.U64 safe_arith.ArithError)
+  := do
+  if is_eligible
+  then
+    let r ←
+      per_epoch_processing.rewards_penalties.flag_delta base_reward
+        types.core.consts.altair.TIMELY_SOURCE_WEIGHT is_participating_source
+        false is_in_inactivity_leak source_increments active_increments
+    let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+    match cf with
+    | core.ops.control_flow.ControlFlow.Continue val =>
+      let (source_reward, source_penalty) := val
+      let r1 ←
+        per_epoch_processing.rewards_penalties.flag_delta base_reward
+          types.core.consts.altair.TIMELY_TARGET_WEIGHT is_participating_target
+          false is_in_inactivity_leak target_increments active_increments
+      let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+      match cf1 with
+      | core.ops.control_flow.ControlFlow.Continue val1 =>
+        let (target_reward, target_penalty) := val1
+        let r2 ←
+          per_epoch_processing.rewards_penalties.flag_delta base_reward
+            types.core.consts.altair.TIMELY_HEAD_WEIGHT is_participating_head
+            true is_in_inactivity_leak head_increments active_increments
+        let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
+        match cf2 with
+        | core.ops.control_flow.ControlFlow.Continue val2 =>
+          let (head_reward, head_penalty) := val2
+          let r3 ←
+            per_epoch_processing.rewards_penalties.inactivity_penalty
+              effective_balance inactivity_score is_participating_target
+              inactivity_score_bias inactivity_penalty_quotient
+          let cf3 ← core.result.Result.Insts.CoreOpsTry.branch r3
+          match cf3 with
+          | core.ops.control_flow.ControlFlow.Continue val3 =>
+            let r4 ←
+              U64.Insts.Safe_arithSafeArithU64.safe_add source_reward
+                target_reward
+            let cf4 ← core.result.Result.Insts.CoreOpsTry.branch r4
+            match cf4 with
+            | core.ops.control_flow.ControlFlow.Continue val4 =>
+              let r5 ←
+                U64.Insts.Safe_arithSafeArithU64.safe_add val4 head_reward
+              let cf5 ← core.result.Result.Insts.CoreOpsTry.branch r5
+              match cf5 with
+              | core.ops.control_flow.ControlFlow.Continue val5 =>
+                let r6 ←
+                  U64.Insts.Safe_arithSafeArithU64.safe_add source_penalty
+                    target_penalty
+                let cf6 ← core.result.Result.Insts.CoreOpsTry.branch r6
+                match cf6 with
+                | core.ops.control_flow.ControlFlow.Continue val6 =>
+                  let r7 ←
+                    U64.Insts.Safe_arithSafeArithU64.safe_add val6 head_penalty
+                  let cf7 ← core.result.Result.Insts.CoreOpsTry.branch r7
+                  match cf7 with
+                  | core.ops.control_flow.ControlFlow.Continue val7 =>
+                    let r8 ←
+                      U64.Insts.Safe_arithSafeArithU64.safe_add val7 val3
+                    let cf8 ← core.result.Result.Insts.CoreOpsTry.branch r8
+                    match cf8 with
+                    | core.ops.control_flow.ControlFlow.Continue val8 =>
+                      let r9 ←
+                        U64.Insts.Safe_arithSafeArithU64.safe_add balance val5
+                      let cf9 ← core.result.Result.Insts.CoreOpsTry.branch r9
+                      match cf9 with
+                      | core.ops.control_flow.ControlFlow.Continue val9 =>
+                        let i ← lift (core.num.U64.saturating_sub val9 val8)
+                        ok (core.result.Result.Ok i)
+                      | core.ops.control_flow.ControlFlow.Break residual =>
+                        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                          Std.U64 (core.convert.FromSame safe_arith.ArithError)
+                          residual
+                    | core.ops.control_flow.ControlFlow.Break residual =>
+                      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                        Std.U64 (core.convert.FromSame safe_arith.ArithError)
+                        residual
+                  | core.ops.control_flow.ControlFlow.Break residual =>
+                    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                      Std.U64 (core.convert.FromSame safe_arith.ArithError)
+                      residual
+                | core.ops.control_flow.ControlFlow.Break residual =>
+                  core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                    Std.U64 (core.convert.FromSame safe_arith.ArithError)
+                    residual
+              | core.ops.control_flow.ControlFlow.Break residual =>
+                core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                  Std.U64 (core.convert.FromSame safe_arith.ArithError)
+                  residual
+            | core.ops.control_flow.ControlFlow.Break residual =>
+              core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+          | core.ops.control_flow.ControlFlow.Break residual =>
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+              Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+  else ok (core.result.Result.Ok balance)
 
 /-- [state_processing::per_epoch_processing::slashings_penalty::slashings_context]:
     Source: 'consensus/state_processing/src/per_epoch_processing/slashings_penalty.rs', lines 10:0-31:1

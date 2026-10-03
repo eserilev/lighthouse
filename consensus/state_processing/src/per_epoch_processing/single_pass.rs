@@ -6,8 +6,8 @@ use crate::{
     epoch_cache::{PreEpochCache, initialize_epoch_cache},
     per_block_processing::is_valid_deposit_signature,
     per_epoch_processing::{
-        Delta, Error, ParticipationEpochSummary, builder_pending_payments, effective_balance,
-        inactivity_updates, slashings_penalty,
+        Error, ParticipationEpochSummary, builder_pending_payments, effective_balance,
+        inactivity_updates, rewards_penalties, slashings_penalty,
     },
 };
 use itertools::izip;
@@ -23,8 +23,8 @@ use types::{
     DepositData, Epoch, EthSpec, ExitCache, ForkName, ParticipationFlags, PendingDeposit,
     ProgressiveBalancesCache, RelativeEpoch, Validator,
     consts::altair::{
-        NUM_FLAG_INDICES, PARTICIPATION_FLAG_WEIGHTS, TIMELY_HEAD_FLAG_INDEX,
-        TIMELY_TARGET_FLAG_INDEX, WEIGHT_DENOMINATOR,
+        NUM_FLAG_INDICES, TIMELY_HEAD_FLAG_INDEX, TIMELY_SOURCE_FLAG_INDEX,
+        TIMELY_TARGET_FLAG_INDEX,
     },
 };
 
@@ -648,95 +648,30 @@ fn process_single_reward_and_penalty(
     state_ctxt: &StateContext,
     spec: &ChainSpec,
 ) -> Result<(), Error> {
-    if !validator_info.is_eligible {
-        return Ok(());
-    }
-
-    let mut delta = Delta::default();
-    for flag_index in 0..NUM_FLAG_INDICES {
-        get_flag_index_delta(
-            &mut delta,
-            validator_info,
-            flag_index,
-            rewards_ctxt,
-            state_ctxt,
-        )?;
-    }
-    get_inactivity_penalty_delta(
-        &mut delta,
-        validator_info,
-        inactivity_score,
-        state_ctxt,
-        spec,
+    let new_balance = rewards_penalties::new_balance_after_rewards(
+        **balance,
+        validator_info.is_eligible,
+        validator_info.base_reward,
+        validator_info.effective_balance,
+        *inactivity_score,
+        validator_info.is_unslashed_participating_index(TIMELY_SOURCE_FLAG_INDEX)?,
+        validator_info.is_unslashed_participating_index(TIMELY_TARGET_FLAG_INDEX)?,
+        validator_info.is_unslashed_participating_index(TIMELY_HEAD_FLAG_INDEX)?,
+        state_ctxt.is_in_inactivity_leak,
+        rewards_ctxt.get_unslashed_participating_increments(TIMELY_SOURCE_FLAG_INDEX)?,
+        rewards_ctxt.get_unslashed_participating_increments(TIMELY_TARGET_FLAG_INDEX)?,
+        rewards_ctxt.get_unslashed_participating_increments(TIMELY_HEAD_FLAG_INDEX)?,
+        rewards_ctxt.active_increments,
+        spec.inactivity_score_bias,
+        spec.inactivity_penalty_quotient_for_fork(state_ctxt.fork_name),
     )?;
-
-    if delta.rewards != 0 || delta.penalties != 0 {
-        let balance = balance.make_mut()?;
-        balance.safe_add_assign(delta.rewards)?;
-        *balance = balance.saturating_sub(delta.penalties);
-    }
-
-    Ok(())
-}
-
-fn get_flag_index_delta(
-    delta: &mut Delta,
-    validator_info: &ValidatorInfo,
-    flag_index: usize,
-    rewards_ctxt: &RewardsAndPenaltiesContext,
-    state_ctxt: &StateContext,
-) -> Result<(), Error> {
-    let base_reward = validator_info.base_reward;
-    let weight = get_flag_weight(flag_index)?;
-    let unslashed_participating_increments =
-        rewards_ctxt.get_unslashed_participating_increments(flag_index)?;
-
-    if validator_info.is_unslashed_participating_index(flag_index)? {
-        if !state_ctxt.is_in_inactivity_leak {
-            let reward_numerator = base_reward
-                .safe_mul(weight)?
-                .safe_mul(unslashed_participating_increments)?;
-            delta.reward(
-                reward_numerator.safe_div(
-                    rewards_ctxt
-                        .active_increments
-                        .safe_mul(WEIGHT_DENOMINATOR)?,
-                )?,
-            )?;
-        }
-    } else if flag_index != TIMELY_HEAD_FLAG_INDEX {
-        delta.penalize(base_reward.safe_mul(weight)?.safe_div(WEIGHT_DENOMINATOR)?)?;
+    if new_balance != **balance {
+        *balance.make_mut()? = new_balance;
     }
     Ok(())
 }
 
 /// Get the weight for a `flag_index` from the constant list of all weights.
-fn get_flag_weight(flag_index: usize) -> Result<u64, Error> {
-    PARTICIPATION_FLAG_WEIGHTS
-        .get(flag_index)
-        .copied()
-        .ok_or(Error::InvalidFlagIndex(flag_index))
-}
-
-fn get_inactivity_penalty_delta(
-    delta: &mut Delta,
-    validator_info: &ValidatorInfo,
-    inactivity_score: &u64,
-    state_ctxt: &StateContext,
-    spec: &ChainSpec,
-) -> Result<(), Error> {
-    if !validator_info.is_unslashed_participating_index(TIMELY_TARGET_FLAG_INDEX)? {
-        let penalty_numerator = validator_info
-            .effective_balance
-            .safe_mul(*inactivity_score)?;
-        let penalty_denominator = spec
-            .inactivity_score_bias
-            .safe_mul(spec.inactivity_penalty_quotient_for_fork(state_ctxt.fork_name))?;
-        delta.penalize(penalty_numerator.safe_div(penalty_denominator)?)?;
-    }
-    Ok(())
-}
-
 impl RewardsAndPenaltiesContext {
     fn new(
         progressive_balances: &ProgressiveBalancesCache,
