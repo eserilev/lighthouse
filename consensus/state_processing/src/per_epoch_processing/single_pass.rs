@@ -7,6 +7,7 @@ use crate::{
     per_block_processing::is_valid_deposit_signature,
     per_epoch_processing::{
         Delta, Error, ParticipationEpochSummary, builder_pending_payments, effective_balance,
+        inactivity_updates,
     },
 };
 use itertools::izip;
@@ -622,28 +623,18 @@ fn process_single_inactivity_update(
     state_ctxt: &StateContext,
     spec: &ChainSpec,
 ) -> Result<(), Error> {
-    if !validator_info.is_eligible {
-        return Ok(());
-    }
+    let new_inactivity_score = inactivity_updates::new_inactivity_score(
+        **inactivity_score,
+        validator_info.is_eligible,
+        validator_info.is_unslashed_participating_index(TIMELY_TARGET_FLAG_INDEX)?,
+        state_ctxt.is_in_inactivity_leak,
+        spec.inactivity_score_bias,
+        spec.inactivity_score_recovery_rate,
+    )?;
 
-    // Increase inactivity score of inactive validators
-    if validator_info.is_unslashed_participating_index(TIMELY_TARGET_FLAG_INDEX)? {
-        // Avoid mutating when the inactivity score is 0 and can't go any lower -- the common
-        // case.
-        if **inactivity_score == 0 {
-            return Ok(());
-        }
-        inactivity_score.make_mut()?.safe_sub_assign(1)?;
-    } else {
-        inactivity_score
-            .make_mut()?
-            .safe_add_assign(spec.inactivity_score_bias)?;
-    }
-
-    // Decrease the score of all validators for forgiveness when not during a leak
-    if !state_ctxt.is_in_inactivity_leak {
-        let deduction = min(spec.inactivity_score_recovery_rate, **inactivity_score);
-        inactivity_score.make_mut()?.safe_sub_assign(deduction)?;
+    // Only mutate when the score changes. It does not change in the common case.
+    if new_inactivity_score != **inactivity_score {
+        *inactivity_score.make_mut()? = new_inactivity_score;
     }
 
     Ok(())

@@ -567,4 +567,67 @@ def per_epoch_processing.effective_balance.new_effective_balance
     core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
       Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
 
+/-- [state_processing::per_epoch_processing::inactivity_updates::new_inactivity_score]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/inactivity_updates.rs', lines 9:0-37:1
+    Visibility: public -/
+def per_epoch_processing.inactivity_updates.new_inactivity_score
+  (inactivity_score : Std.U64) (is_eligible : Bool)
+  (is_unslashed_participating_target : Bool) (is_in_inactivity_leak : Bool)
+  (inactivity_score_bias : Std.U64) (inactivity_score_recovery_rate : Std.U64)
+  :
+  Result (core.result.Result Std.U64 safe_arith.ArithError)
+  := do
+  if is_eligible
+  then
+    if is_unslashed_participating_target
+    then
+      if inactivity_score = 0#u64
+      then ok (core.result.Result.Ok 0#u64)
+      else
+        let r ←
+          U64.Insts.Safe_arithSafeArithU64.safe_sub inactivity_score 1#u64
+        let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+        match cf with
+        | core.ops.control_flow.ControlFlow.Continue val =>
+          if is_in_inactivity_leak
+          then ok (core.result.Result.Ok val)
+          else
+            let deduction ←
+              core.cmp.min core.cmp.OrdU64 inactivity_score_recovery_rate val
+            let r1 ← U64.Insts.Safe_arithSafeArithU64.safe_sub val deduction
+            let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+            match cf1 with
+            | core.ops.control_flow.ControlFlow.Continue val1 =>
+              ok (core.result.Result.Ok val1)
+            | core.ops.control_flow.ControlFlow.Break residual =>
+              core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+    else
+      let r ←
+        U64.Insts.Safe_arithSafeArithU64.safe_add inactivity_score
+          inactivity_score_bias
+      let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+      match cf with
+      | core.ops.control_flow.ControlFlow.Continue val =>
+        if is_in_inactivity_leak
+        then ok (core.result.Result.Ok val)
+        else
+          let deduction ←
+            core.cmp.min core.cmp.OrdU64 inactivity_score_recovery_rate val
+          let r1 ← U64.Insts.Safe_arithSafeArithU64.safe_sub val deduction
+          let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
+          match cf1 with
+          | core.ops.control_flow.ControlFlow.Continue val1 =>
+            ok (core.result.Result.Ok val1)
+          | core.ops.control_flow.ControlFlow.Break residual =>
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+              Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          Std.U64 (core.convert.FromSame safe_arith.ArithError) residual
+  else ok (core.result.Result.Ok inactivity_score)
+
 end state_processing

@@ -3,7 +3,7 @@
 Goal: prove that Lighthouse's Gloas epoch processing equals the consensus spec for every state.
 
 ```
-../src/per_epoch_processing/{builder_pending_payments,effective_balance}.rs
+../src/per_epoch_processing/{builder_pending_payments,effective_balance,inactivity_updates}.rs
    --charon--> .llbc --aeneas--> EpochProofs/Generated.lean
                                           |
                      EpochProofs/Equiv/*.lean (equivalence proof)
@@ -17,6 +17,7 @@ EpochProofs/Spec/*.lean  <-- written by hand from the consensus specs
 |---|---|---|---|
 | `process_builder_pending_payments` | Done | Done | Done |
 | `process_effective_balance_updates` (per validator) | Done | Done | Done |
+| `process_inactivity_updates` (per validator) | Done | Done | Done |
 
 ## The theorems
 
@@ -40,6 +41,16 @@ theorem new_effective_balance_equiv (p : Spec.Preset) (validator : Spec.Validato
       balance effective_balance limit downward upward increment ⦃ r =>
         absResult (·.val) r =
           Spec.newEffectiveBalance p downward.val upward.val validator balance.val ⦄
+
+theorem new_inactivity_score_equiv (p : Spec.Preset) (score bias recovery_rate : U64)
+    (is_eligible is_participating is_in_leak : Bool)
+    (hbias : bias.val = p.INACTIVITY_SCORE_BIAS)
+    (hrecovery : recovery_rate.val = p.INACTIVITY_SCORE_RECOVERY_RATE) :
+    per_epoch_processing.inactivity_updates.new_inactivity_score
+      score is_eligible is_participating is_in_leak bias recovery_rate ⦃ r =>
+        absResult (·.val) r =
+          if is_eligible then Spec.inactivityScoreStep p is_participating is_in_leak score.val
+          else .ok score.val ⦄
 ```
 
 For every input, Lighthouse returns `ok`, so it does not panic. Its result maps to the
@@ -75,6 +86,9 @@ Rules:
 | `hysteresisThresholds_mainnet` | Mainnet thresholds are 0.25 ETH down and 1.25 ETH up |
 | `newEffectiveBalance_le_max` | A changed effective balance never exceeds `get_max_effective_balance` |
 | `newEffectiveBalance_in_band` | Inside the hysteresis band, the effective balance does not change |
+| `process_inactivity_updates_eq` | If the eligible set, the participating set and the leak flag evaluate, the loop is a `foldlM` of one step per eligible index |
+| `inactivityScoreStep_leak_missed` | In a leak, a validator that missed the target gains exactly `INACTIVITY_SCORE_BIAS` |
+| `inactivityScoreStep_participating_le` | The score of a validator that hit the target never goes up |
 
 `get_total_active_balance(state)` is a parameter. Lighthouse reads it from a cache.
 
@@ -98,6 +112,7 @@ out=$(mktemp -d)
 charon cargo --preset=aeneas \
   --start-from 'state_processing::per_epoch_processing::builder_pending_payments' \
   --start-from 'state_processing::per_epoch_processing::effective_balance' \
+  --start-from 'state_processing::per_epoch_processing::inactivity_updates' \
   --include safe_arith --include types::builder --include alloy_primitives::bits \
   --dest-file "$out/pure.llbc" -- --lib
 aeneas -backend lean "$out/pure.llbc" -dest "$out"
@@ -134,6 +149,8 @@ Aeneas rejected the original code in `single_pass.rs` for two reasons:
 - `state_ctxt.total_active_balance` equals `get_total_active_balance(state)`.
 - `Validator::get_max_effective_balance` equals the spec `get_max_effective_balance` after
   Electra. `single_pass.rs` passes its result to `new_effective_balance`.
+- `single_pass.rs` passes three flags to `new_inactivity_score`: `is_eligible`, the timely
+  target check, and `is_in_inactivity_leak`. Each equals its spec predicate.
 - Lighthouse computes the hysteresis thresholds once per epoch. The spec computes them once per
   validator. The values are the same.
 - The reference matches pyspec.
