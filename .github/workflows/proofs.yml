@@ -169,18 +169,22 @@ jobs:
           # Lake may replay cached logs rather than re-elaborate.
           lake env lean "$LIB/Axioms.lean" 2>&1 | tee axioms.log
 
-          expected='[propext, Classical.choice, Quot.sound]'
+          allowed='propext|Classical.choice|Quot.sound'
 
           # Derived, not hardcoded: every `#print axioms` in the audit file must report.
           want=$(grep -c '^#print axioms' "$LIB/Axioms.lean")
-          got=$(grep -c 'depends on axioms' axioms.log || true)
+          got=$(grep -cE 'depends on axioms|does not depend on any axioms' axioms.log || true)
           if [ "$got" -ne "$want" ]; then
             echo "::error::$LIB/Axioms.lean has $want audited theorems but $got reported"
             exit 1
           fi
 
-          if grep 'depends on axioms' axioms.log | grep -vF "$expected"; then
-            echo "::error::a theorem depends on axioms beyond $expected"
+          # A subset of the allowed axioms passes. Any other axiom fails.
+          extra=$(grep -o 'depends on axioms: \[[^]]*\]' axioms.log \
+                    | sed 's/.*\[\(.*\)\]/\1/' | tr ',' '\n' | tr -d ' ' \
+                    | grep -vxE "$allowed" || true)
+          if [ -n "$extra" ]; then
+            echo "::error::a theorem depends on axioms beyond propext, Classical.choice, Quot.sound: $extra"
             exit 1
           fi
 

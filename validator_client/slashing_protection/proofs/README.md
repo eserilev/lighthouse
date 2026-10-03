@@ -50,7 +50,7 @@ and there are no `sorry`s.
 Neither of those holds by construction. `#print axioms` only reports, and Lean reports a
 `sorry` as a warning that does not fail the build, so both are asserted in
 `.github/workflows/proofs.yml` -- it requires every `#print axioms` line in the audit file
-to report, and each to name exactly those three axioms. The axiom check is the load-bearing one: a `sorry` anywhere
+to report, and each to name only those three axioms. The axiom check is the load-bearing one: a `sorry` anywhere
 beneath these theorems surfaces as `sorryAx` however deep it hides.
 
 ## Regenerating after editing `pure_check.rs`
