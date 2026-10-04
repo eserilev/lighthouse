@@ -1,4 +1,5 @@
 import EpochProofs.Spec.InactivityUpdates
+import EpochProofs.Spec.PendingDeposits
 import EpochProofs.Spec.Oracle
 
 /-!
@@ -101,5 +102,31 @@ def compute_signing_root(ssz_object: SSZObject, domain: Domain) -> Root:
 `hash_tree_root` is typed, so the caller passes `hash_tree_root(ssz_object)` as `object_root`. -/
 def compute_signing_root (o : Oracle) (object_root : Root) (domain : Domain) : Root :=
   o.hash_tree_root_SigningData { object_root, domain }
+
+/-- ```python
+def get_block_root_at_slot(state: BeaconState, slot: Slot) -> Root:
+    """
+    Return the block root at a recent ``slot``.
+    """
+    assert slot < state.slot <= slot + SLOTS_PER_HISTORICAL_ROOT
+    return state.block_roots[slot % SLOTS_PER_HISTORICAL_ROOT]
+``` -/
+def get_block_root_at_slot (p : Preset) (state : BeaconState) (slot : Slot) : SpecM Root := do
+  -- Python evaluates `slot + SLOTS_PER_HISTORICAL_ROOT` only if `slot < state.slot`.
+  if !(slot < state.slot) then
+    throw .assertionFailed
+  if !(state.slot ≤ (← uint64Add slot p.SLOTS_PER_HISTORICAL_ROOT)) then
+    throw .assertionFailed
+  listGet state.block_roots (slot % p.SLOTS_PER_HISTORICAL_ROOT)
+
+/-- ```python
+def get_block_root(state: BeaconState, epoch: Epoch) -> Root:
+    """
+    Return the block root at the start of a recent ``epoch``.
+    """
+    return get_block_root_at_slot(state, compute_start_slot_at_epoch(epoch))
+``` -/
+def get_block_root (p : Preset) (state : BeaconState) (epoch : Epoch) : SpecM Root := do
+  get_block_root_at_slot p state (← compute_start_slot_at_epoch p epoch)
 
 end EpochProofs.Spec

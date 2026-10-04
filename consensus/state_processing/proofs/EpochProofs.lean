@@ -40,6 +40,10 @@ import EpochProofs.Sanity.RewardsBound
 import EpochProofs.Sanity.EffectiveBalanceInvariant
 import EpochProofs.Sanity.LighthouseSinglePass
 import EpochProofs.Sanity.Frame
+import EpochProofs.Spec.TotalActiveBalance
+import EpochProofs.Sanity.Effects
+import EpochProofs.Spec.Block.Withdrawals
+import EpochProofs.Sanity.Block.Withdrawals
 import EpochProofs.Equiv.BuilderPendingPayments
 import EpochProofs.Equiv.EffectiveBalanceUpdates
 import EpochProofs.Equiv.InactivityUpdates
