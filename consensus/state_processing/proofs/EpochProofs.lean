@@ -48,6 +48,10 @@ import EpochProofs.Spec.Block.ExecutionRequests
 import EpochProofs.Spec.Block.ParentPayload
 import EpochProofs.Sanity.Block.ExecutionRequests
 import EpochProofs.Sanity.Block.ParentPayload
+import EpochProofs.Spec.Block.Slashings
+import EpochProofs.Spec.Block.Exits
+import EpochProofs.Sanity.Block.Exits
+import EpochProofs.Sanity.Block.Slashings
 import EpochProofs.Equiv.BuilderPendingPayments
 import EpochProofs.Equiv.EffectiveBalanceUpdates
 import EpochProofs.Equiv.InactivityUpdates
