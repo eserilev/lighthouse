@@ -44,6 +44,10 @@ import EpochProofs.Spec.TotalActiveBalance
 import EpochProofs.Sanity.Effects
 import EpochProofs.Spec.Block.Withdrawals
 import EpochProofs.Sanity.Block.Withdrawals
+import EpochProofs.Spec.Block.ExecutionRequests
+import EpochProofs.Spec.Block.ParentPayload
+import EpochProofs.Sanity.Block.ExecutionRequests
+import EpochProofs.Sanity.Block.ParentPayload
 import EpochProofs.Equiv.BuilderPendingPayments
 import EpochProofs.Equiv.EffectiveBalanceUpdates
 import EpochProofs.Equiv.InactivityUpdates

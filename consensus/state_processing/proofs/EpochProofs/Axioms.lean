@@ -14,6 +14,8 @@ import EpochProofs.Sanity.RowsEffectiveBalance
 import EpochProofs.Sanity.Frame
 import EpochProofs.Sanity.Effects
 import EpochProofs.Sanity.Block.Withdrawals
+import EpochProofs.Sanity.Block.ExecutionRequests
+import EpochProofs.Sanity.Block.ParentPayload
 open EpochProofs.Spec
 #print axioms EpochProofs.Spec.withdrawals_loop
 #print axioms EpochProofs.Spec.process_builder_pending_payments_eq
@@ -86,3 +88,9 @@ open EpochProofs.Spec
 #print axioms EpochProofs.Spec.process_withdrawals_ebStable
 #print axioms EpochProofs.Spec.process_withdrawals_exitOrder
 #print axioms EpochProofs.Spec.process_withdrawals_balances
+#print axioms EpochProofs.Spec.process_deposit_request_effect
+#print axioms EpochProofs.Spec.process_withdrawal_request_effect
+#print axioms EpochProofs.Spec.process_consolidation_request_effect
+#print axioms EpochProofs.Spec.process_parent_execution_payload_effect
+#print axioms EpochProofs.Spec.process_parent_execution_payload_exitOrder
+#print axioms EpochProofs.Spec.process_execution_payload_bid_frame
