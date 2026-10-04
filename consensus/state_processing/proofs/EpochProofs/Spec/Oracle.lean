@@ -51,5 +51,10 @@ structure Oracle where
   bls_AggregateVerify : List BLSPubkey → List Root → BLSSignature → Bool
   /-- `bls.AggregatePKs(pubkeys)` -/
   bls_AggregatePKs : List BLSPubkey → BLSPubkey
+  /-- `KeyValidate(pubkey)`. -/
+  bls_KeyValidate : BLSPubkey → Bool
+  /-- `G1_to_bytes48(add(bytes48_to_G1(a), neg(bytes48_to_G1(b))))`: the aggregate key `a`
+  without the key `b`. -/
+  bls_SubtractPK : BLSPubkey → BLSPubkey → BLSPubkey
 
 end EpochProofs.Spec
