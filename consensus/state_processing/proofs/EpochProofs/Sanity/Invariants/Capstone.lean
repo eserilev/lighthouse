@@ -36,8 +36,7 @@ theorem lighthouse_state_transition_sameOk (o : Oracle) (max_blobs_per_block : E
       (state_transition Preset.mainnet o max_blobs_per_block GLOAS_FORK_EPOCH s signed_block
         validate_result) :=
   reachable_state_transition_sameOk' o max_blobs_per_block GLOAS_FORK_EPOCH init hffg hrows hd
-    hx h0 hsupply EpochSupply hecon (process_epoch_lh o)
-    (fun t ⟨hb, hslot, heb, hexit, hsup⟩ => process_epoch_lh_sameOk' o t hb hslot heb hexit hsup)
-    s hr signed_block validate_result hslot64
+    hx h0 hsupply EpochSupply hecon (process_epoch_lh o) (process_epoch_lh_hf o) s hr signed_block
+    validate_result hslot64
 
 end EpochProofs.Spec
