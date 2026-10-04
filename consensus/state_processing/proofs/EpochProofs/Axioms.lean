@@ -16,6 +16,8 @@ import EpochProofs.Sanity.Effects
 import EpochProofs.Sanity.Block.Withdrawals
 import EpochProofs.Sanity.Block.ExecutionRequests
 import EpochProofs.Sanity.Block.ParentPayload
+import EpochProofs.Sanity.Block.Exits
+import EpochProofs.Sanity.Block.Slashings
 open EpochProofs.Spec
 #print axioms EpochProofs.Spec.withdrawals_loop
 #print axioms EpochProofs.Spec.process_builder_pending_payments_eq
@@ -94,3 +96,7 @@ open EpochProofs.Spec
 #print axioms EpochProofs.Spec.process_parent_execution_payload_effect
 #print axioms EpochProofs.Spec.process_parent_execution_payload_exitOrder
 #print axioms EpochProofs.Spec.process_execution_payload_bid_frame
+#print axioms EpochProofs.Spec.process_voluntary_exit_effects
+#print axioms EpochProofs.Spec.process_bls_to_execution_change_effects
+#print axioms EpochProofs.Spec.process_proposer_slashing_effects
+#print axioms EpochProofs.Spec.process_attester_slashing_effects
