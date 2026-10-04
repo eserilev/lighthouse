@@ -1,4 +1,5 @@
 import EpochProofs.Sanity.RowsSinglePass
+import EpochProofs.Sanity.RowsEffectiveBalance
 
 /-!
 # The Lighthouse row step
@@ -52,5 +53,28 @@ def lhRowStep (p : Preset) (ctx : LhStepContext) (base_reward : Gwei) (churn : E
   let balance ← slashingBalanceStep p ctx.slashings_target ctx.penalty_per_increment r.validator
     r.balance
   pure ((f.earliest_exit_epoch, f.exit_balance_to_consume), { r with balance })
+
+/-- The values of one row that the deposit and effective balance steps read. -/
+structure LhRowInputs where
+  base_reward : Gwei
+  /-- The sum of this epoch's pending deposits for the validator. -/
+  deposit : Gwei
+  /-- A pending consolidation names the validator. -/
+  in_consolidation : Bool
+
+/-- `lhRowStep`, then the pending deposit top-up, then the effective balance update, as
+`single_pass_step` runs them. A validator that a consolidation names keeps its effective
+balance here; Lighthouse updates it after consolidations. -/
+def lhRowStepFull (p : Preset) (ctx : LhStepContext) (downward_threshold upward_threshold : Uint64)
+    (inputs : LhRowInputs) (churn : Epoch × Gwei) (r : Row) : SpecM ((Epoch × Gwei) × Row) := do
+  let (churn, r) ← lhRowStep p ctx inputs.base_reward churn r
+  let balance ← uint64Add r.balance inputs.deposit
+  let r := { r with balance }
+  if inputs.in_consolidation then
+    pure (churn, r)
+  else
+    let effective_balance ←
+      newEffectiveBalance p downward_threshold upward_threshold r.validator r.balance
+    pure (churn, { r with validator := { r.validator with effective_balance } })
 
 end EpochProofs.Spec

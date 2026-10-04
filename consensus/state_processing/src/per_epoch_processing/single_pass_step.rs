@@ -1,13 +1,16 @@
 //! The single-pass steps for one validator, after Electra.
 //!
-//! `single_pass_step` runs the inactivity update, rewards and penalties, the registry update and
-//! the slashings penalty for one validator, in that order. Aeneas translates this module for the
+//! `single_pass_step` runs the inactivity update, rewards and penalties, the registry update, the
+//! slashings penalty, the pending deposit top-up and the effective balance update for one
+//! validator, in that order. Aeneas translates this module for the
 //! proofs in `../../proofs`. So it takes plain values.
 //!
 //! Each step has its own function. In one function, Aeneas copies the rest of the body into each
 //! branch of an `if`.
 
-use super::{inactivity_updates, registry_update, rewards_penalties, slashings_penalty};
+use super::{
+    effective_balance, inactivity_updates, registry_update, rewards_penalties, slashings_penalty,
+};
 use registry_update::{RegistryConstants, RegistryFields};
 use safe_arith::{ArithError, SafeArith};
 
@@ -51,12 +54,30 @@ pub struct StepContext {
     pub adjusted_total_slashing_balance: u64,
     pub penalty_per_effective_balance_increment: u64,
     pub effective_balance_increment: u64,
+    pub downward_threshold: u64,
+    pub upward_threshold: u64,
     /// False in the genesis epoch, when the spec skips inactivity updates and rewards.
     pub after_genesis: bool,
     pub inactivity_updates: bool,
     pub rewards_and_penalties: bool,
     pub registry_updates: bool,
     pub slashings: bool,
+    pub pending_deposits: bool,
+    pub effective_balance_updates: bool,
+}
+
+/// Per-validator inputs that the steps read but do not write.
+#[derive(Clone, Copy)]
+pub struct RowInputs {
+    /// The base reward. It is only read if the validator is eligible.
+    pub base_reward: u64,
+    /// The sum of this epoch's pending deposits for the validator.
+    pub deposit: u64,
+    /// A pending consolidation names the validator. Its effective balance update then runs after
+    /// consolidations.
+    pub in_consolidation: bool,
+    /// `get_max_effective_balance` of the validator.
+    pub effective_balance_limit: u64,
 }
 
 /// The validator was active in the previous epoch.
@@ -191,21 +212,55 @@ fn slashings_step(row: ValidatorRow, ctx: &StepContext) -> Result<ValidatorRow, 
     Ok(ValidatorRow { balance, ..row })
 }
 
-/// Runs the inactivity update, rewards and penalties, the registry update and the slashings
-/// penalty for one validator.
-///
-/// `base_reward` is the validator's base reward. It is only read if the validator is eligible.
+fn deposit_step(
+    row: ValidatorRow,
+    deposit: u64,
+    ctx: &StepContext,
+) -> Result<ValidatorRow, ArithError> {
+    if !ctx.pending_deposits {
+        return Ok(row);
+    }
+    let balance = row.balance.safe_add(deposit)?;
+    Ok(ValidatorRow { balance, ..row })
+}
+
+fn effective_balance_step(
+    row: ValidatorRow,
+    inputs: &RowInputs,
+    ctx: &StepContext,
+) -> Result<ValidatorRow, ArithError> {
+    if !ctx.effective_balance_updates || inputs.in_consolidation {
+        return Ok(row);
+    }
+    let effective_balance = effective_balance::new_effective_balance(
+        row.balance,
+        row.effective_balance,
+        inputs.effective_balance_limit,
+        ctx.downward_threshold,
+        ctx.upward_threshold,
+        ctx.effective_balance_increment,
+    )?;
+    Ok(ValidatorRow {
+        effective_balance,
+        ..row
+    })
+}
+
+/// Runs the inactivity update, rewards and penalties, the registry update, the slashings penalty,
+/// the pending deposit top-up and the effective balance update for one validator.
 pub fn single_pass_step(
     row: ValidatorRow,
-    base_reward: u64,
+    inputs: &RowInputs,
     churn: ExitChurn,
     ctx: &StepContext,
     constants: &RegistryConstants,
 ) -> Result<(ValidatorRow, ExitChurn), ArithError> {
     let is_eligible = is_eligible(&row, ctx.previous_epoch)?;
     let row = inactivity_step(row, is_eligible, ctx)?;
-    let row = rewards_step(row, is_eligible, base_reward, ctx)?;
+    let row = rewards_step(row, is_eligible, inputs.base_reward, ctx)?;
     let (row, churn) = registry_step(row, churn, ctx, constants)?;
     let row = slashings_step(row, ctx)?;
+    let row = deposit_step(row, inputs.deposit, ctx)?;
+    let row = effective_balance_step(row, inputs, ctx)?;
     Ok((row, churn))
 }

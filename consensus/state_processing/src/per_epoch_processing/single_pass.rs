@@ -261,11 +261,15 @@ pub fn process_epoch_single_pass<E: EthSpec>(
             penalty_per_effective_balance_increment: slashings_ctxt
                 .penalty_per_effective_balance_increment,
             effective_balance_increment: spec.effective_balance_increment,
+            downward_threshold: effective_balances_ctxt.downward_threshold,
+            upward_threshold: effective_balances_ctxt.upward_threshold,
             after_genesis: current_epoch != E::genesis_epoch(),
             inactivity_updates: conf.inactivity_updates,
             rewards_and_penalties: conf.rewards_and_penalties,
             registry_updates: conf.registry_updates,
             slashings: conf.slashings,
+            pending_deposits: pending_deposits_ctxt.is_some(),
+            effective_balance_updates: conf.effective_balance_updates,
         };
         Some((step_ctxt, registry_constants(state_ctxt, spec)))
     } else {
@@ -334,9 +338,20 @@ pub fn process_epoch_single_pass<E: EthSpec>(
                 exit_balance_to_consume: exit_balance_to_consume
                     .ok_or(Error::MissingExitBalanceToConsume)?,
             };
+            let in_consolidation = validators_in_consolidations.contains(&index);
+            let inputs = single_pass_step::RowInputs {
+                base_reward: validator_info.base_reward,
+                deposit: pending_deposits_ctxt
+                    .as_ref()
+                    .and_then(|ctxt| ctxt.validator_deposits_to_process.get(&index).copied())
+                    .unwrap_or(0),
+                in_consolidation,
+                effective_balance_limit: validator
+                    .get_max_effective_balance(spec, state_ctxt.fork_name),
+            };
             let (new_row, new_churn) = single_pass_step::single_pass_step(
                 row,
-                validator_info.base_reward,
+                &inputs,
                 churn,
                 step_ctxt,
                 registry_constants,
@@ -351,6 +366,27 @@ pub fn process_epoch_single_pass<E: EthSpec>(
             )?;
             earliest_exit_epoch = Some(Epoch::new(new_churn.earliest_exit_epoch));
             exit_balance_to_consume = Some(new_churn.exit_balance_to_consume);
+
+            if conf.effective_balance_updates {
+                if in_consolidation {
+                    process_single_dummy_effective_balance_update(
+                        index,
+                        &validator,
+                        &mut next_epoch_cache,
+                        state_ctxt,
+                    )?;
+                } else {
+                    record_effective_balance_update(
+                        index,
+                        row.effective_balance,
+                        &validator,
+                        current_epoch_participation,
+                        &mut next_epoch_cache,
+                        progressive_balances,
+                        state_ctxt,
+                    )?;
+                }
+            }
         } else {
             if current_epoch != E::genesis_epoch() {
                 // `process_inactivity_updates`
@@ -402,38 +438,38 @@ pub fn process_epoch_single_pass<E: EthSpec>(
                     spec,
                 )?;
             }
-        }
 
-        // `process_pending_deposits`
-        if let Some(pending_balance_deposits_ctxt) = &pending_deposits_ctxt {
-            process_pending_deposits_for_validator(
-                &mut balance,
-                validator_info,
-                pending_balance_deposits_ctxt,
-            )?;
-        }
+            // `process_pending_deposits`
+            if let Some(pending_balance_deposits_ctxt) = &pending_deposits_ctxt {
+                process_pending_deposits_for_validator(
+                    &mut balance,
+                    validator_info,
+                    pending_balance_deposits_ctxt,
+                )?;
+            }
 
-        // `process_effective_balance_updates`
-        if conf.effective_balance_updates {
-            if validators_in_consolidations.contains(&validator_info.index) {
-                process_single_dummy_effective_balance_update(
-                    validator_info.index,
-                    &validator,
-                    &mut next_epoch_cache,
-                    state_ctxt,
-                )?;
-            } else {
-                process_single_effective_balance_update(
-                    validator_info.index,
-                    *balance,
-                    &mut validator,
-                    validator_info.current_epoch_participation,
-                    &mut next_epoch_cache,
-                    progressive_balances,
-                    effective_balances_ctxt,
-                    state_ctxt,
-                    spec,
-                )?;
+            // `process_effective_balance_updates`
+            if conf.effective_balance_updates {
+                if validators_in_consolidations.contains(&validator_info.index) {
+                    process_single_dummy_effective_balance_update(
+                        validator_info.index,
+                        &validator,
+                        &mut next_epoch_cache,
+                        state_ctxt,
+                    )?;
+                } else {
+                    process_single_effective_balance_update(
+                        validator_info.index,
+                        *balance,
+                        &mut validator,
+                        validator_info.current_epoch_participation,
+                        &mut next_epoch_cache,
+                        progressive_balances,
+                        effective_balances_ctxt,
+                        state_ctxt,
+                        spec,
+                    )?;
+                }
             }
         }
     }
@@ -869,9 +905,39 @@ fn write_back_row(
         validator.exit_epoch = Epoch::new(new.exit_epoch);
         validator.withdrawable_epoch = Epoch::new(new.withdrawable_epoch);
     }
+    if new.effective_balance != old.effective_balance {
+        validator.make_mut()?.effective_balance = new.effective_balance;
+    }
     if new.exit_epoch != old.exit_epoch {
         exit_cache.record_validator_exit(Epoch::new(new.exit_epoch))?;
     }
+    Ok(())
+}
+
+/// Updates the caches after `single_pass_step` ran the effective balance update of a validator.
+fn record_effective_balance_update(
+    validator_index: usize,
+    old_effective_balance: u64,
+    validator: &Validator,
+    validator_current_epoch_participation: ParticipationFlags,
+    next_epoch_cache: &mut PreEpochCache,
+    progressive_balances: &mut ProgressiveBalancesCache,
+    state_ctxt: &StateContext,
+) -> Result<(), Error> {
+    let new_effective_balance = validator.effective_balance;
+    if new_effective_balance != old_effective_balance {
+        progressive_balances.on_effective_balance_change(
+            validator.slashed,
+            validator_current_epoch_participation,
+            old_effective_balance,
+            new_effective_balance,
+        )?;
+    }
+    next_epoch_cache.update_effective_balance(
+        validator_index,
+        new_effective_balance,
+        validator.is_active_at(state_ctxt.next_epoch),
+    )?;
     Ok(())
 }
 

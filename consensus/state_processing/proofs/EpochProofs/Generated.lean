@@ -1673,7 +1673,7 @@ def per_epoch_processing.rewards_penalties.new_balance_after_rewards
   else ok (core.result.Result.Ok balance)
 
 /-- [state_processing::per_epoch_processing::single_pass_step::ValidatorRow]
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 16:0-26:1
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 19:0-29:1
     Visibility: public -/
 structure per_epoch_processing.single_pass_step.ValidatorRow where
   balance : Std.U64
@@ -1687,7 +1687,7 @@ structure per_epoch_processing.single_pass_step.ValidatorRow where
   previous_epoch_participation : Std.U8
 
 /-- [state_processing::per_epoch_processing::single_pass_step::{impl core::clone::Clone for state_processing::per_epoch_processing::single_pass_step::ValidatorRow}::clone]:
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 15:9-15:14
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 18:9-18:14
     Visibility: public -/
 def
   per_epoch_processing.single_pass_step.ValidatorRow.Insts.CoreCloneClone.clone
@@ -1697,7 +1697,7 @@ def
   ok self
 
 /-- Trait implementation: [state_processing::per_epoch_processing::single_pass_step::{impl core::clone::Clone for state_processing::per_epoch_processing::single_pass_step::ValidatorRow}]
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 15:9-15:14 -/
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 18:9-18:14 -/
 @[reducible]
 def per_epoch_processing.single_pass_step.ValidatorRow.Insts.CoreCloneClone :
   core.clone.Clone per_epoch_processing.single_pass_step.ValidatorRow := {
@@ -1706,7 +1706,7 @@ def per_epoch_processing.single_pass_step.ValidatorRow.Insts.CoreCloneClone :
 }
 
 /-- Trait implementation: [state_processing::per_epoch_processing::single_pass_step::{impl core::marker::Copy for state_processing::per_epoch_processing::single_pass_step::ValidatorRow}]
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 15:16-15:20 -/
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 18:16-18:20 -/
 @[reducible]
 def per_epoch_processing.single_pass_step.ValidatorRow.Insts.CoreMarkerCopy :
   core.marker.Copy per_epoch_processing.single_pass_step.ValidatorRow := {
@@ -1715,14 +1715,14 @@ def per_epoch_processing.single_pass_step.ValidatorRow.Insts.CoreMarkerCopy :
 }
 
 /-- [state_processing::per_epoch_processing::single_pass_step::ExitChurn]
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 30:0-33:1
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 33:0-36:1
     Visibility: public -/
 structure per_epoch_processing.single_pass_step.ExitChurn where
   earliest_exit_epoch : Std.U64
   exit_balance_to_consume : Std.U64
 
 /-- [state_processing::per_epoch_processing::single_pass_step::{impl core::clone::Clone for state_processing::per_epoch_processing::single_pass_step::ExitChurn}::clone]:
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 29:9-29:14
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 32:9-32:14
     Visibility: public -/
 def per_epoch_processing.single_pass_step.ExitChurn.Insts.CoreCloneClone.clone
   (self : per_epoch_processing.single_pass_step.ExitChurn) :
@@ -1731,7 +1731,7 @@ def per_epoch_processing.single_pass_step.ExitChurn.Insts.CoreCloneClone.clone
   ok self
 
 /-- Trait implementation: [state_processing::per_epoch_processing::single_pass_step::{impl core::clone::Clone for state_processing::per_epoch_processing::single_pass_step::ExitChurn}]
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 29:9-29:14 -/
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 32:9-32:14 -/
 @[reducible]
 def per_epoch_processing.single_pass_step.ExitChurn.Insts.CoreCloneClone :
   core.clone.Clone per_epoch_processing.single_pass_step.ExitChurn := {
@@ -1740,7 +1740,7 @@ def per_epoch_processing.single_pass_step.ExitChurn.Insts.CoreCloneClone :
 }
 
 /-- Trait implementation: [state_processing::per_epoch_processing::single_pass_step::{impl core::marker::Copy for state_processing::per_epoch_processing::single_pass_step::ExitChurn}]
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 29:16-29:20 -/
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 32:16-32:20 -/
 @[reducible]
 def per_epoch_processing.single_pass_step.ExitChurn.Insts.CoreMarkerCopy :
   core.marker.Copy per_epoch_processing.single_pass_step.ExitChurn := {
@@ -1749,7 +1749,7 @@ def per_epoch_processing.single_pass_step.ExitChurn.Insts.CoreMarkerCopy :
 }
 
 /-- [state_processing::per_epoch_processing::single_pass_step::StepContext]
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 37:0-60:1
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 40:0-67:1
     Visibility: public -/
 structure per_epoch_processing.single_pass_step.StepContext where
   current_epoch : Std.U64
@@ -1768,14 +1768,18 @@ structure per_epoch_processing.single_pass_step.StepContext where
   adjusted_total_slashing_balance : Std.U64
   penalty_per_effective_balance_increment : Std.U64
   effective_balance_increment : Std.U64
+  downward_threshold : Std.U64
+  upward_threshold : Std.U64
   after_genesis : Bool
   inactivity_updates : Bool
   rewards_and_penalties : Bool
   registry_updates : Bool
   slashings : Bool
+  pending_deposits : Bool
+  effective_balance_updates : Bool
 
 /-- [state_processing::per_epoch_processing::single_pass_step::{impl core::clone::Clone for state_processing::per_epoch_processing::single_pass_step::StepContext}::clone]:
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 36:9-36:14
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 39:9-39:14
     Visibility: public -/
 def
   per_epoch_processing.single_pass_step.StepContext.Insts.CoreCloneClone.clone
@@ -1785,7 +1789,7 @@ def
   ok self
 
 /-- Trait implementation: [state_processing::per_epoch_processing::single_pass_step::{impl core::clone::Clone for state_processing::per_epoch_processing::single_pass_step::StepContext}]
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 36:9-36:14 -/
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 39:9-39:14 -/
 @[reducible]
 def per_epoch_processing.single_pass_step.StepContext.Insts.CoreCloneClone :
   core.clone.Clone per_epoch_processing.single_pass_step.StepContext := {
@@ -1794,7 +1798,7 @@ def per_epoch_processing.single_pass_step.StepContext.Insts.CoreCloneClone :
 }
 
 /-- Trait implementation: [state_processing::per_epoch_processing::single_pass_step::{impl core::marker::Copy for state_processing::per_epoch_processing::single_pass_step::StepContext}]
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 36:16-36:20 -/
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 39:16-39:20 -/
 @[reducible]
 def per_epoch_processing.single_pass_step.StepContext.Insts.CoreMarkerCopy :
   core.marker.Copy per_epoch_processing.single_pass_step.StepContext := {
@@ -1802,8 +1806,44 @@ def per_epoch_processing.single_pass_step.StepContext.Insts.CoreMarkerCopy :
     per_epoch_processing.single_pass_step.StepContext.Insts.CoreCloneClone
 }
 
+/-- [state_processing::per_epoch_processing::single_pass_step::RowInputs]
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 71:0-81:1
+    Visibility: public -/
+structure per_epoch_processing.single_pass_step.RowInputs where
+  base_reward : Std.U64
+  deposit : Std.U64
+  in_consolidation : Bool
+  effective_balance_limit : Std.U64
+
+/-- [state_processing::per_epoch_processing::single_pass_step::{impl core::clone::Clone for state_processing::per_epoch_processing::single_pass_step::RowInputs}::clone]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 70:9-70:14
+    Visibility: public -/
+def per_epoch_processing.single_pass_step.RowInputs.Insts.CoreCloneClone.clone
+  (self : per_epoch_processing.single_pass_step.RowInputs) :
+  Result per_epoch_processing.single_pass_step.RowInputs
+  := do
+  ok self
+
+/-- Trait implementation: [state_processing::per_epoch_processing::single_pass_step::{impl core::clone::Clone for state_processing::per_epoch_processing::single_pass_step::RowInputs}]
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 70:9-70:14 -/
+@[reducible]
+def per_epoch_processing.single_pass_step.RowInputs.Insts.CoreCloneClone :
+  core.clone.Clone per_epoch_processing.single_pass_step.RowInputs := {
+  clone :=
+    per_epoch_processing.single_pass_step.RowInputs.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [state_processing::per_epoch_processing::single_pass_step::{impl core::marker::Copy for state_processing::per_epoch_processing::single_pass_step::RowInputs}]
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 70:16-70:20 -/
+@[reducible]
+def per_epoch_processing.single_pass_step.RowInputs.Insts.CoreMarkerCopy :
+  core.marker.Copy per_epoch_processing.single_pass_step.RowInputs := {
+  cloneInst :=
+    per_epoch_processing.single_pass_step.RowInputs.Insts.CoreCloneClone
+}
+
 /-- [state_processing::per_epoch_processing::single_pass_step::is_active_previous_epoch]:
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 63:0-65:1
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 84:0-86:1
     Visibility: public -/
 def per_epoch_processing.single_pass_step.is_active_previous_epoch
   (row : per_epoch_processing.single_pass_step.ValidatorRow)
@@ -1815,7 +1855,7 @@ def per_epoch_processing.single_pass_step.is_active_previous_epoch
   else ok false
 
 /-- [state_processing::per_epoch_processing::single_pass_step::is_eligible]:
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 68:0-76:1
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 89:0-97:1
     Visibility: public -/
 def per_epoch_processing.single_pass_step.is_eligible
   (row : per_epoch_processing.single_pass_step.ValidatorRow)
@@ -1841,7 +1881,7 @@ def per_epoch_processing.single_pass_step.is_eligible
     else ok (core.result.Result.Ok false)
 
 /-- [state_processing::per_epoch_processing::single_pass_step::is_unslashed_participating]:
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 79:0-83:1
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 100:0-104:1
     Visibility: public -/
 def per_epoch_processing.single_pass_step.is_unslashed_participating
   (row : per_epoch_processing.single_pass_step.ValidatorRow)
@@ -1861,7 +1901,7 @@ def per_epoch_processing.single_pass_step.is_unslashed_participating
   else ok false
 
 /-- [state_processing::per_epoch_processing::single_pass_step::inactivity_step]:
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 85:0-105:1 -/
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 106:0-126:1 -/
 def per_epoch_processing.single_pass_step.inactivity_step
   (row : per_epoch_processing.single_pass_step.ValidatorRow)
   (is_eligible : Bool)
@@ -1892,7 +1932,7 @@ def per_epoch_processing.single_pass_step.inactivity_step
   else ok (core.result.Result.Ok row)
 
 /-- [state_processing::per_epoch_processing::single_pass_step::rewards_step]:
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 107:0-134:1 -/
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 128:0-155:1 -/
 def per_epoch_processing.single_pass_step.rewards_step
   (row : per_epoch_processing.single_pass_step.ValidatorRow)
   (is_eligible : Bool) (base_reward : Std.U64)
@@ -1932,7 +1972,7 @@ def per_epoch_processing.single_pass_step.rewards_step
   else ok (core.result.Result.Ok row)
 
 /-- [state_processing::per_epoch_processing::single_pass_step::registry_step]:
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 136:0-173:1 -/
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 157:0-194:1 -/
 def per_epoch_processing.single_pass_step.registry_step
   (row : per_epoch_processing.single_pass_step.ValidatorRow)
   (churn : per_epoch_processing.single_pass_step.ExitChurn)
@@ -2060,7 +2100,7 @@ def per_epoch_processing.slashings_penalty.new_balance_after_slashing
   else ok (core.result.Result.Ok balance)
 
 /-- [state_processing::per_epoch_processing::single_pass_step::slashings_step]:
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 175:0-192:1 -/
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 196:0-213:1 -/
 def per_epoch_processing.single_pass_step.slashings_step
   (row : per_epoch_processing.single_pass_step.ValidatorRow)
   (ctx : per_epoch_processing.single_pass_step.StepContext) :
@@ -2085,12 +2125,63 @@ def per_epoch_processing.single_pass_step.slashings_step
         (core.convert.FromSame safe_arith.ArithError) residual
   else ok (core.result.Result.Ok row)
 
+/-- [state_processing::per_epoch_processing::single_pass_step::deposit_step]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 215:0-225:1 -/
+def per_epoch_processing.single_pass_step.deposit_step
+  (row : per_epoch_processing.single_pass_step.ValidatorRow)
+  (deposit : Std.U64) (ctx : per_epoch_processing.single_pass_step.StepContext)
+  :
+  Result (core.result.Result per_epoch_processing.single_pass_step.ValidatorRow
+    safe_arith.ArithError)
+  := do
+  if ctx.pending_deposits
+  then
+    let r ← U64.Insts.Safe_arithSafeArithU64.safe_add row.balance deposit
+    let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+    match cf with
+    | core.ops.control_flow.ControlFlow.Continue val =>
+      ok (core.result.Result.Ok { row with balance := val })
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+        per_epoch_processing.single_pass_step.ValidatorRow
+        (core.convert.FromSame safe_arith.ArithError) residual
+  else ok (core.result.Result.Ok row)
+
+/-- [state_processing::per_epoch_processing::single_pass_step::effective_balance_step]:
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 227:0-247:1 -/
+def per_epoch_processing.single_pass_step.effective_balance_step
+  (row : per_epoch_processing.single_pass_step.ValidatorRow)
+  (inputs : per_epoch_processing.single_pass_step.RowInputs)
+  (ctx : per_epoch_processing.single_pass_step.StepContext) :
+  Result (core.result.Result per_epoch_processing.single_pass_step.ValidatorRow
+    safe_arith.ArithError)
+  := do
+  if ctx.effective_balance_updates
+  then
+    if inputs.in_consolidation
+    then ok (core.result.Result.Ok row)
+    else
+      let r ←
+        per_epoch_processing.effective_balance.new_effective_balance
+          row.balance row.effective_balance inputs.effective_balance_limit
+          ctx.downward_threshold ctx.upward_threshold
+          ctx.effective_balance_increment
+      let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+      match cf with
+      | core.ops.control_flow.ControlFlow.Continue val =>
+        ok (core.result.Result.Ok { row with effective_balance := val })
+      | core.ops.control_flow.ControlFlow.Break residual =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          per_epoch_processing.single_pass_step.ValidatorRow
+          (core.convert.FromSame safe_arith.ArithError) residual
+  else ok (core.result.Result.Ok row)
+
 /-- [state_processing::per_epoch_processing::single_pass_step::single_pass_step]:
-    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 198:0-211:1
+    Source: 'consensus/state_processing/src/per_epoch_processing/single_pass_step.rs', lines 251:0-266:1
     Visibility: public -/
 def per_epoch_processing.single_pass_step.single_pass_step
   (row : per_epoch_processing.single_pass_step.ValidatorRow)
-  (base_reward : Std.U64)
+  (inputs : per_epoch_processing.single_pass_step.RowInputs)
   (churn : per_epoch_processing.single_pass_step.ExitChurn)
   (ctx : per_epoch_processing.single_pass_step.StepContext)
   (constants : per_epoch_processing.registry_update.RegistryConstants) :
@@ -2109,8 +2200,8 @@ def per_epoch_processing.single_pass_step.single_pass_step
     match cf1 with
     | core.ops.control_flow.ControlFlow.Continue val1 =>
       let r2 ←
-        per_epoch_processing.single_pass_step.rewards_step val1 val base_reward
-          ctx
+        per_epoch_processing.single_pass_step.rewards_step val1 val
+          inputs.base_reward ctx
       let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
       match cf2 with
       | core.ops.control_flow.ControlFlow.Continue val2 =>
@@ -2126,7 +2217,29 @@ def per_epoch_processing.single_pass_step.single_pass_step
           let cf4 ← core.result.Result.Insts.CoreOpsTry.branch r4
           match cf4 with
           | core.ops.control_flow.ControlFlow.Continue val4 =>
-            ok (core.result.Result.Ok (val4, churn1))
+            let r5 ←
+              per_epoch_processing.single_pass_step.deposit_step val4
+                inputs.deposit ctx
+            let cf5 ← core.result.Result.Insts.CoreOpsTry.branch r5
+            match cf5 with
+            | core.ops.control_flow.ControlFlow.Continue val5 =>
+              let r6 ←
+                per_epoch_processing.single_pass_step.effective_balance_step
+                  val5 inputs ctx
+              let cf6 ← core.result.Result.Insts.CoreOpsTry.branch r6
+              match cf6 with
+              | core.ops.control_flow.ControlFlow.Continue val6 =>
+                ok (core.result.Result.Ok (val6, churn1))
+              | core.ops.control_flow.ControlFlow.Break residual =>
+                core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                  (per_epoch_processing.single_pass_step.ValidatorRow ×
+                  per_epoch_processing.single_pass_step.ExitChurn)
+                  (core.convert.FromSame safe_arith.ArithError) residual
+            | core.ops.control_flow.ControlFlow.Break residual =>
+              core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                (per_epoch_processing.single_pass_step.ValidatorRow ×
+                per_epoch_processing.single_pass_step.ExitChurn)
+                (core.convert.FromSame safe_arith.ArithError) residual
           | core.ops.control_flow.ControlFlow.Break residual =>
             core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
               (per_epoch_processing.single_pass_step.ValidatorRow ×

@@ -5,14 +5,14 @@ import EpochProofs.Sanity.LighthouseRow
 # Lighthouse single-pass step equals the row step
 
 `single_pass_step_equiv` relates `single_pass_step` in `single_pass_step.rs` to
-`Spec.lhRowStep`. Each of the four steps has its own lemma. The main theorem chains them.
+`Spec.lhRowStepFull`. Each of the six steps has its own lemma. The main theorem chains them.
 -/
 
 namespace EpochProofs
 
 open Aeneas Aeneas.Std Aeneas.Std.WP Result state_processing
 
-open state_processing.per_epoch_processing.single_pass_step (ValidatorRow ExitChurn StepContext)
+open state_processing.per_epoch_processing.single_pass_step (ValidatorRow ExitChurn StepContext RowInputs)
 
 /-- Each field of the Lighthouse row equals the matching field of the spec row. -/
 structure RowMatches (lr : ValidatorRow) (r : Spec.Row) : Prop where
@@ -51,9 +51,21 @@ structure ContextMatches (p : Spec.Preset) (c : StepContext) (ctx : Spec.LhStepC
   rewards_and_penalties : c.rewards_and_penalties = true
   registry_updates : c.registry_updates = true
   slashings : c.slashings = true
+  pending_deposits : c.pending_deposits = true
+  effective_balance_updates : c.effective_balance_updates = true
+
+/-- The row inputs hold the spec inputs. `effective_balance_limit` is
+`get_max_effective_balance` of the validator, which `single_pass.rs` computes. -/
+structure InputsMatches (p : Spec.Preset) (i : RowInputs) (inputs : Spec.LhRowInputs)
+    (r : Spec.Row) : Prop where
+  base_reward : i.base_reward.val = inputs.base_reward
+  deposit : i.deposit.val = inputs.deposit
+  in_consolidation : i.in_consolidation = inputs.in_consolidation
+  effective_balance_limit : i.effective_balance_limit.val = Spec.get_max_effective_balance p r.validator
 
 /-- The spec view of a Lighthouse step result. The step writes the balance, the inactivity
-score, the four validator epochs and the churn. The rest of the row comes from `r`. -/
+score, the effective balance, the four validator epochs and the churn. The rest of the row
+comes from `r`. -/
 def absStep (r : Spec.Row) :
     core.result.Result (ValidatorRow × ExitChurn) safe_arith.ArithError →
       Spec.SpecM ((Spec.Epoch × Spec.Gwei) × Spec.Row)
@@ -63,6 +75,7 @@ def absStep (r : Spec.Row) :
         balance := lr'.balance.val
         inactivity_score := lr'.inactivity_score.val
         validator := { r.validator with
+          effective_balance := lr'.effective_balance.val
           activation_eligibility_epoch := lr'.activation_eligibility_epoch.val
           activation_epoch := lr'.activation_epoch.val
           exit_epoch := lr'.exit_epoch.val
@@ -332,13 +345,117 @@ theorem lhRowStep_eq (p : Spec.Preset) (ctx : Spec.LhStepContext) (base_reward :
           validator := r.validator.withRegistryFields f })) := by
   cases eligible <;> simp [Spec.lhRowStep, h, except_ok_bind]
 
-/-- Lighthouse's `single_pass_step` equals `lhRowStep` for one validator. -/
+/-- `deposit_step` adds the deposit to the balance and changes no other field. -/
+theorem deposit_step_equiv (p : Spec.Preset) (lr : ValidatorRow) (deposit : U64)
+    (c : StepContext) (ctx : Spec.LhStepContext) (hc : ContextMatches p c ctx) :
+    per_epoch_processing.single_pass_step.deposit_step lr deposit c ⦃ res =>
+      absResult (·.balance.val) res = Spec.uint64Add lr.balance.val deposit.val
+      ∧ ∀ lr', res = .Ok lr' → lr' = { lr with balance := lr'.balance } ⦄ := by
+  unfold per_epoch_processing.single_pass_step.deposit_step
+  simp only [hc.pending_deposits, if_true]
+  apply exists_imp_spec
+  obtain ⟨a, ha, hA⟩ := spec_imp_exists (safe_add_spec lr.balance deposit)
+  rw [ha]
+  cases a with
+  | Err e =>
+    obtain ⟨he, hov⟩ := hA.2 e rfl
+    subst he
+    refine ⟨_, rfl, ?_⟩
+    simp [hov, Spec.uint64Add, Spec.UINT64_SIZE, core.convert.FromSame.from, absResult,
+      absArithError]
+    rfl
+  | Ok v =>
+    obtain ⟨hv, hfit⟩ := hA.1 v rfl
+    refine ⟨_, rfl, ?_⟩
+    simp [hv, hfit, Spec.uint64Add, Spec.UINT64_SIZE, absResult]
+    rfl
+
+/-- `get_max_effective_balance` does not read the registry fields. -/
+theorem get_max_effective_balance_withRegistryFields (p : Spec.Preset) (v : Spec.Validator)
+    (f : Spec.RegistryFields) :
+    Spec.get_max_effective_balance p (v.withRegistryFields f) =
+      Spec.get_max_effective_balance p v := rfl
+
+/-- `effective_balance_step` gives the effective balance of `lhRowStepFull` and changes no
+other field. -/
+theorem effective_balance_step_equiv (p : Spec.Preset) (lr : ValidatorRow) (r : Spec.Row)
+    (hm : RowMatches lr r) (i : RowInputs) (inputs : Spec.LhRowInputs)
+    (hi : InputsMatches p i inputs r) (c : StepContext) (ctx : Spec.LhStepContext)
+    (hc : ContextMatches p c ctx) (downward upward : Spec.Uint64)
+    (hdownward : c.downward_threshold.val = downward) (hupward : c.upward_threshold.val = upward) :
+    per_epoch_processing.single_pass_step.effective_balance_step lr i c ⦃ res =>
+      absResult (·.effective_balance.val) res =
+        (if inputs.in_consolidation then pure r.validator.effective_balance
+        else Spec.newEffectiveBalance p downward upward r.validator r.balance)
+      ∧ ∀ lr', res = .Ok lr' → lr' = { lr with effective_balance := lr'.effective_balance } ⦄ := by
+  unfold per_epoch_processing.single_pass_step.effective_balance_step
+  simp only [hc.effective_balance_updates, if_true, hi.in_consolidation]
+  by_cases hin : inputs.in_consolidation = true
+  · simp [hin, absResult, hm.effective_balance, Pure.pure, Except.pure]
+  simp only [hin, Bool.false_eq_true, if_false]
+  apply exists_imp_spec
+  obtain ⟨res, hres, h⟩ := spec_imp_exists (new_effective_balance_equiv p r.validator lr.balance
+    lr.effective_balance i.effective_balance_limit c.downward_threshold c.upward_threshold
+    c.effective_balance_increment hm.effective_balance hi.effective_balance_limit
+    hc.effective_balance_increment)
+  rw [hres]
+  rw [hdownward, hupward, hm.balance] at h
+  rw [← h]
+  cases res with
+  | Err e =>
+    refine ⟨_, rfl, ?_⟩
+    simp [core.convert.FromSame.from, absResult]
+  | Ok v =>
+    refine ⟨_, rfl, ?_⟩
+    simp [absResult]
+
+/-- `lhRowStepFull` as a plain chain of binds, once the eligibility is known. -/
+theorem lhRowStepFull_eq (p : Spec.Preset) (ctx : Spec.LhStepContext)
+    (downward upward : Spec.Uint64) (inputs : Spec.LhRowInputs)
+    (churn : Spec.Epoch × Spec.Gwei) (r : Spec.Row) (eligible : Bool)
+    (h : Spec.validatorEligible ctx.previous_epoch r.validator = .ok eligible) :
+    Spec.lhRowStepFull p ctx downward upward inputs churn r =
+      ((if eligible then
+          Spec.inactivityScoreStep p (Spec.rowHitsTarget ctx.previous_epoch r) ctx.in_leak
+            r.inactivity_score
+        else pure r.inactivity_score) >>= fun s =>
+      (if eligible then
+          Spec.rewardDeltas p inputs.base_reward r.validator.effective_balance s
+            (Spec.rewardsParticipating ctx.previous_epoch { r with inactivity_score := s }
+              Spec.TIMELY_SOURCE_FLAG_INDEX)
+            (Spec.rewardsParticipating ctx.previous_epoch { r with inactivity_score := s }
+              Spec.TIMELY_TARGET_FLAG_INDEX)
+            (Spec.rewardsParticipating ctx.previous_epoch { r with inactivity_score := s }
+              Spec.TIMELY_HEAD_FLAG_INDEX)
+            ctx.in_leak ctx.source_increments ctx.target_increments ctx.head_increments
+            ctx.active_increments >>= fun deltas => Spec.rewardsCombined r.balance deltas
+        else pure r.balance) >>= fun balance =>
+      Spec.registryStepIndependent p ctx.total_active_balance ctx.current_epoch
+        ctx.finalized_epoch r.validator.effective_balance (Spec.registryFieldsOf r.validator churn)
+        >>= fun f =>
+      Spec.slashingBalanceStep p ctx.slashings_target ctx.penalty_per_increment
+        (r.validator.withRegistryFields f) balance >>= fun balance' =>
+      Spec.uint64Add balance' inputs.deposit >>= fun balance'' =>
+      (if inputs.in_consolidation then pure (r.validator.withRegistryFields f).effective_balance
+        else Spec.newEffectiveBalance p downward upward (r.validator.withRegistryFields f)
+          balance'') >>= fun effective_balance =>
+      pure ((f.earliest_exit_epoch, f.exit_balance_to_consume),
+        { r with
+          inactivity_score := s
+          balance := balance''
+          validator := { r.validator.withRegistryFields f with effective_balance } })) := by
+  rw [Spec.lhRowStepFull, lhRowStep_eq p ctx _ _ r eligible h]
+  cases eligible <;> cases inputs.in_consolidation <;> simp [Spec.Validator.withRegistryFields]
+
+/-- Lighthouse's `single_pass_step` equals `lhRowStepFull` for one validator. -/
 theorem single_pass_step_equiv (p : Spec.Preset) (lr : ValidatorRow) (r : Spec.Row)
-    (hm : RowMatches lr r) (base_reward : U64) (churn : ExitChurn) (c : StepContext)
-    (ctx : Spec.LhStepContext) (hc : ContextMatches p c ctx) (consts : LhRegistryConstants)
-    (hconsts : ConstantsMatch p consts) :
-    per_epoch_processing.single_pass_step.single_pass_step lr base_reward churn c consts ⦃ res =>
-      absStep r res = Spec.lhRowStep p ctx base_reward.val
+    (hm : RowMatches lr r) (i : RowInputs) (inputs : Spec.LhRowInputs)
+    (hi : InputsMatches p i inputs r) (churn : ExitChurn) (c : StepContext)
+    (ctx : Spec.LhStepContext) (hc : ContextMatches p c ctx) (downward upward : Spec.Uint64)
+    (hdownward : c.downward_threshold.val = downward) (hupward : c.upward_threshold.val = upward)
+    (consts : LhRegistryConstants) (hconsts : ConstantsMatch p consts) :
+    per_epoch_processing.single_pass_step.single_pass_step lr i churn c consts ⦃ res =>
+      absStep r res = Spec.lhRowStepFull p ctx downward upward inputs
         (churn.earliest_exit_epoch.val, churn.exit_balance_to_consume.val) r ⦄ := by
   unfold per_epoch_processing.single_pass_step.single_pass_step
   apply exists_imp_spec
@@ -348,11 +465,11 @@ theorem single_pass_step_equiv (p : Spec.Preset) (lr : ValidatorRow) (r : Spec.R
   cases e0 with
   | Err e =>
     refine ⟨_, rfl, ?_⟩
-    simp only [Spec.lhRowStep, ← h0]
+    simp only [Spec.lhRowStepFull, Spec.lhRowStep, ← h0]
     simp [core.convert.FromSame.from, absResult, absStep, except_error_bind]
   | Ok b =>
   simp only [absResult, id] at h0
-  rw [lhRowStep_eq p ctx _ _ r b h0.symm]
+  rw [lhRowStepFull_eq p ctx _ _ _ _ r b h0.symm]
   simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
   obtain ⟨e1, he1, h1, hf1⟩ := spec_imp_exists (inactivity_step_equiv p lr r hm b c ctx hc)
   rw [he1]
@@ -368,9 +485,10 @@ theorem single_pass_step_equiv (p : Spec.Preset) (lr : ValidatorRow) (r : Spec.R
   simp only [bind_tc_ok, except_ok_bind]
   have hm1 : RowMatches { lr with inactivity_score := s1 } { r with inactivity_score := s1.val } :=
     ⟨hm.1, rfl, hm.3, hm.4, hm.5, hm.6, hm.7, hm.8, hm.9⟩
-  obtain ⟨e2, he2, h2, hf2⟩ := spec_imp_exists (rewards_step_equiv p _ _ hm1 b base_reward c ctx hc)
+  obtain ⟨e2, he2, h2, hf2⟩ := spec_imp_exists
+    (rewards_step_equiv p _ _ hm1 b i.base_reward c ctx hc)
   rw [he2]
-  simp only [absResult] at h2
+  simp only [absResult, hi.base_reward] at h2
   cases e2 with
   | Err e =>
     refine ⟨_, rfl, ?_⟩
@@ -419,13 +537,58 @@ theorem single_pass_step_equiv (p : Spec.Preset) (lr : ValidatorRow) (r : Spec.R
   | Err e =>
     refine ⟨_, rfl, ?_⟩
     rw [← h4]
-    simp [core.convert.FromSame.from, absStep]
+    simp [core.convert.FromSame.from, absStep, except_error_bind]
   | Ok lr4 =>
   obtain ⟨s4, rfl⟩ : ∃ s, lr4 = { lr with
       inactivity_score := s1, balance := s, activation_eligibility_epoch := a3,
       activation_epoch := b3, exit_epoch := c3, withdrawable_epoch := d3 } :=
     ⟨_, hf4 lr4 rfl⟩
   rw [← h4]
+  simp only [bind_tc_ok, except_ok_bind]
+  obtain ⟨e5, he5, h5, hf5⟩ := spec_imp_exists (deposit_step_equiv p _ i.deposit c ctx hc)
+  rw [he5]
+  simp only [absResult, hi.deposit] at h5
+  cases e5 with
+  | Err e =>
+    refine ⟨_, rfl, ?_⟩
+    rw [← h5]
+    simp [core.convert.FromSame.from, absStep, except_error_bind]
+  | Ok lr5 =>
+  obtain ⟨s5, rfl⟩ : ∃ s, lr5 = { lr with
+      inactivity_score := s1, balance := s, activation_eligibility_epoch := a3,
+      activation_epoch := b3, exit_epoch := c3, withdrawable_epoch := d3 } :=
+    ⟨_, hf5 lr5 rfl⟩
+  rw [← h5]
+  simp only [bind_tc_ok, except_ok_bind]
+  have hm5 : RowMatches
+      { lr with
+        inactivity_score := s1, balance := s5, activation_eligibility_epoch := a3,
+        activation_epoch := b3, exit_epoch := c3, withdrawable_epoch := d3 }
+      { r with
+        inactivity_score := s1.val, balance := s5.val,
+        validator := r.validator.withRegistryFields f } := ⟨rfl, hm3.2, hm3.3, hm3.4, hm3.5,
+          hm3.6, hm3.7, hm3.8, hm3.9⟩
+  have hi5 : InputsMatches p i inputs
+      { r with
+        inactivity_score := s1.val, balance := s5.val,
+        validator := r.validator.withRegistryFields f } :=
+    ⟨hi.1, hi.2, hi.3, hi.4⟩
+  obtain ⟨e6, he6, h6, hf6⟩ := spec_imp_exists
+    (effective_balance_step_equiv p _ _ hm5 i inputs hi5 c ctx hc downward upward hdownward hupward)
+  rw [he6]
+  simp only [absResult] at h6
+  cases e6 with
+  | Err e =>
+    refine ⟨_, rfl, ?_⟩
+    rw [← h6]
+    simp [core.convert.FromSame.from, absStep]
+  | Ok lr6 =>
+  obtain ⟨s6, rfl⟩ : ∃ s, lr6 = { lr with
+      inactivity_score := s1, balance := s5, effective_balance := s,
+      activation_eligibility_epoch := a3, activation_epoch := b3, exit_epoch := c3,
+      withdrawable_epoch := d3 } :=
+    ⟨_, hf6 lr6 rfl⟩
+  rw [← h6]
   subst hf
   simp [absStep, absRegistry, lhRegistryFieldsOf, Spec.Validator.withRegistryFields]
 
