@@ -18,6 +18,7 @@ import EpochProofs.Sanity.Block.ExecutionRequests
 import EpochProofs.Sanity.Block.ParentPayload
 import EpochProofs.Sanity.Block.Exits
 import EpochProofs.Sanity.Block.Slashings
+import EpochProofs.Sanity.Block.Attestations
 open EpochProofs.Spec
 #print axioms EpochProofs.Spec.withdrawals_loop
 #print axioms EpochProofs.Spec.process_builder_pending_payments_eq
@@ -100,3 +101,7 @@ open EpochProofs.Spec
 #print axioms EpochProofs.Spec.process_bls_to_execution_change_effects
 #print axioms EpochProofs.Spec.process_proposer_slashing_effects
 #print axioms EpochProofs.Spec.process_attester_slashing_effects
+#print axioms EpochProofs.Spec.process_attestation_ebStable
+#print axioms EpochProofs.Spec.process_attestation_exitOrder
+#print axioms EpochProofs.Spec.process_attestation_balancesUp
+#print axioms EpochProofs.Spec.process_payload_attestation_eq
