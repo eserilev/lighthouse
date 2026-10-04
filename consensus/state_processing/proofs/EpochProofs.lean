@@ -27,6 +27,10 @@ import EpochProofs.Sanity.RowsChain
 import EpochProofs.Sanity.RowsSinglePass
 import EpochProofs.Sanity.LighthouseRow
 import EpochProofs.Sanity.LighthouseRowOrder
+import EpochProofs.Sanity.PassCongr
+import EpochProofs.Sanity.RewardsBound
+import EpochProofs.Sanity.EffectiveBalanceInvariant
+import EpochProofs.Sanity.LighthouseSinglePass
 import EpochProofs.Equiv.BuilderPendingPayments
 import EpochProofs.Equiv.EffectiveBalanceUpdates
 import EpochProofs.Equiv.InactivityUpdates

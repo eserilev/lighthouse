@@ -117,6 +117,35 @@ the rewards and registry conditions above, if the base reward from the epoch cac
 Not covered yet: pending deposits and consolidations, which run between slashings and effective
 balance updates.
 
+## State conditions
+
+`lighthouse_single_pass_eq_spec` replaces the per-validator conditions with facts about the
+state at the start of epoch processing, on mainnet.
+
+The rewards condition is weaker than "the balance covers all penalties". The inactivity penalty
+is the last of the four rounds, and no reward follows it. So only the three flag penalties must
+fit in the balance (`rewardsCombined_eq_sequential_flags`). These penalties are at most 40/64 of
+the base reward, and the base reward is at most 1/256 of the effective balance
+(`rewardsBaseReward_bound`). The old condition fails in a long inactivity leak. The new one
+does not.
+
+| Fact | Status |
+|---|---|
+| Effective balance ≤ 256 × balance | Proved after `process_effective_balance_updates` (`process_effective_balance_updates_floor_mainnet`, in fact 3 × effective balance ≤ 4 × balance). Assumed to hold until the next epoch. |
+| `EJECTION_BALANCE < MIN_ACTIVATION_BALANCE` | Proved for mainnet and minimal |
+| Balance + effective balance < 2^64 | Assumed. The ETH supply is below 2^57 Gwei. |
+| Exit epoch ≤ `FAR_FUTURE_EPOCH`, next epoch < 2^64 | Assumed. These are `u64` values. |
+| Finalized epoch ≤ current epoch | Assumed. Justification and finalization are not transcribed. |
+| `get_total_active_balance` ≥ one increment | Assumed. It is `max(INCREMENT, sum)` by definition. |
+| Each flag's participating increments ≤ 256 × active increments | Assumed. The two sets differ only by validators that activate or exit at this boundary. |
+| `base_reward` from the epoch cache = `get_base_reward` | Assumed (cache) |
+
+Block processing between two epochs is not modelled. It lowers balances in three ways:
+- Slashing removes 1/4096 of the effective balance.
+- A partial withdrawal leaves at least `MIN_ACTIVATION_BALANCE` or the maximum effective balance.
+- A full withdrawal applies only to a withdrawable validator, which is no longer eligible.
+None of these breaks the effective balance floor, but no proof covers this argument.
+
 `absState` maps Aeneas types to reference types. Rust `Default` maps to spec `empty()`.
 
 ## The reference
