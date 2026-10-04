@@ -5,7 +5,7 @@ use crate::{
     per_epoch_processing::{
         Error, ParticipationEpochSummary, builder_pending_payments, effective_balance,
         inactivity_updates, pending_consolidations, pending_deposits, registry_update,
-        rewards_penalties, slashings_penalty,
+        rewards_penalties, single_pass_step, slashings_penalty,
     },
 };
 use itertools::izip;
@@ -17,9 +17,9 @@ use std::sync::Arc;
 use tracing::instrument;
 use typenum::Unsigned;
 use types::{
-    ActivationQueue, BeaconState, BeaconStateError, ChainSpec, Checkpoint, CommitteeCache,
-    DepositData, Epoch, EthSpec, ExitCache, ForkName, ParticipationFlags, PendingDeposit,
-    ProgressiveBalancesCache, RelativeEpoch, Validator,
+    ActivationQueue, BeaconState, BeaconStateError, ChainSpec, CommitteeCache, DepositData, Epoch,
+    EthSpec, ExitCache, ForkName, ParticipationFlags, PendingDeposit, ProgressiveBalancesCache,
+    RelativeEpoch, Validator,
     consts::altair::{
         NUM_FLAG_INDICES, TIMELY_HEAD_FLAG_INDEX, TIMELY_SOURCE_FLAG_INDEX,
         TIMELY_TARGET_FLAG_INDEX,
@@ -81,7 +81,6 @@ impl SinglePassConfig {
 struct StateContext {
     current_epoch: Epoch,
     next_epoch: Epoch,
-    finalized_checkpoint: Checkpoint,
     is_in_inactivity_leak: bool,
     total_active_balance: u64,
     churn_limit: u64,
@@ -178,7 +177,6 @@ pub fn process_epoch_single_pass<E: EthSpec>(
     let state_ctxt = &StateContext {
         current_epoch,
         next_epoch,
-        finalized_checkpoint,
         is_in_inactivity_leak,
         total_active_balance,
         churn_limit,
@@ -240,6 +238,40 @@ pub fn process_epoch_single_pass<E: EthSpec>(
     };
     let effective_balances_ctxt = &EffectiveBalancesContext::new(spec)?;
 
+    // After Electra, `single_pass_step` runs the first four steps for each validator.
+    let single_pass_step_ctxt = if fork_name.electra_enabled() {
+        let step_ctxt = single_pass_step::StepContext {
+            current_epoch: current_epoch.as_u64(),
+            previous_epoch: previous_epoch.as_u64(),
+            finalized_epoch: finalized_checkpoint.epoch.as_u64(),
+            is_in_inactivity_leak,
+            inactivity_score_bias: spec.inactivity_score_bias,
+            inactivity_score_recovery_rate: spec.inactivity_score_recovery_rate,
+            inactivity_penalty_quotient: spec.inactivity_penalty_quotient_for_fork(fork_name),
+            source_increments: rewards_ctxt
+                .get_unslashed_participating_increments(TIMELY_SOURCE_FLAG_INDEX)?,
+            target_increments: rewards_ctxt
+                .get_unslashed_participating_increments(TIMELY_TARGET_FLAG_INDEX)?,
+            head_increments: rewards_ctxt
+                .get_unslashed_participating_increments(TIMELY_HEAD_FLAG_INDEX)?,
+            active_increments: rewards_ctxt.active_increments,
+            total_active_balance,
+            target_withdrawable_epoch: slashings_ctxt.target_withdrawable_epoch.as_u64(),
+            adjusted_total_slashing_balance: slashings_ctxt.adjusted_total_slashing_balance,
+            penalty_per_effective_balance_increment: slashings_ctxt
+                .penalty_per_effective_balance_increment,
+            effective_balance_increment: spec.effective_balance_increment,
+            after_genesis: current_epoch != E::genesis_epoch(),
+            inactivity_updates: conf.inactivity_updates,
+            rewards_and_penalties: conf.rewards_and_penalties,
+            registry_updates: conf.registry_updates,
+            slashings: conf.slashings,
+        };
+        Some((step_ctxt, registry_constants(state_ctxt, spec)))
+    } else {
+        None
+    };
+
     // Iterate over the validators and related fields in one pass.
     let mut validators_iter = validators.iter_cow();
     let mut balances_iter = balances.iter_cow();
@@ -283,50 +315,93 @@ pub fn process_epoch_single_pass<E: EthSpec>(
             current_epoch_participation,
         };
 
-        if current_epoch != E::genesis_epoch() {
-            // `process_inactivity_updates`
-            if conf.inactivity_updates {
-                process_single_inactivity_update(
-                    &mut inactivity_score,
-                    validator_info,
-                    state_ctxt,
-                    spec,
-                )?;
-            }
-
-            // `process_rewards_and_penalties`
-            if conf.rewards_and_penalties {
-                process_single_reward_and_penalty(
-                    &mut balance,
-                    &inactivity_score,
-                    validator_info,
-                    rewards_ctxt,
-                    state_ctxt,
-                    spec,
-                )?;
-            }
-        }
-
-        // `process_registry_updates`
-        if conf.registry_updates {
-            let activation_queue_refs = activation_queues
-                .as_mut()
-                .map(|(current_queue, next_queue)| (&*current_queue, next_queue));
-            process_single_registry_update(
-                &mut validator,
-                validator_info,
-                exit_cache,
-                activation_queue_refs,
-                state_ctxt,
-                earliest_exit_epoch.as_mut(),
-                exit_balance_to_consume.as_mut(),
-                spec,
+        if let Some((step_ctxt, registry_constants)) = &single_pass_step_ctxt {
+            let row = single_pass_step::ValidatorRow {
+                balance: *balance,
+                inactivity_score: *inactivity_score,
+                effective_balance: validator.effective_balance,
+                slashed: validator.slashed,
+                activation_eligibility_epoch: validator.activation_eligibility_epoch.as_u64(),
+                activation_epoch: validator.activation_epoch.as_u64(),
+                exit_epoch: validator.exit_epoch.as_u64(),
+                withdrawable_epoch: validator.withdrawable_epoch.as_u64(),
+                previous_epoch_participation: previous_epoch_participation.into_u8(),
+            };
+            let churn = single_pass_step::ExitChurn {
+                earliest_exit_epoch: earliest_exit_epoch
+                    .ok_or(Error::MissingEarliestExitEpoch)?
+                    .as_u64(),
+                exit_balance_to_consume: exit_balance_to_consume
+                    .ok_or(Error::MissingExitBalanceToConsume)?,
+            };
+            let (new_row, new_churn) = single_pass_step::single_pass_step(
+                row,
+                validator_info.base_reward,
+                churn,
+                step_ctxt,
+                registry_constants,
             )?;
-        }
+            write_back_row(
+                &row,
+                &new_row,
+                &mut validator,
+                &mut balance,
+                &mut inactivity_score,
+                exit_cache,
+            )?;
+            earliest_exit_epoch = Some(Epoch::new(new_churn.earliest_exit_epoch));
+            exit_balance_to_consume = Some(new_churn.exit_balance_to_consume);
+        } else {
+            if current_epoch != E::genesis_epoch() {
+                // `process_inactivity_updates`
+                if conf.inactivity_updates {
+                    process_single_inactivity_update(
+                        &mut inactivity_score,
+                        validator_info,
+                        state_ctxt,
+                        spec,
+                    )?;
+                }
 
-        // `process_slashings`
-        if conf.slashings {
-            process_single_slashing(&mut balance, &validator, slashings_ctxt, state_ctxt, spec)?;
+                // `process_rewards_and_penalties`
+                if conf.rewards_and_penalties {
+                    process_single_reward_and_penalty(
+                        &mut balance,
+                        &inactivity_score,
+                        validator_info,
+                        rewards_ctxt,
+                        state_ctxt,
+                        spec,
+                    )?;
+                }
+            }
+
+            // `process_registry_updates`
+            if conf.registry_updates {
+                let (activation_queue, next_epoch_activation_queue) = activation_queues
+                    .as_mut()
+                    .ok_or(Error::SinglePassMissingActivationQueue)?;
+                process_single_registry_update_pre_electra(
+                    &mut validator,
+                    validator_info,
+                    exit_cache,
+                    activation_queue,
+                    next_epoch_activation_queue,
+                    state_ctxt,
+                    spec,
+                )?;
+            }
+
+            // `process_slashings`
+            if conf.slashings {
+                process_single_slashing(
+                    &mut balance,
+                    &validator,
+                    slashings_ctxt,
+                    state_ctxt,
+                    spec,
+                )?;
+            }
         }
 
         // `process_pending_deposits`
@@ -705,41 +780,6 @@ impl RewardsAndPenaltiesContext {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn process_single_registry_update(
-    validator: &mut Cow<Validator>,
-    validator_info: &ValidatorInfo,
-    exit_cache: &mut ExitCache,
-    activation_queues: Option<(&BTreeSet<usize>, &mut ActivationQueue)>,
-    state_ctxt: &StateContext,
-    earliest_exit_epoch: Option<&mut Epoch>,
-    exit_balance_to_consume: Option<&mut u64>,
-    spec: &ChainSpec,
-) -> Result<(), Error> {
-    if !state_ctxt.fork_name.electra_enabled() {
-        let (activation_queue, next_epoch_activation_queue) =
-            activation_queues.ok_or(Error::SinglePassMissingActivationQueue)?;
-        process_single_registry_update_pre_electra(
-            validator,
-            validator_info,
-            exit_cache,
-            activation_queue,
-            next_epoch_activation_queue,
-            state_ctxt,
-            spec,
-        )
-    } else {
-        process_single_registry_update_post_electra(
-            validator,
-            exit_cache,
-            state_ctxt,
-            earliest_exit_epoch.ok_or(Error::MissingEarliestExitEpoch)?,
-            exit_balance_to_consume.ok_or(Error::MissingExitBalanceToConsume)?,
-            spec,
-        )
-    }
-}
-
 fn process_single_registry_update_pre_electra(
     validator: &mut Cow<Validator>,
     validator_info: &ValidatorInfo,
@@ -776,16 +816,12 @@ fn process_single_registry_update_pre_electra(
     Ok(())
 }
 
-fn process_single_registry_update_post_electra(
-    validator: &mut Cow<Validator>,
-    exit_cache: &mut ExitCache,
+fn registry_constants(
     state_ctxt: &StateContext,
-    earliest_exit_epoch: &mut Epoch,
-    exit_balance_to_consume: &mut u64,
     spec: &ChainSpec,
-) -> Result<(), Error> {
+) -> registry_update::RegistryConstants {
     let gloas = state_ctxt.fork_name.gloas_enabled();
-    let constants = registry_update::RegistryConstants {
+    registry_update::RegistryConstants {
         far_future_epoch: spec.far_future_epoch.as_u64(),
         min_activation_balance: spec.min_activation_balance,
         ejection_balance: spec.ejection_balance,
@@ -803,29 +839,29 @@ fn process_single_registry_update_post_electra(
         } else {
             spec.max_per_epoch_activation_exit_churn_limit
         },
-    };
-    let old_exit_epoch = validator.exit_epoch;
-    let fields = registry_update::RegistryFields {
-        activation_eligibility_epoch: validator.activation_eligibility_epoch.as_u64(),
-        activation_epoch: validator.activation_epoch.as_u64(),
-        exit_epoch: validator.exit_epoch.as_u64(),
-        withdrawable_epoch: validator.withdrawable_epoch.as_u64(),
-        earliest_exit_epoch: earliest_exit_epoch.as_u64(),
-        exit_balance_to_consume: *exit_balance_to_consume,
-    };
-    let new = registry_update::registry_update(
-        fields,
-        validator.effective_balance,
-        state_ctxt.current_epoch.as_u64(),
-        state_ctxt.finalized_checkpoint.epoch.as_u64(),
-        state_ctxt.total_active_balance,
-        &constants,
-    )?;
+    }
+}
 
-    if new.activation_eligibility_epoch != validator.activation_eligibility_epoch.as_u64()
-        || new.activation_epoch != validator.activation_epoch.as_u64()
-        || new.exit_epoch != validator.exit_epoch.as_u64()
-        || new.withdrawable_epoch != validator.withdrawable_epoch.as_u64()
+/// Writes back the fields that `single_pass_step` changed. Only changed fields are written, so
+/// unchanged tree nodes stay shared.
+fn write_back_row(
+    old: &single_pass_step::ValidatorRow,
+    new: &single_pass_step::ValidatorRow,
+    validator: &mut Cow<Validator>,
+    balance: &mut Cow<u64>,
+    inactivity_score: &mut Cow<u64>,
+    exit_cache: &mut ExitCache,
+) -> Result<(), Error> {
+    if new.inactivity_score != old.inactivity_score {
+        *inactivity_score.make_mut()? = new.inactivity_score;
+    }
+    if new.balance != old.balance {
+        *balance.make_mut()? = new.balance;
+    }
+    if new.activation_eligibility_epoch != old.activation_eligibility_epoch
+        || new.activation_epoch != old.activation_epoch
+        || new.exit_epoch != old.exit_epoch
+        || new.withdrawable_epoch != old.withdrawable_epoch
     {
         let validator = validator.make_mut()?;
         validator.activation_eligibility_epoch = Epoch::new(new.activation_eligibility_epoch);
@@ -833,12 +869,9 @@ fn process_single_registry_update_post_electra(
         validator.exit_epoch = Epoch::new(new.exit_epoch);
         validator.withdrawable_epoch = Epoch::new(new.withdrawable_epoch);
     }
-    if new.exit_epoch != old_exit_epoch.as_u64() {
+    if new.exit_epoch != old.exit_epoch {
         exit_cache.record_validator_exit(Epoch::new(new.exit_epoch))?;
     }
-    *earliest_exit_epoch = Epoch::new(new.earliest_exit_epoch);
-    *exit_balance_to_consume = new.exit_balance_to_consume;
-
     Ok(())
 }
 
