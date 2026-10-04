@@ -1073,7 +1073,7 @@ private theorem single_pass_ok_iff (p : Preset) (ctx : RewardsContext) (state : 
       exact ⟨rfl, rfl⟩
 
 /-- What a successful context computation gives. -/
-private theorem rewardsContextOf_ok (p : Preset) (total_active_balance : Gwei)
+theorem rewardsContextOf_ok (p : Preset) (total_active_balance : Gwei)
     (state : BeaconState) (ctx : RewardsContext)
     (h : rewardsContextOf p total_active_balance state = .ok ctx) :
     get_previous_epoch p state = .ok ctx.previous_epoch

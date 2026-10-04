@@ -9,6 +9,7 @@ import EpochProofs.Equiv.PendingConsolidations
 import EpochProofs.Sanity.RowsSinglePass
 import EpochProofs.Sanity.LighthouseRowOrder
 import EpochProofs.Equiv.SinglePassStep
+import EpochProofs.Sanity.LighthouseSinglePass
 import EpochProofs.Sanity.RowsEffectiveBalance
 open EpochProofs.Spec
 #print axioms EpochProofs.Spec.withdrawals_loop
@@ -72,3 +73,8 @@ open EpochProofs.Spec
 #print axioms EpochProofs.Spec.separate_passes_eq_single_pass
 #print axioms EpochProofs.Spec.lhRowStep_eq_singlePassStep
 #print axioms EpochProofs.single_pass_step_equiv
+#print axioms EpochProofs.Spec.rewardsCombined_eq_sequential_flags
+#print axioms EpochProofs.Spec.rewardsBaseReward_bound
+#print axioms EpochProofs.Spec.lhRowStep_eq_singlePassStep_of_bounds
+#print axioms EpochProofs.Spec.process_effective_balance_updates_floor_mainnet
+#print axioms EpochProofs.Spec.lighthouse_single_pass_eq_spec
