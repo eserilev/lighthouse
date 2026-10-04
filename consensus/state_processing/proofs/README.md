@@ -149,6 +149,39 @@ None of these breaks the effective balance floor, but no proof covers this argum
 
 `absState` maps Aeneas types to reference types. Rust `Default` maps to spec `empty()`.
 
+## The whole state transition
+
+`lighthouse_state_transition_sameOk` (in `Sanity/Invariants/Capstone.lean`) is the main result.
+On mainnet, a state transition that runs Lighthouse's single pass in place of the spec's
+inactivity, rewards, registry and slashings passes gives the same `ok` results as the spec.
+This holds from every state that spec state transitions reach from a genesis-like state.
+
+To get there, `Spec/` transcribes all of Gloas block processing and `process_epoch`, and
+`Sanity/Invariants/` proves these invariants on every reachable state:
+
+| Invariant | File |
+|---|---|
+| Finalized ≤ previous justified ≤ current justified ≤ current epoch | `Sanity/JustificationFinalization.lean`, `Sanity/Driver.lean` |
+| Per-validator lists have one entry per validator | `Lengths.lean` |
+| `exit_epoch + 256 ≤ withdrawable_epoch` unless withdrawable is far future | `ExitDelay.lean` |
+| Exit epochs fit in a `u64` | `ExitEpochs.lean` |
+| After each epoch, effective balance ≤ 4/3 × balance, a multiple of 1 ETH, ≤ 2048 ETH | `EpochEnd.lean` |
+| At each epoch boundary, effective balance ≤ 256 × balance for eligible validators | `BalanceFloor.lean`, `Reachable.lean` |
+
+The balance floor survives the blocks of one epoch: at most one slashing of EB/4096 per
+validator, and at most 32 sync aggregates. A validator can hold many sync committee seats, so
+the sync penalty bound needs the active balance to be at most 139M ETH. That is above the total
+ETH supply.
+
+Hypotheses that remain:
+- The start state satisfies the invariants above. Genesis does.
+- The active balance is at most 139M ETH before each block (`SupplyBound`).
+- At each epoch, balances are below 2^62, effective balances sum below 2^60, and three times
+  the slashings sum fits in a `u64` (`EpochSupply`).
+- Block slots fit in a `u64`, and sync aggregates have at most 512 bits (SSZ types).
+- BLS, `hash_tree_root` and the execution engine are parameters (`Spec/Oracle.lean`).
+- The base reward that Lighthouse reads from the epoch cache equals `get_base_reward`.
+
 ## The reference
 
 `EpochProofs/Spec/` transcribes the consensus specs (v1.7.0-beta.2) line by line. Each

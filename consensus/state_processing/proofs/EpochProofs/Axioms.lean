@@ -23,6 +23,14 @@ import EpochProofs.Sanity.Block.SyncAggregate
 import EpochProofs.Sanity.JustificationFinalization
 import EpochProofs.Sanity.EpochCommittees
 import EpochProofs.Sanity.Driver
+import EpochProofs.Sanity.Invariants.ExitDelay
+import EpochProofs.Sanity.Invariants.BalanceFloor
+import EpochProofs.Sanity.Invariants.EpochEnd
+import EpochProofs.Sanity.Invariants.Lengths
+import EpochProofs.Sanity.Invariants.ExitEpochs
+import EpochProofs.Sanity.Invariants.Reachable
+import EpochProofs.Sanity.Invariants.LighthouseEpoch
+import EpochProofs.Sanity.Invariants.Capstone
 open EpochProofs.Spec
 #print axioms EpochProofs.Spec.withdrawals_loop
 #print axioms EpochProofs.Spec.process_builder_pending_payments_eq
@@ -121,3 +129,13 @@ open EpochProofs.Spec
 #print axioms EpochProofs.Spec.process_slots_process_epoch_ffg
 #print axioms EpochProofs.Spec.process_block_checkpointsStable
 #print axioms EpochProofs.Spec.state_transition_ffg
+#print axioms EpochProofs.Spec.process_epoch_exitDelay
+#print axioms EpochProofs.Spec.process_block_budget_mainnet
+#print axioms EpochProofs.Spec.boundary_effective_balance_mainnet
+#print axioms EpochProofs.Spec.process_epoch_effective_balances
+#print axioms EpochProofs.Spec.state_transition_rowsOk
+#print axioms EpochProofs.Spec.reachable_inv
+#print axioms EpochProofs.Spec.reachable_boundaryOk
+#print axioms EpochProofs.Spec.reachable_state_transition_sameOk'
+#print axioms EpochProofs.Spec.process_epoch_lh_sameOk'
+#print axioms EpochProofs.Spec.lighthouse_state_transition_sameOk

@@ -63,6 +63,14 @@ import EpochProofs.Sanity.JustificationFinalization
 import EpochProofs.Sanity.EpochCommittees
 import EpochProofs.Spec.Block.Block
 import EpochProofs.Sanity.Driver
+import EpochProofs.Sanity.Invariants.ExitDelay
+import EpochProofs.Sanity.Invariants.BalanceFloor
+import EpochProofs.Sanity.Invariants.EpochEnd
+import EpochProofs.Sanity.Invariants.Lengths
+import EpochProofs.Sanity.Invariants.ExitEpochs
+import EpochProofs.Sanity.Invariants.Reachable
+import EpochProofs.Sanity.Invariants.LighthouseEpoch
+import EpochProofs.Sanity.Invariants.Capstone
 import EpochProofs.Equiv.BuilderPendingPayments
 import EpochProofs.Equiv.EffectiveBalanceUpdates
 import EpochProofs.Equiv.InactivityUpdates
