@@ -189,8 +189,16 @@ Rules:
 | `depositLoop_append` | The deposit loop over two lists is the loop over the first, then the second |
 | `forIn_eq_stepLoop` | A `for` loop with `break` is a `stepLoop`, if each body run is one step |
 | `process_pending_consolidations_eq` | If the balances and the validators have the same length, the reference is `stepLoop consolidationStep`, then a drop |
+| `process_slots_invariant` | `process_slots` keeps each property that `process_slot`, `processEpoch` and the slot increment keep |
+| `process_slots_frame` | If `processEpoch` keeps `validators`, `balances` and `inactivity_scores`, `process_slots` keeps them |
+| `process_slots_slot` | If `processEpoch` keeps `slot`, `process_slots` ends at the target slot |
+| `process_*_frame` | Slot, block header, RANDAO, eth1 and epoch reset steps keep `validators`, `balances`, `inactivity_scores` and `slot` |
 
 `get_total_active_balance(state)` is a parameter. Lighthouse reads it from a cache.
+
+`Spec/Oracle.lean` holds SHA-256, `hash_tree_root` and BLS as fields of an `Oracle` value. A
+field is a parameter, not an axiom. A theorem for every `Oracle` does not depend on hash or
+signature values. `process_slots` takes `process_epoch` as the parameter `processEpoch`.
 
 ## Building
 
