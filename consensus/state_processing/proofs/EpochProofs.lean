@@ -61,6 +61,8 @@ import EpochProofs.Spec.EpochCommittees
 import EpochProofs.Sanity.Block.SyncAggregate
 import EpochProofs.Sanity.JustificationFinalization
 import EpochProofs.Sanity.EpochCommittees
+import EpochProofs.Spec.Block.Block
+import EpochProofs.Sanity.Driver
 import EpochProofs.Equiv.BuilderPendingPayments
 import EpochProofs.Equiv.EffectiveBalanceUpdates
 import EpochProofs.Equiv.InactivityUpdates
