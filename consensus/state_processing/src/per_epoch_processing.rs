@@ -30,6 +30,7 @@ pub mod registry_updates;
 pub mod resets;
 pub mod rewards_penalties;
 pub mod single_pass;
+pub mod single_pass_step;
 pub mod slashings;
 pub mod slashings_penalty;
 pub mod tests;

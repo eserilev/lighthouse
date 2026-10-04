@@ -4,7 +4,8 @@ Goal: prove that Lighthouse's Gloas epoch processing equals the consensus spec f
 
 ```
 ../src/per_epoch_processing/{builder_pending_payments,effective_balance,inactivity_updates,slashings_penalty,
-   rewards_penalties,registry_update,pending_deposits,pending_consolidations}.rs
+   rewards_penalties,registry_update,pending_deposits,pending_consolidations,
+   single_pass_step}.rs
    --charon--> .llbc --aeneas--> EpochProofs/Generated.lean
                                           |
                      EpochProofs/Equiv/*.lean (equivalence proof)
@@ -93,6 +94,29 @@ error. Lighthouse runs on a local table of the validators that consolidations re
 `process_pending_consolidations_eq` shows that the reference equals `stepLoop consolidationStep`
 on the full registry, then a drop of the processed consolidations.
 
+## Separate passes and the single pass
+
+The spec runs each epoch step as its own pass over the validators. Lighthouse runs all steps
+for one validator, then moves to the next validator. `separate_passes_eq_single_pass` shows that the spec's
+inactivity, rewards, registry and slashings passes give the same `ok` results as one pass of
+`singlePassStep`. That step runs the four row steps on each validator in turn.
+
+The two orders can fail on different validators, so the theorem states `SameOk`: the same `ok`
+values, and an error in one order exactly when there is an error in the other order.
+
+Each pass has its own row theorem (`process_*_rows` in `EpochProofs/Sanity/Rows*.lean`). Each
+row step uses the per-validator function that the Lighthouse code is proved equal to.
+`two_passes_eq_one_pass` shows that two passes equal one pass of both steps.
+
+`single_pass_step.rs` holds the loop body for one validator after Electra. It runs the four
+steps in the Lighthouse order. `single_pass_step_equiv` shows that the generated code equals
+`lhRowStep`. `lhRowStep_eq_singlePassStep` shows that `lhRowStep` equals `singlePassStep` under
+the rewards and registry conditions above, if the base reward from the epoch cache equals
+`get_base_reward`.
+
+Not covered yet: pending deposits and consolidations, which run between slashings and effective
+balance updates.
+
 `absState` maps Aeneas types to reference types. Rust `Default` maps to spec `empty()`.
 
 ## The reference
@@ -164,6 +188,7 @@ charon cargo --preset=aeneas \
   --start-from 'state_processing::per_epoch_processing::registry_update' \
   --start-from 'state_processing::per_epoch_processing::pending_deposits' \
   --start-from 'state_processing::per_epoch_processing::pending_consolidations' \
+  --start-from 'state_processing::per_epoch_processing::single_pass_step' \
   --include safe_arith --include types::builder --include alloy_primitives::bits \
   --include types::core::consts \
   --dest-file "$out/pure.llbc" -- --lib
@@ -221,6 +246,8 @@ copies the rest of the body into each branch, and the generated code grows expon
   reference, in index order, and maps each index to its position in the table. The moves read
   and write only these rows, so the table run equals the full-registry run of
   `process_pending_consolidations_eq`. The glue writes the new balances back.
+- The loop in `single_pass.rs` calls `single_pass_step` once for each validator, in index order,
+  and writes back each changed field.
 - `apply_pending_deposit` is a parameter of the reference. It verifies a BLS signature.
 - The registry proof covers Electra and later. The pre-Electra path is unchanged and not proved.
 - Lighthouse computes the slashings target epoch once per epoch. The spec computes it once per

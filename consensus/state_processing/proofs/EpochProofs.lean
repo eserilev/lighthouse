@@ -16,6 +16,17 @@ import EpochProofs.Sanity.RewardsAndPenalties
 import EpochProofs.Sanity.RegistryUpdates
 import EpochProofs.Sanity.PendingDeposits
 import EpochProofs.Sanity.PendingConsolidations
+import EpochProofs.Sanity.SinglePass
+import EpochProofs.Sanity.Rows
+import EpochProofs.Sanity.RowsInactivity
+import EpochProofs.Sanity.RowsRewards
+import EpochProofs.Sanity.RowsRegistry
+import EpochProofs.Sanity.RowsSlashings
+import EpochProofs.Sanity.RowsEffectiveBalance
+import EpochProofs.Sanity.RowsChain
+import EpochProofs.Sanity.RowsSinglePass
+import EpochProofs.Sanity.LighthouseRow
+import EpochProofs.Sanity.LighthouseRowOrder
 import EpochProofs.Equiv.BuilderPendingPayments
 import EpochProofs.Equiv.EffectiveBalanceUpdates
 import EpochProofs.Equiv.InactivityUpdates
@@ -24,4 +35,5 @@ import EpochProofs.Equiv.RewardsAndPenalties
 import EpochProofs.Equiv.RegistryUpdates
 import EpochProofs.Equiv.PendingDeposits
 import EpochProofs.Equiv.PendingConsolidations
+import EpochProofs.Equiv.SinglePassStep
 import EpochProofs.Axioms

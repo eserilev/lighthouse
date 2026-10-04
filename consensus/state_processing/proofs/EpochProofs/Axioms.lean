@@ -6,6 +6,10 @@ import EpochProofs.Equiv.RewardsAndPenalties
 import EpochProofs.Equiv.RegistryUpdates
 import EpochProofs.Equiv.PendingDeposits
 import EpochProofs.Equiv.PendingConsolidations
+import EpochProofs.Sanity.RowsSinglePass
+import EpochProofs.Sanity.LighthouseRowOrder
+import EpochProofs.Equiv.SinglePassStep
+import EpochProofs.Sanity.RowsEffectiveBalance
 open EpochProofs.Spec
 #print axioms EpochProofs.Spec.withdrawals_loop
 #print axioms EpochProofs.Spec.process_builder_pending_payments_eq
@@ -59,3 +63,12 @@ open EpochProofs.Spec
 #print axioms EpochProofs.Spec.process_pending_consolidations_eq
 #print axioms EpochProofs.consolidations_loop_spec
 #print axioms EpochProofs.process_pending_consolidations_equiv
+#print axioms EpochProofs.Spec.two_passes_eq_one_pass
+#print axioms EpochProofs.Spec.process_inactivity_updates_rows
+#print axioms EpochProofs.Spec.process_rewards_and_penalties_rows
+#print axioms EpochProofs.Spec.process_registry_updates_rows
+#print axioms EpochProofs.Spec.process_slashings_rows
+#print axioms EpochProofs.Spec.process_effective_balance_updates_rows
+#print axioms EpochProofs.Spec.separate_passes_eq_single_pass
+#print axioms EpochProofs.Spec.lhRowStep_eq_singlePassStep
+#print axioms EpochProofs.single_pass_step_equiv
