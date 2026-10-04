@@ -31,6 +31,19 @@ import EpochProofs.Sanity.Invariants.ExitEpochs
 import EpochProofs.Sanity.Invariants.Reachable
 import EpochProofs.Sanity.Invariants.LighthouseEpoch
 import EpochProofs.Sanity.Invariants.Capstone
+import EpochProofs.Sanity.Invariants.ConsolidationIndices
+import EpochProofs.Sanity.Invariants.LighthouseTailDeposits
+import EpochProofs.Sanity.Invariants.LighthouseTailEB
+import EpochProofs.Sanity.Invariants.LighthouseTail
+import EpochProofs.Sanity.Invariants.LighthouseTailLhNF
+import EpochProofs.Sanity.Invariants.LighthouseTailModel
+import EpochProofs.Sanity.Invariants.LighthouseTailNF
+import EpochProofs.Sanity.Invariants.LighthouseTailRows
+import EpochProofs.Sanity.Invariants.LighthouseTailSpecNF
+import EpochProofs.Sanity.Invariants.LighthouseTailTopups
+import EpochProofs.Sanity.Invariants.LighthouseTailViews
+import EpochProofs.Sanity.Invariants.PubkeysUnique
+import EpochProofs.Sanity.Invariants.WithdrawableEpochs
 open EpochProofs.Spec
 #print axioms EpochProofs.Spec.withdrawals_loop
 #print axioms EpochProofs.Spec.process_builder_pending_payments_eq
@@ -139,3 +152,9 @@ open EpochProofs.Spec
 #print axioms EpochProofs.Spec.reachable_state_transition_sameOk'
 #print axioms EpochProofs.Spec.process_epoch_lh_sameOk'
 #print axioms EpochProofs.Spec.lighthouse_state_transition_sameOk
+#print axioms EpochProofs.Spec.state_transition_pubkeysUnique
+#print axioms EpochProofs.Spec.state_transition_inRange
+#print axioms EpochProofs.Spec.state_transition_withdrawableU64
+#print axioms EpochProofs.Spec.reachable_state_transition_sameOk'''
+#print axioms EpochProofs.Spec.process_epoch_lh_full_sameOk'
+#print axioms EpochProofs.Spec.lighthouse_full_epoch_state_transition_sameOk

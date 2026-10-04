@@ -156,6 +156,19 @@ On mainnet, a state transition that runs Lighthouse's single pass in place of th
 inactivity, rewards, registry and slashings passes gives the same `ok` results as the spec.
 This holds from every state that spec state transitions reach from a genesis-like state.
 
+`lighthouse_full_epoch_state_transition_sameOk` covers the whole Lighthouse epoch. It uses
+`process_epoch_lh_full`, which follows `single_pass.rs`:
+- Pending deposits are decided once, before the loop.
+- In the loop, each validator gets its top-up sum and its effective balance update. A
+  validator that a pending consolidation names keeps its effective balance in the loop.
+- After the loop, new validators are added and get their effective balance update. Then
+  consolidations run, and the named validators get their effective balance update.
+
+This order equals the spec's deposits, consolidations, builder payments and effective balance
+updates if every pending consolidation names an existing validator, and if a validator with no
+exit also has no withdrawable epoch. Both hold on every reachable state, and so does pubkey
+uniqueness, which Lighthouse's pubkey map relies on.
+
 To get there, `Spec/` transcribes all of Gloas block processing and `process_epoch`, and
 `Sanity/Invariants/` proves these invariants on every reachable state:
 
@@ -167,6 +180,9 @@ To get there, `Spec/` transcribes all of Gloas block processing and `process_epo
 | Exit epochs fit in a `u64` | `ExitEpochs.lean` |
 | After each epoch, effective balance ≤ 4/3 × balance, a multiple of 1 ETH, ≤ 2048 ETH | `EpochEnd.lean` |
 | At each epoch boundary, effective balance ≤ 256 × balance for eligible validators | `BalanceFloor.lean`, `Reachable.lean` |
+| Validator pubkeys are unique | `PubkeysUnique.lean` |
+| Pending consolidations name existing validators | `ConsolidationIndices.lean` |
+| Withdrawable epochs fit in a `u64` | `WithdrawableEpochs.lean` |
 
 The balance floor survives the blocks of one epoch: at most one slashing of EB/4096 per
 validator, and at most 32 sync aggregates. A validator can hold many sync committee seats, so

@@ -2,6 +2,8 @@ import EpochProofs.Sanity.Invariants.BalanceFloor
 import EpochProofs.Sanity.Invariants.EpochEnd
 import EpochProofs.Sanity.Invariants.Lengths
 import EpochProofs.Sanity.Invariants.ExitEpochs
+import EpochProofs.Sanity.Invariants.ConsolidationIndices
+import EpochProofs.Sanity.Invariants.WithdrawableEpochs
 import EpochProofs.Sanity.SinglePass
 
 /-!
@@ -702,5 +704,145 @@ theorem reachable_state_transition_sameOk' (o : Oracle) (max_blobs_per_block : E
   unfold state_transition_with state_transition
   dsimp only
   exact sameOk_bind hslots fun _ _ => SameOk.refl _
+
+/-! ## Unique pubkeys and in-range consolidations -/
+
+/-- Every reachable state has unique pubkeys and in-range pending consolidations, if the start
+state has them. -/
+theorem reachable_tail (o : Oracle) (max_blobs_per_block : Epoch → Uint64)
+    (GLOAS_FORK_EPOCH : Epoch) (init : BeaconState) (hpk : PubkeysUnique init)
+    (hcr : ConsolidationsInRange init) :
+    ∀ s, Reachable o max_blobs_per_block GLOAS_FORK_EPOCH init s →
+      PubkeysUnique s ∧ ConsolidationsInRange s := by
+  intro s hr
+  induction hr with
+  | init => exact ⟨hpk, hcr⟩
+  | step signed_block validate_result _ _ _ h ih =>
+    exact ⟨state_transition_pubkeysUnique _ o _ _ _ _ _ _ ih.1 h,
+      state_transition_inRange _ o _ _ _ _ _ _ ih.2 h⟩
+
+/-- The slot loop keeps unique pubkeys and in-range pending consolidations. -/
+theorem SlotReach.tail {o : Oracle} {s t : BeaconState} (hr : SlotReach o s t)
+    (hs : PubkeysUnique s ∧ ConsolidationsInRange s) :
+    PubkeysUnique t ∧ ConsolidationsInRange t := by
+  induction hr with
+  | refl => exact hs
+  | skip _ ht _ ih =>
+    exact ⟨(PkSame.of_eq (process_slot_frame _ o _ _ ht).1.1).pubkeysUnique ih.1,
+      (process_slot_cstep _ o _ _ ht).inRange ih.2⟩
+  | epoch _ ht _ he ih =>
+    have h1 : PubkeysUnique _ ∧ ConsolidationsInRange _ :=
+      ⟨(PkSame.of_eq (process_slot_frame _ o _ _ ht).1.1).pubkeysUnique ih.1,
+        (process_slot_cstep _ o _ _ ht).inRange ih.2⟩
+    have h2 := process_epoch_pubkeysUnique _ o _ _ he h1.1
+    have h3 := process_epoch_inRange _ o _ _ he h1.2
+    exact ⟨h2, h3⟩
+
+/-- The facts at each `process_epoch` input, with unique pubkeys and in-range pending
+consolidations. -/
+def EpochInputOk' (Econ : BeaconState → Prop) (t : BeaconState) : Prop :=
+  EpochInputOk Econ t ∧ PubkeysUnique t ∧ ConsolidationsInRange t
+
+/-- `reachable_state_transition_sameOk'` for an epoch function `f` that needs, in addition,
+unique pubkeys and in-range pending consolidations at its input. The start state has them. -/
+theorem reachable_state_transition_sameOk'' (o : Oracle) (max_blobs_per_block : Epoch → Uint64)
+    (GLOAS_FORK_EPOCH : Epoch) (init : BeaconState)
+    (hffg : FfgInvariant Preset.mainnet init) (hrows : RowsOk init)
+    (hd : ExitDelay Preset.mainnet init) (hx : ExitEpochsU64 init)
+    (h0 : AfterEB Preset.mainnet init) (hpk : PubkeysUnique init)
+    (hcr : ConsolidationsInRange init)
+    (hsupply : SupplyBound o max_blobs_per_block GLOAS_FORK_EPOCH init)
+    (Econ : BeaconState → Prop)
+    (hecon : EpochEcon o max_blobs_per_block GLOAS_FORK_EPOCH init Econ)
+    (f : BeaconState → SpecM BeaconState)
+    (hf : ∀ t, EpochInputOk' Econ t → SameOk (f t) (process_epoch Preset.mainnet o t))
+    (s : BeaconState) (hr : Reachable o max_blobs_per_block GLOAS_FORK_EPOCH init s)
+    (signed_block : SignedBeaconBlock) (validate_result : Bool)
+    (hslot64 : signed_block.message.slot < 2 ^ 64) :
+    SameOk (state_transition_with o max_blobs_per_block GLOAS_FORK_EPOCH f s signed_block
+        validate_result)
+      (state_transition Preset.mainnet o max_blobs_per_block GLOAS_FORK_EPOCH s signed_block
+        validate_result) := by
+  have hecon' : EpochEcon o max_blobs_per_block GLOAS_FORK_EPOCH init
+      (fun t => Econ t ∧ PubkeysUnique t ∧ ConsolidationsInRange t) := by
+    intro s' t t1 hr' hreach ht hz
+    have htail := hreach.tail (reachable_tail o _ _ init hpk hcr s' hr')
+    exact ⟨hecon s' t t1 hr' hreach ht hz,
+      (PkSame.of_eq (process_slot_frame _ o _ _ ht).1.1).pubkeysUnique htail.1,
+      (process_slot_cstep _ o _ _ ht).inRange htail.2⟩
+  exact reachable_state_transition_sameOk' o _ _ init hffg hrows hd hx h0 hsupply _ hecon' f
+    (fun t ⟨hb, hslot, heb, hex, hec, hp, hc⟩ => hf t ⟨⟨hb, hslot, heb, hex, hec⟩, hp, hc⟩)
+    s hr signed_block validate_result hslot64
+
+/-! ## Withdrawable epochs -/
+
+/-- Every reachable state has `u64` withdrawable epochs, if the start state has them. -/
+theorem reachable_withdrawableU64 (o : Oracle) (max_blobs_per_block : Epoch → Uint64)
+    (GLOAS_FORK_EPOCH : Epoch) (init : BeaconState) (hw : WithdrawableU64 init) :
+    ∀ s, Reachable o max_blobs_per_block GLOAS_FORK_EPOCH init s → WithdrawableU64 s := by
+  intro s hr
+  induction hr with
+  | init => exact hw
+  | step signed_block validate_result _ _ _ h ih =>
+    exact state_transition_withdrawableU64 _ o _ _ _ _ _ _ ih h
+
+/-- The slot loop keeps `ExitDelay` and `WithdrawableU64`. -/
+theorem SlotReach.withdrawable {o : Oracle} {s t : BeaconState} (hr : SlotReach o s t)
+    (hs : ExitDelay Preset.mainnet s ∧ WithdrawableU64 s) :
+    ExitDelay Preset.mainnet t ∧ WithdrawableU64 t := by
+  induction hr with
+  | refl => exact hs
+  | skip _ ht _ ih =>
+    have hv := (process_slot_frame _ o _ _ ht).1.1
+    have h1 := ExitDelay.of_validators_eq hv ih.1
+    have h2 := WithdrawableU64.of_validators_eq hv ih.2
+    exact ⟨h1, h2⟩
+  | epoch _ ht _ he ih =>
+    have hv := (process_slot_frame _ o _ _ ht).1.1
+    have h1 := process_epoch_exitDelay _ o _ _ he (ExitDelay.of_validators_eq hv ih.1)
+    have h2 := process_epoch_withdrawableU64 _ o _ _ he (WithdrawableU64.of_validators_eq hv ih.2)
+    exact ⟨h1, h2⟩
+
+/-- The facts at each `process_epoch` input, with `WithdrawableU64` and `WithdrawableValid`. -/
+def EpochInputOk'' (Econ : BeaconState → Prop) (t : BeaconState) : Prop :=
+  EpochInputOk' Econ t ∧ WithdrawableU64 t ∧ WithdrawableValid t
+
+/-- `reachable_state_transition_sameOk''` for an epoch function `f` that needs, in addition,
+`u64` withdrawable epochs and `WithdrawableValid` at its input. The start state has
+`WithdrawableU64`. -/
+theorem reachable_state_transition_sameOk''' (o : Oracle) (max_blobs_per_block : Epoch → Uint64)
+    (GLOAS_FORK_EPOCH : Epoch) (init : BeaconState)
+    (hffg : FfgInvariant Preset.mainnet init) (hrows : RowsOk init)
+    (hd : ExitDelay Preset.mainnet init) (hx : ExitEpochsU64 init)
+    (h0 : AfterEB Preset.mainnet init) (hpk : PubkeysUnique init)
+    (hcr : ConsolidationsInRange init) (hw : WithdrawableU64 init)
+    (hsupply : SupplyBound o max_blobs_per_block GLOAS_FORK_EPOCH init)
+    (Econ : BeaconState → Prop)
+    (hecon : EpochEcon o max_blobs_per_block GLOAS_FORK_EPOCH init Econ)
+    (f : BeaconState → SpecM BeaconState)
+    (hf : ∀ t, EpochInputOk'' Econ t → SameOk (f t) (process_epoch Preset.mainnet o t))
+    (s : BeaconState) (hr : Reachable o max_blobs_per_block GLOAS_FORK_EPOCH init s)
+    (signed_block : SignedBeaconBlock) (validate_result : Bool)
+    (hslot64 : signed_block.message.slot < 2 ^ 64) :
+    SameOk (state_transition_with o max_blobs_per_block GLOAS_FORK_EPOCH f s signed_block
+        validate_result)
+      (state_transition Preset.mainnet o max_blobs_per_block GLOAS_FORK_EPOCH s signed_block
+        validate_result) := by
+  have hecon' : EpochEcon o max_blobs_per_block GLOAS_FORK_EPOCH init
+      (fun t => Econ t ∧ WithdrawableU64 t ∧ WithdrawableValid t) := by
+    intro s' t t1 hr' hreach ht hz
+    have hstart : ExitDelay Preset.mainnet s' ∧ WithdrawableU64 s' :=
+      ⟨(reachable_inv o _ _ init hffg hrows hd hx h0 hsupply s' hr').2.2.1,
+        reachable_withdrawableU64 o _ _ init hw s' hr'⟩
+    have hwd := hreach.withdrawable hstart
+    have hv := (process_slot_frame _ o _ _ ht).1.1
+    have h1 := ExitDelay.of_validators_eq hv hwd.1
+    have h2 := WithdrawableU64.of_validators_eq hv hwd.2
+    exact ⟨hecon s' t t1 hr' hreach ht hz, h2, withdrawableValid_of h1 h2⟩
+  exact reachable_state_transition_sameOk'' o _ _ init hffg hrows hd hx h0 hpk hcr hsupply _
+    hecon' f
+    (fun t ⟨⟨hb, hslot, heb, hex, hec, hwu, hwv⟩, hp, hc⟩ =>
+      hf t ⟨⟨⟨hb, hslot, heb, hex, hec⟩, hp, hc⟩, hwu, hwv⟩)
+    s hr signed_block validate_result hslot64
 
 end EpochProofs.Spec
