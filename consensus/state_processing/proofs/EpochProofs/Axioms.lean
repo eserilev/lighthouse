@@ -19,6 +19,9 @@ import EpochProofs.Sanity.Block.ParentPayload
 import EpochProofs.Sanity.Block.Exits
 import EpochProofs.Sanity.Block.Slashings
 import EpochProofs.Sanity.Block.Attestations
+import EpochProofs.Sanity.Block.SyncAggregate
+import EpochProofs.Sanity.JustificationFinalization
+import EpochProofs.Sanity.EpochCommittees
 open EpochProofs.Spec
 #print axioms EpochProofs.Spec.withdrawals_loop
 #print axioms EpochProofs.Spec.process_builder_pending_payments_eq
@@ -105,3 +108,11 @@ open EpochProofs.Spec
 #print axioms EpochProofs.Spec.process_attestation_exitOrder
 #print axioms EpochProofs.Spec.process_attestation_balancesUp
 #print axioms EpochProofs.Spec.process_payload_attestation_eq
+#print axioms EpochProofs.Spec.process_sync_aggregate_frame
+#print axioms EpochProofs.Spec.process_sync_aggregate_balance_bound_mainnet
+#print axioms EpochProofs.Spec.process_justification_and_finalization_ffg
+#print axioms EpochProofs.Spec.process_slots_ffg
+#print axioms EpochProofs.Spec.FfgInvariant.finalized_le
+#print axioms EpochProofs.Spec.process_sync_committee_updates_frame
+#print axioms EpochProofs.Spec.process_proposer_lookahead_frame
+#print axioms EpochProofs.Spec.process_ptc_window_frame

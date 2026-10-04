@@ -55,6 +55,12 @@ import EpochProofs.Sanity.Block.Slashings
 import EpochProofs.Spec.Committees
 import EpochProofs.Spec.Block.Attestations
 import EpochProofs.Sanity.Block.Attestations
+import EpochProofs.Spec.Block.SyncAggregate
+import EpochProofs.Spec.JustificationFinalization
+import EpochProofs.Spec.EpochCommittees
+import EpochProofs.Sanity.Block.SyncAggregate
+import EpochProofs.Sanity.JustificationFinalization
+import EpochProofs.Sanity.EpochCommittees
 import EpochProofs.Equiv.BuilderPendingPayments
 import EpochProofs.Equiv.EffectiveBalanceUpdates
 import EpochProofs.Equiv.InactivityUpdates
