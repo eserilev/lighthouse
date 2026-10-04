@@ -11,6 +11,7 @@ import EpochProofs.Sanity.LighthouseRowOrder
 import EpochProofs.Equiv.SinglePassStep
 import EpochProofs.Sanity.LighthouseSinglePass
 import EpochProofs.Sanity.RowsEffectiveBalance
+import EpochProofs.Sanity.Frame
 open EpochProofs.Spec
 #print axioms EpochProofs.Spec.withdrawals_loop
 #print axioms EpochProofs.Spec.process_builder_pending_payments_eq
@@ -78,3 +79,5 @@ open EpochProofs.Spec
 #print axioms EpochProofs.Spec.lhRowStep_eq_singlePassStep_of_bounds
 #print axioms EpochProofs.Spec.process_effective_balance_updates_floor_mainnet
 #print axioms EpochProofs.Spec.lighthouse_single_pass_eq_spec
+#print axioms EpochProofs.Spec.process_slots_frame
+#print axioms EpochProofs.Spec.process_slots_slot

@@ -8,6 +8,14 @@ import EpochProofs.Spec.RewardsAndPenalties
 import EpochProofs.Spec.RegistryUpdates
 import EpochProofs.Spec.PendingDeposits
 import EpochProofs.Spec.PendingConsolidations
+import EpochProofs.Spec.Block.Types
+import EpochProofs.Spec.Oracle
+import EpochProofs.Spec.Helpers
+import EpochProofs.Spec.Slots
+import EpochProofs.Spec.Block.Header
+import EpochProofs.Spec.Block.Randao
+import EpochProofs.Spec.Block.Eth1Data
+import EpochProofs.Spec.EpochRest
 import EpochProofs.Sanity.BuilderPendingPayments
 import EpochProofs.Sanity.EffectiveBalanceUpdates
 import EpochProofs.Sanity.InactivityUpdates
@@ -31,6 +39,7 @@ import EpochProofs.Sanity.PassCongr
 import EpochProofs.Sanity.RewardsBound
 import EpochProofs.Sanity.EffectiveBalanceInvariant
 import EpochProofs.Sanity.LighthouseSinglePass
+import EpochProofs.Sanity.Frame
 import EpochProofs.Equiv.BuilderPendingPayments
 import EpochProofs.Equiv.EffectiveBalanceUpdates
 import EpochProofs.Equiv.InactivityUpdates
