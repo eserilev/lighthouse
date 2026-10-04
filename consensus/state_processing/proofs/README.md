@@ -131,7 +131,7 @@ does not.
 
 | Fact | Status |
 |---|---|
-| Effective balance ≤ 256 × balance | Proved after `process_effective_balance_updates` (`process_effective_balance_updates_floor_mainnet`, in fact 3 × effective balance ≤ 4 × balance). Assumed to hold until the next epoch. |
+| Effective balance ≤ 256 × balance, for eligible validators | Proved after `process_effective_balance_updates` (`process_effective_balance_updates_floor_mainnet`, in fact 3 × effective balance ≤ 4 × balance). Assumed to hold until the next epoch. |
 | `EJECTION_BALANCE < MIN_ACTIVATION_BALANCE` | Proved for mainnet and minimal |
 | Balance + effective balance < 2^64 | Assumed. The ETH supply is below 2^57 Gwei. |
 | Exit epoch ≤ `FAR_FUTURE_EPOCH`, next epoch < 2^64 | Assumed. These are `u64` values. |
@@ -143,7 +143,8 @@ does not.
 Block processing between two epochs is not modelled. It lowers balances in three ways:
 - Slashing removes 1/4096 of the effective balance.
 - A partial withdrawal leaves at least `MIN_ACTIVATION_BALANCE` or the maximum effective balance.
-- A full withdrawal applies only to a withdrawable validator, which is no longer eligible.
+- A full withdrawal applies only to a withdrawable validator, which is no longer eligible. So
+  the floor is only required for eligible validators.
 None of these breaks the effective balance floor, but no proof covers this argument.
 
 `absState` maps Aeneas types to reference types. Rust `Default` maps to spec `empty()`.

@@ -401,7 +401,8 @@ theorem lhRowStep_eq_singlePassStep_of_bounds (ctx : LhStepContext) (rctx : Rewa
     (hincrements : ctx.source_increments ≤ 256 * ctx.active_increments ∧
       ctx.target_increments ≤ 256 * ctx.active_increments ∧
       ctx.head_increments ≤ 256 * ctx.active_increments)
-    (heffective : r.validator.effective_balance ≤ 256 * r.balance)
+    (heffective : rewardsEligible ctx.previous_epoch r.validator = .ok true →
+      r.validator.effective_balance ≤ 256 * r.balance)
     (hsupply : r.balance + r.validator.effective_balance < 2 ^ 64)
     (hfinalized : ctx.finalized_epoch ≤ ctx.current_epoch)
     (hcurrent : ctx.current_epoch + 1 < UINT64_SIZE)
@@ -418,6 +419,18 @@ theorem lhRowStep_eq_singlePassStep_of_bounds (ctx : LhStepContext) (rctx : Rewa
     hfinalized hcurrent hactivation hexit
   intro r' deltas hi hd
   obtain ⟨hv, -⟩ := inactivityRowStep_keeps _ _ _ _ _ hi
+  cases hel : rewardsEligible ctx.previous_epoch r.validator with
+  | error e =>
+    simp [rewardsRowDeltas, hv, hprev, hel, bind, Except.bind] at hd
+  | ok el =>
+  cases el
+  case false =>
+    simp [rewardsRowDeltas, hv, hprev, hel, bind, Except.bind, pure, Except.pure] at hd
+    subst hd
+    have hb : r.balance < 2 ^ 64 := Nat.lt_of_le_of_lt (Nat.le_add_right _ _) hsupply
+    simp only [List.take, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+    exact ⟨Nat.zero_le _, by simpa using hb, by decide⟩
+  have heffective := heffective hel
   obtain ⟨s, t, h, i, base, hds, hb, hpen, hrew, hinact⟩ :=
     rewardsRowDeltas_bounds _ _ _ _ hd
   rw [hv] at hb

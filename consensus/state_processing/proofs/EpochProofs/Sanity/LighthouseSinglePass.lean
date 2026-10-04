@@ -32,10 +32,12 @@ theorem passM_proj {A B R : Type} (f : B → R → SpecM (B × R)) (emb : A → 
       cases passM f x.1 rs <;> rfl
 
 /-- The per-validator facts that hold at the start of epoch processing. -/
-structure EpochEntry (state : BeaconState) : Prop where
-  /-- Hysteresis keeps the effective balance close to the balance. -/
+structure EpochEntry (state : BeaconState) (previous_epoch : Epoch) : Prop where
+  /-- Hysteresis keeps the effective balance close to the balance of an eligible validator. A
+  fully withdrawn validator has balance 0 but is not eligible. -/
   effective_balance : ∀ i (h : i < state.validators.length),
-    state.validators[i].effective_balance ≤ 256 * state.balances.getD i 0
+    rewardsEligible previous_epoch state.validators[i] = .ok true →
+      state.validators[i].effective_balance ≤ 256 * state.balances.getD i 0
   /-- Balances are far below 2^64 Gwei. -/
   supply : ∀ i (h : i < state.validators.length),
     state.balances.getD i 0 + state.validators[i].effective_balance < 2 ^ 64
@@ -44,11 +46,12 @@ structure EpochEntry (state : BeaconState) : Prop where
     state.validators[i].exit_epoch ≤ FAR_FUTURE_EPOCH
 
 /-- The effective balance update establishes the effective balance part of `EpochEntry`. -/
-theorem EpochEntry.effective_balance_of_floor (state : BeaconState)
+theorem EpochEntry.effective_balance_of_floor (state : BeaconState) (previous_epoch : Epoch)
     (h : EffectiveBalanceFloor Preset.mainnet state) :
     ∀ i (hi : i < state.validators.length),
-      state.validators[i].effective_balance ≤ 256 * state.balances.getD i 0 :=
-  fun i hi => EffectiveBalanceFloor.le_mul _ _ h i hi
+      rewardsEligible previous_epoch state.validators[i] = .ok true →
+        state.validators[i].effective_balance ≤ 256 * state.balances.getD i 0 :=
+  fun i hi _ => EffectiveBalanceFloor.le_mul _ _ h i hi
 
 /-- The Lighthouse step context for this state. -/
 def lhContextOf (state : BeaconState) (total_active_balance : Gwei)
@@ -69,8 +72,8 @@ def lhContextOf (state : BeaconState) (total_active_balance : Gwei)
 rewards, registry and slashings passes.
 
 The hypotheses are facts about the state at the start of epoch processing:
-- `RowsOk`, `EpochEntry`: SSZ lengths, the effective balance floor, the supply bound, `u64`
-  exit epochs.
+- `RowsOk`, `EpochEntry`: SSZ lengths, the effective balance floor for eligible validators,
+  the supply bound, `u64` exit epochs.
 - `hfinalized`, `hcurrent64`: the finalized epoch is not after the current epoch, and the next
   epoch fits in a `u64`.
 - `htotal`: `get_total_active_balance` is at least one increment, by its definition.
@@ -78,11 +81,12 @@ The hypotheses are facts about the state at the start of epoch processing:
 - `hbase`: `base_reward` is `get_base_reward` for each eligible row. Lighthouse reads it from
   the epoch cache. -/
 theorem lighthouse_single_pass_eq_spec (total_active_balance : Gwei) (state : BeaconState)
-    (hrows : RowsOk state) (hentry : EpochEntry state) (current_epoch : Epoch)
+    (hrows : RowsOk state) (current_epoch : Epoch)
     (hcurrent : get_current_epoch Preset.mainnet state = .ok current_epoch)
     (hgenesis : current_epoch ≠ GENESIS_EPOCH)
     (rctx : RewardsContext)
     (hctx : rewardsContextOf Preset.mainnet total_active_balance state = .ok rctx)
+    (hentry : EpochEntry state rctx.previous_epoch)
     (activation_epoch : Epoch)
     (hactivation : compute_activation_exit_epoch Preset.mainnet current_epoch =
       .ok activation_epoch)
