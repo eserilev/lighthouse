@@ -10,10 +10,45 @@ use ssz_types::{BitVector, ProgressiveVariableList};
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use tree_hash::TreeHash;
-use types::{ChainSpec, EthSpec, Hash256, InclusionListCommittee, SignedInclusionList, Slot};
+use types::{
+    ChainSpec, EthSpec, Hash256, InclusionList, InclusionListCommittee, SignedInclusionList, Slot,
+};
 
 /// The shuffling `dependent_root` an inclusion list was produced against.
 pub type DependentRoot = Hash256;
+
+/// The spec's inclusion list store key, `(slot, dependent_root)`.
+///
+/// Only built from an inclusion list or by `BeaconChain::inclusion_list_key_for_payload`, so
+/// callers never derive the slot or the dependent root themselves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct InclusionListKey {
+    slot: Slot,
+    dependent_root: DependentRoot,
+}
+
+impl InclusionListKey {
+    pub(crate) fn new(slot: Slot, dependent_root: DependentRoot) -> Self {
+        Self {
+            slot,
+            dependent_root,
+        }
+    }
+
+    pub fn slot(&self) -> Slot {
+        self.slot
+    }
+
+    pub fn dependent_root(&self) -> DependentRoot {
+        self.dependent_root
+    }
+}
+
+impl From<&InclusionList> for InclusionListKey {
+    fn from(inclusion_list: &InclusionList) -> Self {
+        Self::new(inclusion_list.slot, inclusion_list.dependent_root)
+    }
+}
 
 /// The result of inserting a `SignedInclusionList`. Drives the gossip accept/ignore verdict.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -144,12 +179,11 @@ impl<E: EthSpec> InclusionListStore<E> {
 
     /// Validator indices that submitted a valid, non-equivocating inclusion list for
     /// `(slot, dependent_root)`, timely-filtered when `only_timely` is set.
-    fn submitted_validators(
-        &self,
-        slot: Slot,
-        dependent_root: DependentRoot,
-        only_timely: bool,
-    ) -> HashSet<u64> {
+    fn submitted_validators(&self, key: &InclusionListKey, only_timely: bool) -> HashSet<u64> {
+        let InclusionListKey {
+            slot,
+            dependent_root,
+        } = *key;
         let Some(entry) = self.slots.get(&slot) else {
             return HashSet::new();
         };
@@ -170,10 +204,13 @@ impl<E: EthSpec> InclusionListStore<E> {
     /// `(slot, dependent_root)`, deduplicated. Timely-filtered when `only_timely` is set.
     pub fn get_inclusion_list_transactions(
         &self,
-        slot: Slot,
-        dependent_root: DependentRoot,
+        key: &InclusionListKey,
         only_timely: bool,
     ) -> Vec<ProgressiveVariableList<u8>> {
+        let InclusionListKey {
+            slot,
+            dependent_root,
+        } = *key;
         let Some(entry) = self.slots.get(&slot) else {
             return Vec::new();
         };
@@ -207,12 +244,11 @@ impl<E: EthSpec> InclusionListStore<E> {
     /// `il_committee` is the ordered inclusion list committee.
     pub fn get_inclusion_list_bits(
         &self,
-        slot: Slot,
-        dependent_root: DependentRoot,
         il_committee: &InclusionListCommittee<E>,
+        key: &InclusionListKey,
         only_timely: bool,
     ) -> Result<BitVector<E::InclusionListCommitteeSize>, Error> {
-        let submitted = self.submitted_validators(slot, dependent_root, only_timely);
+        let submitted = self.submitted_validators(key, only_timely);
 
         let mut bits = BitVector::new();
         for (i, validator) in il_committee.iter().enumerate() {
@@ -227,14 +263,12 @@ impl<E: EthSpec> InclusionListStore<E> {
     /// list from is also set in `bits`. Used to validate an incoming bid's `inclusion_list_bits`.
     pub fn is_inclusion_list_bits_inclusive(
         &self,
-        slot: Slot,
-        dependent_root: DependentRoot,
         il_committee: &InclusionListCommittee<E>,
+        key: &InclusionListKey,
         bits: &BitVector<E::InclusionListCommitteeSize>,
         only_timely: bool,
     ) -> Result<bool, Error> {
-        let local =
-            self.get_inclusion_list_bits(slot, dependent_root, il_committee, only_timely)?;
+        let local = self.get_inclusion_list_bits(il_committee, key, only_timely)?;
         for i in 0..local.len() {
             if local.get(i)? && !bits.get(i)? {
                 return Ok(false);
@@ -247,10 +281,13 @@ impl<E: EthSpec> InclusionListStore<E> {
     /// `InclusionListsByIndices`. Equivocators and missing entries are skipped.
     pub fn get_signed_inclusion_lists(
         &self,
-        slot: Slot,
-        dependent_root: DependentRoot,
+        key: &InclusionListKey,
         validators: &[u64],
     ) -> Vec<SignedInclusionList> {
+        let InclusionListKey {
+            slot,
+            dependent_root,
+        } = *key;
         let Some(entry) = self.slots.get(&slot) else {
             return Vec::new();
         };
@@ -281,7 +318,7 @@ impl<E: EthSpec> InclusionListStore<E> {
 
 #[cfg(test)]
 mod tests {
-    use super::{DependentRoot, InclusionListStore, InsertOutcome};
+    use super::{DependentRoot, InclusionListKey, InclusionListStore, InsertOutcome};
     use bls::Signature;
     use ssz_types::{BitVector, FixedVector, ProgressiveVariableList};
     use types::{
@@ -297,6 +334,10 @@ mod tests {
 
     fn root(byte: u8) -> Hash256 {
         Hash256::from([byte; 32])
+    }
+
+    fn key(slot: u64, dependent_root: DependentRoot) -> InclusionListKey {
+        InclusionListKey::new(Slot::new(slot), dependent_root)
     }
 
     fn tx(byte: u8) -> ProgressiveVariableList<u8> {
@@ -381,10 +422,10 @@ mod tests {
         store.process_inclusion_list(signed_il(10, 1, dr, &[0xaa, 0xbb]), true);
         store.process_inclusion_list(signed_il(10, 2, dr, &[0xbb, 0xcc]), false);
 
-        let all = store.get_inclusion_list_transactions(Slot::new(10), dr, false);
+        let all = store.get_inclusion_list_transactions(&key(10, dr), false);
         assert_eq!(all.len(), 3);
 
-        let timely = store.get_inclusion_list_transactions(Slot::new(10), dr, true);
+        let timely = store.get_inclusion_list_transactions(&key(10, dr), true);
         assert_eq!(timely.len(), 2);
     }
 
@@ -396,7 +437,7 @@ mod tests {
         store.process_inclusion_list(signed_il(10, 1, dr, &[0xbb]), true);
         assert!(
             store
-                .get_inclusion_list_transactions(Slot::new(10), dr, false)
+                .get_inclusion_list_transactions(&key(10, dr), false)
                 .is_empty()
         );
     }
@@ -412,7 +453,7 @@ mod tests {
         store.process_inclusion_list(signed_il(10, il_committee[7], dr, &[0xbb]), true);
 
         let bits = store
-            .get_inclusion_list_bits(Slot::new(10), dr, &il_committee, false)
+            .get_inclusion_list_bits(&il_committee, &key(10, dr), false)
             .unwrap();
         assert!(bits.get(3).unwrap());
         assert!(bits.get(7).unwrap());
@@ -420,7 +461,7 @@ mod tests {
 
         assert!(
             store
-                .is_inclusion_list_bits_inclusive(Slot::new(10), dr, &il_committee, &bits, false)
+                .is_inclusion_list_bits_inclusive(&il_committee, &key(10, dr), &bits, false)
                 .unwrap()
         );
 
@@ -428,7 +469,7 @@ mod tests {
         missing.set(7, true).unwrap();
         assert!(
             !store
-                .is_inclusion_list_bits_inclusive(Slot::new(10), dr, &il_committee, &missing, false)
+                .is_inclusion_list_bits_inclusive(&il_committee, &key(10, dr), &missing, false)
                 .unwrap()
         );
     }
@@ -449,7 +490,7 @@ mod tests {
         for dr in [root(1), root(2)] {
             assert_eq!(
                 store
-                    .get_inclusion_list_transactions(Slot::new(10), dr, false)
+                    .get_inclusion_list_transactions(&key(10, dr), false)
                     .len(),
                 1
             );
@@ -467,7 +508,7 @@ mod tests {
         store.process_inclusion_list(signed_il(10, 2, dr, &[0xbb]), true);
         store.process_inclusion_list(signed_il(10, 2, dr, &[0xcc]), true);
 
-        let result = store.get_signed_inclusion_lists(Slot::new(10), dr, &[1, 2, 3]);
+        let result = store.get_signed_inclusion_lists(&key(10, dr), &[1, 2, 3]);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].message.validator_index, 1);
     }
@@ -482,14 +523,14 @@ mod tests {
         store.prune(Slot::new(12));
         assert!(
             !store
-                .get_inclusion_list_transactions(Slot::new(10), dr, false)
+                .get_inclusion_list_transactions(&key(10, dr), false)
                 .is_empty()
         );
 
         store.prune(Slot::new(13));
         assert!(
             store
-                .get_inclusion_list_transactions(Slot::new(10), dr, false)
+                .get_inclusion_list_transactions(&key(10, dr), false)
                 .is_empty()
         );
     }
@@ -506,14 +547,14 @@ mod tests {
         store.prune(Slot::new(15));
         assert!(
             !store
-                .get_inclusion_list_transactions(Slot::new(10), dr, false)
+                .get_inclusion_list_transactions(&key(10, dr), false)
                 .is_empty()
         );
 
         store.prune(Slot::new(16));
         assert!(
             store
-                .get_inclusion_list_transactions(Slot::new(10), dr, false)
+                .get_inclusion_list_transactions(&key(10, dr), false)
                 .is_empty()
         );
     }

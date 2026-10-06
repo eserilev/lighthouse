@@ -114,6 +114,10 @@ pub enum BeaconChainError {
         shuffling_epoch: Epoch,
         head_block_epoch: Epoch,
     },
+    MissingShufflingDependentRoot {
+        block_root: Hash256,
+        epoch: Epoch,
+    },
     WeakSubjectivtyVerificationFailure,
     WeakSubjectivtyShutdownError(TrySendError<ShutdownReason>),
     AttestingToFinalizedSlot {
