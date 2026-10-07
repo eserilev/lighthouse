@@ -38,7 +38,7 @@ use crate::execution_payload::{NotifyExecutionLayer, PreparePayloadHandle, get_e
 use crate::execution_proof_verification::ObservedExecutionProofs;
 use crate::fork_choice_signal::{ForkChoiceSignalRx, ForkChoiceSignalTx};
 use crate::graffiti_calculator::{GraffitiCalculator, GraffitiSettings};
-use crate::inclusion_list_store::{DependentRoot, InclusionListStore};
+use crate::inclusion_list_store::{InclusionListKey, InclusionListStore};
 use crate::light_client_finality_update_verification::{
     Error as LightClientFinalityUpdateError, VerifiedLightClientFinalityUpdate,
 };
@@ -80,9 +80,7 @@ use crate::persisted_custody::persist_custody_context;
 use crate::persisted_fork_choice::PersistedForkChoice;
 use crate::pre_finalization_cache::PreFinalizationBlockCache;
 use crate::proposer_preferences_verification::proposer_preference_cache::GossipVerifiedProposerPreferenceCache;
-use crate::shuffling_cache::{
-    BlockShufflingIds, CachedPTCs, CachedShuffling, ShufflingCache, with_cached_shuffling,
-};
+use crate::shuffling_cache::{CachedPTCs, CachedShuffling, ShufflingCache, with_cached_shuffling};
 use crate::sync_committee_verification::{
     Error as SyncCommitteeError, VerifiedSyncCommitteeMessage, VerifiedSyncContribution,
 };
@@ -127,7 +125,7 @@ use serde_utils::quoted_u64::Quoted;
 use slasher::Slasher;
 use slot_clock::SlotClock;
 use ssz::Encode;
-use ssz_types::{BitVector, FixedVector, ProgressiveVariableList};
+use ssz_types::FixedVector;
 use state_processing::per_block_processing::errors::{ExitInvalid, ExitValidationError};
 use state_processing::{
     BlockSignatureStrategy, ConsensusContext, GloasVerificationContext, SigVerifiedOp,
@@ -7344,24 +7342,63 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         )
     }
 
-    /// The ordered inclusion list committee for `slot`, and the dependent root that keys it.
+    /// The inclusion list store key for `slot` on the chain of `block_root`.
     ///
-    /// `parent_block_root` must not be from a later epoch than `slot`, since `with_committee_cache`
-    /// cannot resolve a shuffling earlier than its own block's epoch.
+    /// For a payload, use `inclusion_list_key_for_payload`.
+    ///
+    /// Takes a fork choice read lock.
+    pub fn inclusion_list_key(
+        &self,
+        block_root: Hash256,
+        slot: Slot,
+    ) -> Result<InclusionListKey, Error> {
+        let epoch = slot.epoch(T::EthSpec::slots_per_epoch());
+        let dependent_root = self
+            .canonical_head
+            .fork_choice_read_lock()
+            .get_shuffling_dependent_root(block_root, epoch, &self.spec)?
+            .ok_or(Error::MissingShufflingDependentRoot { block_root, epoch })?;
+
+        Ok(InclusionListKey::new(slot, dependent_root))
+    }
+
+    /// The inclusion list store key for a payload at `payload_slot`, which reads the previous
+    /// slot's inclusion lists.
+    ///
+    /// `block_root` is any block on the payload's chain from its parent onwards.
+    ///
+    /// Takes a fork choice read lock.
+    pub fn inclusion_list_key_for_payload(
+        &self,
+        block_root: Hash256,
+        payload_slot: Slot,
+    ) -> Result<InclusionListKey, Error> {
+        self.inclusion_list_key(block_root, payload_slot.safe_sub(1)?)
+    }
+
+    /// The ordered inclusion list committee for `key`.
+    ///
+    /// Errors if `key.dependent_root()` is not the shuffling dependent root of `key.slot()`.
     ///
     /// Takes a fork choice read lock (via `with_committee_cache`).
-    pub fn inclusion_list_committee(
+    pub fn get_inclusion_list_committee(
         &self,
-        parent_block_root: Hash256,
-        slot: Slot,
-    ) -> Result<(InclusionListCommittee<T::EthSpec>, DependentRoot), Error> {
-        let shuffling_epoch = slot.epoch(T::EthSpec::slots_per_epoch());
+        key: &InclusionListKey,
+    ) -> Result<InclusionListCommittee<T::EthSpec>, Error> {
+        let slot = key.slot();
         let committee_size = T::EthSpec::inclusion_list_committee_size();
 
         self.with_committee_cache(
-            parent_block_root,
-            shuffling_epoch,
-            |cached_shuffling, dependent_root| {
+            key.dependent_root(),
+            slot.epoch(T::EthSpec::slots_per_epoch()),
+            |cached_shuffling, shuffling_decision_root| {
+                if shuffling_decision_root != key.dependent_root() {
+                    return Err(Error::InclusionListDependentRootMismatch {
+                        dependent_root: key.dependent_root(),
+                        shuffling_decision_root,
+                    });
+                }
+
                 let committee = cached_shuffling
                     .committee_cache
                     .get_inclusion_list_committee_at_slot(slot, committee_size)?
@@ -7369,85 +7406,9 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                     .map(|index| index as u64)
                     .collect::<Vec<_>>();
 
-                Ok((FixedVector::new(committee)?, dependent_root))
+                Ok(FixedVector::new(committee)?)
             },
         )
-    }
-
-    /// The deduplicated transactions from the inclusion lists stored for `slot`.
-    ///
-    /// Resolves the dependent root directly, since the committee cache is not needed here.
-    ///
-    /// Takes a fork choice read lock.
-    pub fn get_inclusion_list_transactions(
-        &self,
-        parent_block_root: Hash256,
-        slot: Slot,
-        only_timely: bool,
-    ) -> Result<Vec<ProgressiveVariableList<u8>>, Error> {
-        let shuffling_epoch = slot.epoch(T::EthSpec::slots_per_epoch());
-        let parent_block = self
-            .canonical_head
-            .fork_choice_read_lock()
-            .get_block(&parent_block_root)
-            .ok_or(Error::MissingBeaconBlock(parent_block_root))?;
-
-        let dependent_root = BlockShufflingIds {
-            current: parent_block.current_epoch_shuffling_id.clone(),
-            next: parent_block.next_epoch_shuffling_id.clone(),
-            previous: None,
-            block_root: parent_block.root,
-        }
-        .id_for_epoch(shuffling_epoch)
-        .map(|id| id.shuffling_decision_block)
-        .ok_or(Error::InvalidShufflingId {
-            shuffling_epoch,
-            head_block_epoch: parent_block.slot.epoch(T::EthSpec::slots_per_epoch()),
-        })?;
-
-        Ok(self
-            .inclusion_list_store
-            .read()
-            .get_inclusion_list_transactions(slot, dependent_root, only_timely))
-    }
-
-    /// The inclusion list committee bits for `slot` as observed by this node.
-    pub fn get_inclusion_list_bits(
-        &self,
-        parent_block_root: Hash256,
-        slot: Slot,
-        only_timely: bool,
-    ) -> Result<BitVector<<T::EthSpec as EthSpec>::InclusionListCommitteeSize>, Error> {
-        let (il_committee, dependent_root) =
-            self.inclusion_list_committee(parent_block_root, slot)?;
-
-        self.inclusion_list_store
-            .read()
-            .get_inclusion_list_bits(slot, dependent_root, &il_committee, only_timely)
-            .map_err(Into::into)
-    }
-
-    /// Whether `bits` covers every inclusion list this node observed for `slot`.
-    pub fn is_inclusion_list_bits_inclusive(
-        &self,
-        parent_block_root: Hash256,
-        slot: Slot,
-        bits: &BitVector<<T::EthSpec as EthSpec>::InclusionListCommitteeSize>,
-        only_timely: bool,
-    ) -> Result<bool, Error> {
-        let (il_committee, dependent_root) =
-            self.inclusion_list_committee(parent_block_root, slot)?;
-
-        self.inclusion_list_store
-            .read()
-            .is_inclusion_list_bits_inclusive(
-                slot,
-                dependent_root,
-                &il_committee,
-                bits,
-                only_timely,
-            )
-            .map_err(Into::into)
     }
 
     /// Dumps the entire canonical chain, from the head to genesis to a vector for analysis.
