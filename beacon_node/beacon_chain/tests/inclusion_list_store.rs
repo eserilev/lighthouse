@@ -93,11 +93,10 @@ async fn payload_at_slot_zero_has_no_key() {
 #[tokio::test]
 async fn key_resolves_from_a_later_block() {
     let harness = get_harness();
-    harness
-        .extend_slots(E::slots_per_epoch() as usize + 1)
-        .await;
+    let slots_per_epoch = E::slots_per_epoch();
+    harness.extend_slots(3 * slots_per_epoch as usize).await;
 
-    let slot = Slot::new(E::slots_per_epoch() - 1);
+    let slot = Slot::new(2 * slots_per_epoch);
     let block_root = harness
         .chain
         .block_root_at_slot(slot, WhenSlotSkipped::Prev)
@@ -115,6 +114,13 @@ async fn key_resolves_from_a_later_block() {
             .unwrap(),
         key
     );
+    assert_eq!(
+        Some(key.dependent_root()),
+        harness
+            .chain
+            .block_root_at_slot(Slot::new(slots_per_epoch - 1), WhenSlotSkipped::Prev)
+            .unwrap()
+    );
 
     let mut state = harness.get_current_state();
     state
@@ -124,6 +130,58 @@ async fn key_resolves_from_a_later_block() {
         harness.chain.get_inclusion_list_committee(&key).unwrap(),
         state.get_inclusion_list_committee(slot).unwrap()
     );
+}
+
+/// Forks that split before the dependent slot get different keys, each with its own committee.
+#[tokio::test]
+async fn forks_get_their_own_key_and_committee() {
+    let harness = get_harness();
+    let slots_per_epoch = E::slots_per_epoch();
+    let validators = (0..VALIDATOR_COUNT).collect::<Vec<_>>();
+    harness.extend_slots(slots_per_epoch as usize - 2).await;
+    let (fork_state, _) = harness.get_current_state_and_root();
+
+    // Only the first fork has a block at the epoch 2 dependent slot.
+    let payload_slot = Slot::new(2 * slots_per_epoch + 1);
+    let mut keys = vec![];
+    let mut committees = vec![];
+    for slot in [slots_per_epoch - 1, slots_per_epoch] {
+        let (_, _, head, mut state) = harness
+            .add_attested_blocks_at_slots(fork_state.clone(), &[Slot::new(slot)], &validators)
+            .await;
+
+        let key = harness
+            .chain
+            .inclusion_list_key_for_payload(head.into(), payload_slot)
+            .unwrap();
+        complete_state_advance(&mut state, None, key.slot(), None, &harness.chain.spec).unwrap();
+        state
+            .build_committee_cache(RelativeEpoch::Current, &harness.chain.spec)
+            .unwrap();
+        let committee = harness.chain.get_inclusion_list_committee(&key).unwrap();
+        assert_eq!(
+            committee,
+            state.get_inclusion_list_committee(key.slot()).unwrap()
+        );
+        keys.push(key);
+        committees.push(committee);
+    }
+    assert_ne!(keys[0], keys[1]);
+    assert_ne!(committees[0], committees[1]);
+}
+
+#[tokio::test]
+async fn committee_rejects_a_wrong_dependent_root() {
+    let harness = get_harness();
+    harness
+        .extend_slots(3 * E::slots_per_epoch() as usize)
+        .await;
+
+    let key = InclusionListKey::new(harness.head_slot(), harness.head_block_root());
+    assert!(matches!(
+        harness.chain.get_inclusion_list_committee(&key),
+        Err(BeaconChainError::InclusionListDependentRootMismatch { .. })
+    ));
 }
 
 /// A payload at the first slot of an epoch reads the lists of the previous epoch's last slot.
@@ -145,6 +203,13 @@ async fn key_at_an_epoch_boundary() {
         .unwrap();
 
     assert_eq!(key.slot(), payload_slot - 1);
+    assert_eq!(
+        harness
+            .chain
+            .inclusion_list_key(parent_root, payload_slot - 1)
+            .unwrap(),
+        key
+    );
     // The epoch 2 shuffling is decided by the last block of epoch 0.
     assert_eq!(
         Some(key.dependent_root()),

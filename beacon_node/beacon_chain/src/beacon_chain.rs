@@ -7342,30 +7342,43 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         )
     }
 
-    /// The inclusion list store key for a payload at `payload_slot` built on `parent_root`: the
-    /// previous slot, and its shuffling dependent root on the chain of `parent_root`.
+    /// The inclusion list store key for `slot` on the chain of `block_root`.
+    ///
+    /// For a payload, use `inclusion_list_key_for_payload`.
     ///
     /// Takes a fork choice read lock.
-    pub fn inclusion_list_key_for_payload(
+    pub fn inclusion_list_key(
         &self,
-        parent_root: Hash256,
-        payload_slot: Slot,
+        block_root: Hash256,
+        slot: Slot,
     ) -> Result<InclusionListKey, Error> {
-        let slot = payload_slot.safe_sub(1)?;
         let epoch = slot.epoch(T::EthSpec::slots_per_epoch());
         let dependent_root = self
             .canonical_head
             .fork_choice_read_lock()
-            .get_shuffling_dependent_root(parent_root, epoch, &self.spec)?
-            .ok_or(Error::MissingShufflingDependentRoot {
-                block_root: parent_root,
-                epoch,
-            })?;
+            .get_shuffling_dependent_root(block_root, epoch, &self.spec)?
+            .ok_or(Error::MissingShufflingDependentRoot { block_root, epoch })?;
 
         Ok(InclusionListKey::new(slot, dependent_root))
     }
 
+    /// The inclusion list store key for a payload at `payload_slot`, which reads the previous
+    /// slot's inclusion lists.
+    ///
+    /// `block_root` is any block on the payload's chain from its parent onwards.
+    ///
+    /// Takes a fork choice read lock.
+    pub fn inclusion_list_key_for_payload(
+        &self,
+        block_root: Hash256,
+        payload_slot: Slot,
+    ) -> Result<InclusionListKey, Error> {
+        self.inclusion_list_key(block_root, payload_slot.safe_sub(1)?)
+    }
+
     /// The ordered inclusion list committee for `key`.
+    ///
+    /// Errors if `key.dependent_root()` is not the shuffling dependent root of `key.slot()`.
     ///
     /// Takes a fork choice read lock (via `with_committee_cache`).
     pub fn get_inclusion_list_committee(
@@ -7378,7 +7391,14 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         self.with_committee_cache(
             key.dependent_root(),
             slot.epoch(T::EthSpec::slots_per_epoch()),
-            |cached_shuffling, _| {
+            |cached_shuffling, shuffling_decision_root| {
+                if shuffling_decision_root != key.dependent_root() {
+                    return Err(Error::InclusionListDependentRootMismatch {
+                        dependent_root: key.dependent_root(),
+                        shuffling_decision_root,
+                    });
+                }
+
                 let committee = cached_shuffling
                     .committee_cache
                     .get_inclusion_list_committee_at_slot(slot, committee_size)?

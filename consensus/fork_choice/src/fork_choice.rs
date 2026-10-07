@@ -549,6 +549,8 @@ where
 
     /// Returns the shuffling dependent root of `epoch` on the chain of `block_root`.
     ///
+    /// Returns `None` if the dependent slot is prior to the fork choice anchor.
+    ///
     /// ## Specification
     ///
     /// Equivalent to:

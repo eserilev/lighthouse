@@ -19,8 +19,8 @@ pub type DependentRoot = Hash256;
 
 /// The spec's inclusion list store key, `(slot, dependent_root)`.
 ///
-/// Only built from an inclusion list or by `BeaconChain::inclusion_list_key_for_payload`, so
-/// callers never derive the slot or the dependent root themselves.
+/// Derive it with `BeaconChain::inclusion_list_key` or `BeaconChain::inclusion_list_key_for_payload`
+/// rather than computing the slot or the dependent root by hand.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InclusionListKey {
     slot: Slot,
@@ -28,7 +28,9 @@ pub struct InclusionListKey {
 }
 
 impl InclusionListKey {
-    pub(crate) fn new(slot: Slot, dependent_root: DependentRoot) -> Self {
+    /// A key from parts that have not been checked, such as a peer request.
+    /// `BeaconChain::get_inclusion_list_committee` rejects a wrong `dependent_root`.
+    pub fn new(slot: Slot, dependent_root: DependentRoot) -> Self {
         Self {
             slot,
             dependent_root,
