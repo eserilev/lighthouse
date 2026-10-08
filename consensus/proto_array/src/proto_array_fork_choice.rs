@@ -52,6 +52,11 @@ impl VoteTracker {
     pub fn current_slot(&self) -> Slot {
         self.current_slot
     }
+
+    /// The payload status of this validator's latest message for a block at `block_slot`.
+    pub fn current_payload_status(&self, block_slot: Slot) -> PayloadStatus {
+        PayloadStatus::from_vote(self.current_slot, self.current_payload_present, block_slot)
+    }
 }
 
 // This impl is only used upon upgrade from pre-Gloas to Gloas with all pre-Gloas nodes.
@@ -666,6 +671,16 @@ impl ProtoArrayForkChoice {
     ) -> Result<(), String> {
         self.proto_array
             .propagate_execution_payload_validation(block_hash)
+            .map_err(|e| format!("Failed to process valid payload: {:?}", e))
+    }
+
+    /// See `ProtoArray::propagate_execution_payload_validation_by_block_root` for documentation.
+    pub fn process_execution_payload_validation_by_block_root(
+        &mut self,
+        block_root: Hash256,
+    ) -> Result<(), String> {
+        self.proto_array
+            .propagate_execution_payload_validation_by_block_root(block_root)
             .map_err(|e| format!("Failed to process valid payload: {:?}", e))
     }
 
