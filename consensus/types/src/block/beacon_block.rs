@@ -158,10 +158,9 @@ impl<E: EthSpec, Payload: AbstractExecPayload<E>> BeaconBlock<E, Payload> {
     /// Usually it's better to prefer `from_ssz_bytes` which will decode the correct variant based
     /// on the fork slot.
     pub fn any_from_ssz_bytes(bytes: &[u8]) -> Result<Self, ssz::DecodeError> {
-        // TODO(heze): decode Heze here once it diverges from Gloas. While the two variants are
-        // SSZ-identical, trying Heze first would mis-tag every Gloas block as Heze.
-        BeaconBlockGloas::from_ssz_bytes(bytes)
-            .map(BeaconBlock::Gloas)
+        BeaconBlockHeze::from_ssz_bytes(bytes)
+            .map(BeaconBlock::Heze)
+            .or_else(|_| BeaconBlockGloas::from_ssz_bytes(bytes).map(BeaconBlock::Gloas))
             .or_else(|_| BeaconBlockFulu::from_ssz_bytes(bytes).map(BeaconBlock::Fulu))
             .or_else(|_| BeaconBlockElectra::from_ssz_bytes(bytes).map(BeaconBlock::Electra))
             .or_else(|_| BeaconBlockDeneb::from_ssz_bytes(bytes).map(BeaconBlock::Deneb))
@@ -1097,6 +1096,16 @@ mod tests {
         test_ssz_tree_hash_pair_with(&block, &inner_block, |bytes| {
             BeaconBlock::from_ssz_bytes(bytes, spec)
         });
+    }
+
+    #[test]
+    fn any_from_ssz_bytes_gloas_and_heze() {
+        for fork in [ForkName::Gloas, ForkName::Heze] {
+            let spec = fork.make_genesis_spec(Spec::default_spec());
+            let block = BeaconBlock::empty(&spec);
+            let decoded = BeaconBlock::any_from_ssz_bytes(&block.as_ssz_bytes()).unwrap();
+            assert_eq!(decoded, block);
+        }
     }
 
     #[test]
