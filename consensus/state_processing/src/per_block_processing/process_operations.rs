@@ -47,7 +47,9 @@ pub fn process_operations<E: EthSpec, Payload: AbstractExecPayload<E>>(
         ctxt,
         spec,
     )?;
-    process_deposits(state, &block_body.deposits()?.to_cow_slice(), spec)?;
+    if !state.fork_name_unchecked().heze_enabled() {
+        process_deposits(state, &block_body.deposits()?.to_cow_slice(), spec)?;
+    }
     process_exits(
         state,
         &block_body.voluntary_exits().to_cow_slice(),

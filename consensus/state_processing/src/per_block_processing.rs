@@ -210,7 +210,9 @@ pub fn per_block_processing<E: EthSpec, Payload: AbstractExecPayload<E>>(
     }
 
     process_randao(state, block, verify_randao, ctxt, spec)?;
-    process_eth1_data(state, block.body().eth1_data()?)?;
+    if !fork_name.heze_enabled() {
+        process_eth1_data(state, block.body().eth1_data()?)?;
+    }
     process_operations(
         state,
         block.body(),
