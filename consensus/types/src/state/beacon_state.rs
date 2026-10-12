@@ -3965,10 +3965,6 @@ impl<E: EthSpec> BeaconState<E> {
         field_index: usize,
         leaves: &[Hash256],
     ) -> Result<Vec<Hash256>, BeaconStateError> {
-        if field_index >= leaves.len() {
-            return Err(BeaconStateError::IndexNotSupported(field_index));
-        }
-
         // [Modified in Gloas:EIP7688] the state is a progressive container.
         let active_fields = match self {
             Self::Base(_)
@@ -3982,11 +3978,19 @@ impl<E: EthSpec> BeaconState<E> {
             Self::Heze(_) => Some(&BEACON_STATE_HEZE_ACTIVE_FIELDS),
         };
         if let Some(active_fields) = active_fields {
+            // Inactive fields have no leaf, so bound the index by the container width.
+            if field_index >= active_fields.len() {
+                return Err(BeaconStateError::IndexNotSupported(field_index));
+            }
             return Ok(merkle_proof::progressive_container_proof(
                 leaves,
                 active_fields,
                 field_index,
             )?);
+        }
+
+        if field_index >= leaves.len() {
+            return Err(BeaconStateError::IndexNotSupported(field_index));
         }
 
         let depth = self.num_fields_pow2().ilog2() as usize;

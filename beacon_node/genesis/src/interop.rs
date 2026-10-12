@@ -444,6 +444,23 @@ mod test {
         let expected = tree_hash::mix_in_active_fields(&container_root, active_fields);
 
         assert_eq!(derived_root, expected);
+
+        // The last field sits past the active leaf count, so check its proof too.
+        let ptc_window_index = 45;
+        let leaves = state.get_beacon_state_leaves();
+        assert!(ptc_window_index >= leaves.len());
+        let proof = state
+            .generate_proof(ptc_window_index, &leaves)
+            .expect("should generate proof");
+        let gindex = merkle_proof::progressive_container_gindex(ptc_window_index).unwrap();
+        let depth = gindex.ilog2() as usize;
+        assert!(merkle_proof::verify_merkle_proof(
+            field_roots[ptc_window_index],
+            &proof,
+            depth,
+            gindex - (1 << depth),
+            derived_root,
+        ));
     }
 
     #[test]
