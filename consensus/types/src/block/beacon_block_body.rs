@@ -437,17 +437,27 @@ impl<'a, E: EthSpec, Payload: AbstractExecPayload<E>> BeaconBlockBodyRef<'a, E, 
     fn gloas_execution_block_hash_proof(&self) -> Result<Vec<Hash256>, BeaconStateError> {
         let signed_bid = self.signed_execution_payload_bid()?;
 
-        let (bid, signature, body_active_fields) = match signed_bid {
+        let (bid, signature) = match signed_bid {
             SignedExecutionPayloadBidRef::Gloas(signed_bid) => (
                 ExecutionPayloadBidRef::Gloas(&signed_bid.message),
                 &signed_bid.signature,
-                &BEACON_BLOCK_BODY_GLOAS_ACTIVE_FIELDS,
             ),
             SignedExecutionPayloadBidRef::Heze(signed_bid) => (
                 ExecutionPayloadBidRef::Heze(&signed_bid.message),
                 &signed_bid.signature,
-                &BEACON_BLOCK_BODY_HEZE_ACTIVE_FIELDS,
             ),
+        };
+
+        let body_active_fields: &[bool] = match self {
+            Self::Base(_)
+            | Self::Altair(_)
+            | Self::Bellatrix(_)
+            | Self::Capella(_)
+            | Self::Deneb(_)
+            | Self::Electra(_)
+            | Self::Fulu(_) => return Err(BeaconStateError::IncorrectStateVariant),
+            Self::Gloas(_) => &BEACON_BLOCK_BODY_GLOAS_ACTIVE_FIELDS,
+            Self::Heze(_) => &BEACON_BLOCK_BODY_HEZE_ACTIVE_FIELDS,
         };
 
         let mut proof = merkle_proof::progressive_container_proof(
