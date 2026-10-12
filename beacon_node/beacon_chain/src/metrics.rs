@@ -2346,12 +2346,16 @@ fn scrape_head_state<E: EthSpec>(state: &BeaconState<E>, state_root: Hash256) {
         &HEAD_STATE_VALIDATOR_BALANCES,
         state.balances().iter().sum(),
     );
-    if let Ok(eth1_deposit_index) = state.eth1_deposit_index() {
-        set_gauge_by_u64(&HEAD_STATE_ETH1_DEPOSIT_INDEX, eth1_deposit_index);
-    }
-    if let Ok(eth1_data) = state.eth1_data() {
-        set_gauge_by_u64(&HEAD_STATE_ETH1_DEPOSITS_INTEROP, eth1_data.deposit_count);
-    }
+    set_gauge_by_u64(
+        &HEAD_STATE_ETH1_DEPOSIT_INDEX,
+        state.eth1_deposit_index().unwrap_or(0),
+    );
+    set_gauge_by_u64(
+        &HEAD_STATE_ETH1_DEPOSITS_INTEROP,
+        state
+            .eth1_data()
+            .map_or(0, |eth1_data| eth1_data.deposit_count),
+    );
     set_gauge_by_usize(&HEAD_STATE_TOTAL_VALIDATORS, state.validators().len());
     set_gauge_by_u64(
         &HEAD_STATE_VALIDATOR_BALANCES,
