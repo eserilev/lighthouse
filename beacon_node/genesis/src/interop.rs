@@ -214,7 +214,7 @@ mod test {
         .expect("should build state");
 
         assert_eq!(
-            state.eth1_data().block_hash,
+            state.eth1_data().unwrap().block_hash,
             Hash256::from_slice(&[0x42; 32]),
             "eth1 block hash should be co-ordinated junk"
         );
@@ -354,6 +354,98 @@ mod test {
         assert_eq!(derived_root, expected);
     }
 
+    /// Verify the derived `progressive_container` root of a Heze `BeaconState` against a manual
+    /// computation. EIP-8015 removes four fields, so their leaves are zero chunks.
+    #[test]
+    fn heze_state_progressive_container_root() {
+        use tree_hash::TreeHash;
+
+        let validator_count = 2 * TestEthSpec::slots_per_epoch() as usize;
+        let genesis_time = 42;
+        let spec = &types::ForkName::Heze.make_genesis_spec(TestEthSpec::default_spec());
+
+        let keypairs = generate_deterministic_keypairs(validator_count);
+
+        let mut state = interop_genesis_state::<TestEthSpec>(
+            &keypairs,
+            genesis_time,
+            Hash256::from_slice(DEFAULT_ETH1_BLOCK_HASH),
+            None,
+            spec,
+        )
+        .expect("should build state");
+
+        let derived_root = state.canonical_root().expect("should compute root");
+
+        let heze = state.as_heze().expect("should be a Heze state");
+
+        let field_roots = [
+            heze.genesis_time.tree_hash_root(),
+            heze.genesis_validators_root.tree_hash_root(),
+            heze.slot.tree_hash_root(),
+            heze.fork.tree_hash_root(),
+            heze.latest_block_header.tree_hash_root(),
+            heze.block_roots.tree_hash_root(),
+            heze.state_roots.tree_hash_root(),
+            heze.historical_roots.tree_hash_root(),
+            Hash256::ZERO,
+            Hash256::ZERO,
+            Hash256::ZERO,
+            heze.validators.tree_hash_root(),
+            heze.balances.tree_hash_root(),
+            heze.randao_mixes.tree_hash_root(),
+            heze.slashings.tree_hash_root(),
+            heze.previous_epoch_participation.tree_hash_root(),
+            heze.current_epoch_participation.tree_hash_root(),
+            heze.justification_bits.tree_hash_root(),
+            heze.previous_justified_checkpoint.tree_hash_root(),
+            heze.current_justified_checkpoint.tree_hash_root(),
+            heze.finalized_checkpoint.tree_hash_root(),
+            heze.inactivity_scores.tree_hash_root(),
+            heze.current_sync_committee.tree_hash_root(),
+            heze.next_sync_committee.tree_hash_root(),
+            heze.latest_block_hash.tree_hash_root(),
+            heze.next_withdrawal_index.tree_hash_root(),
+            heze.next_withdrawal_validator_index.tree_hash_root(),
+            heze.historical_summaries.tree_hash_root(),
+            Hash256::ZERO,
+            heze.deposit_balance_to_consume.tree_hash_root(),
+            heze.exit_balance_to_consume.tree_hash_root(),
+            heze.earliest_exit_epoch.tree_hash_root(),
+            heze.consolidation_balance_to_consume.tree_hash_root(),
+            heze.earliest_consolidation_epoch.tree_hash_root(),
+            heze.pending_deposits.tree_hash_root(),
+            heze.pending_partial_withdrawals.tree_hash_root(),
+            heze.pending_consolidations.tree_hash_root(),
+            heze.proposer_lookahead.tree_hash_root(),
+            heze.builders.tree_hash_root(),
+            heze.next_withdrawal_builder_index.tree_hash_root(),
+            heze.execution_payload_availability.tree_hash_root(),
+            heze.builder_pending_payments.tree_hash_root(),
+            heze.builder_pending_withdrawals.tree_hash_root(),
+            heze.latest_execution_payload_bid.tree_hash_root(),
+            heze.payload_expected_withdrawals.tree_hash_root(),
+            heze.ptc_window.tree_hash_root(),
+        ];
+        assert_eq!(field_roots.len(), 46);
+
+        let mut hasher = tree_hash::ProgressiveMerkleHasher::new();
+        for root in &field_roots {
+            hasher.write(root.as_slice()).unwrap();
+        }
+        let container_root = hasher.finish().unwrap();
+
+        // `active_fields = active_fields(width=46, gaps=(8, 9, 10, 28))`.
+        let mut active_fields = [0u8; 32];
+        active_fields[..5].fill(0xff);
+        active_fields[1] = 0xf8;
+        active_fields[3] = 0xef;
+        active_fields[5] = 0x3f;
+        let expected = tree_hash::mix_in_active_fields(&container_root, active_fields);
+
+        assert_eq!(derived_root, expected);
+    }
+
     #[test]
     fn interop_state_with_eth1() {
         let validator_count = 16;
@@ -372,7 +464,7 @@ mod test {
         .expect("should build state");
 
         assert_eq!(
-            state.eth1_data().block_hash,
+            state.eth1_data().unwrap().block_hash,
             Hash256::from_slice(&[0x42; 32]),
             "eth1 block hash should be co-ordinated junk"
         );

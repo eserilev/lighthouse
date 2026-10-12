@@ -906,12 +906,13 @@ impl<T: BeaconChainTypes> GossipVerifiedBlock<T> {
                 .map_err(BlockError::PerBlockProcessingError)?;
             verify_execution_request_list_lengths(parent_execution_requests)
                 .map_err(BlockError::PerBlockProcessingError)?;
-            let deposits_len = block.message().body().deposits().len();
-            if deposits_len > 0 {
+            if let Ok(deposits) = block.message().body().deposits()
+                && !deposits.is_empty()
+            {
                 return Err(BlockError::PerBlockProcessingError(
                     BlockProcessingError::OperationListTooLong {
                         kind: "deposits",
-                        length: deposits_len,
+                        length: deposits.len(),
                         max: 0,
                     },
                 ));

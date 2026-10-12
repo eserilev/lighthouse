@@ -464,8 +464,8 @@ impl From<BeaconStateHash> for Hash256 {
             tree_hash(
                 struct_behaviour = "progressive_container",
                 active_fields(
-                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+                    1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                    1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
                 )
             )
         )
@@ -523,11 +523,16 @@ where
     pub historical_roots: List<Hash256, E::HistoricalRootsLimit>,
 
     // Ethereum 1.0 chain data
+    #[superstruct(only(Base, Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Gloas))]
     #[metastruct(exclude_from(tree_lists))]
     pub eth1_data: Eth1Data,
+    #[superstruct(only(Base, Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Gloas))]
     #[cfg_attr(feature = "arbitrary", arbitrary(default))]
     pub eth1_data_votes: List<Eth1Data, E::SlotsPerEth1VotingPeriod>,
-    #[superstruct(getter(copy))]
+    #[superstruct(
+        only(Base, Altair, Bellatrix, Capella, Deneb, Electra, Fulu, Gloas),
+        partial_getter(copy)
+    )]
     #[metastruct(exclude_from(tree_lists))]
     #[serde(with = "serde_utils::quoted_u64")]
     pub eth1_deposit_index: u64,
@@ -690,7 +695,7 @@ where
     pub historical_summaries: List<HistoricalSummary, E::HistoricalRootsLimit>,
 
     // Electra
-    #[superstruct(only(Electra, Fulu, Gloas, Heze), partial_getter(copy))]
+    #[superstruct(only(Electra, Fulu, Gloas), partial_getter(copy))]
     #[metastruct(exclude_from(tree_lists))]
     #[serde(with = "serde_utils::quoted_u64")]
     pub deposit_requests_start_index: u64,
@@ -3801,10 +3806,23 @@ impl<E: EthSpec> ForkVersionDecode for BeaconState<E> {
     }
 }
 
-/// The `active_fields` of the progressive-container `BeaconState` variants (EIP-7688).
+/// The `active_fields` of the Gloas `BeaconState` progressive container (EIP-7688).
 ///
-/// Must match the `active_fields` attribute on the Gloas and Heze variants.
-pub const BEACON_STATE_ACTIVE_FIELDS: [bool; 46] = [true; 46];
+/// Must match the `active_fields` attribute on the Gloas variant.
+pub const BEACON_STATE_GLOAS_ACTIVE_FIELDS: [bool; 46] = [true; 46];
+
+/// The `active_fields` of the Heze `BeaconState` progressive container (EIP-7688).
+///
+/// Must match the `active_fields` attribute on the Heze variant. EIP-8015 removes `eth1_data`,
+/// `eth1_data_votes`, `eth1_deposit_index` and `deposit_requests_start_index`.
+pub const BEACON_STATE_HEZE_ACTIVE_FIELDS: [bool; 46] = {
+    let mut active_fields = [true; 46];
+    active_fields[8] = false;
+    active_fields[9] = false;
+    active_fields[10] = false;
+    active_fields[28] = false;
+    active_fields
+};
 
 impl<E: EthSpec> BeaconState<E> {
     /// The number of fields of the `BeaconState` rounded up to the nearest power of two.
@@ -3947,10 +3965,21 @@ impl<E: EthSpec> BeaconState<E> {
         }
 
         // [Modified in Gloas:EIP7688] the state is a progressive container.
-        if self.fork_name_unchecked().gloas_enabled() {
+        let active_fields = match self {
+            Self::Base(_)
+            | Self::Altair(_)
+            | Self::Bellatrix(_)
+            | Self::Capella(_)
+            | Self::Deneb(_)
+            | Self::Electra(_)
+            | Self::Fulu(_) => None,
+            Self::Gloas(_) => Some(&BEACON_STATE_GLOAS_ACTIVE_FIELDS),
+            Self::Heze(_) => Some(&BEACON_STATE_HEZE_ACTIVE_FIELDS),
+        };
+        if let Some(active_fields) = active_fields {
             return Ok(merkle_proof::progressive_container_proof(
                 leaves,
-                &BEACON_STATE_ACTIVE_FIELDS,
+                active_fields,
                 field_index,
             )?);
         }
@@ -4136,11 +4165,14 @@ mod progressive_container_tests {
     #[test]
     fn active_fields_match_num_fields() {
         assert_eq!(
-            BEACON_STATE_ACTIVE_FIELDS.len(),
+            BEACON_STATE_GLOAS_ACTIVE_FIELDS.len(),
             BeaconStateGloas::<MainnetEthSpec>::NUM_FIELDS
         );
         assert_eq!(
-            BEACON_STATE_ACTIVE_FIELDS.len(),
+            BEACON_STATE_HEZE_ACTIVE_FIELDS
+                .iter()
+                .filter(|active| **active)
+                .count(),
             BeaconStateHeze::<MainnetEthSpec>::NUM_FIELDS
         );
     }
