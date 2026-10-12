@@ -178,6 +178,11 @@ pub enum BeaconStateError {
         deposit_count: u64,
         deposit_index: u64,
     },
+    /// The Heze upgrade requires that all eth1 bridge deposits are processed.
+    Eth1DepositsIncomplete {
+        eth1_deposit_index: u64,
+        deposit_requests_start_index: u64,
+    },
     /// Attestation slipped through block processing with a non-matching source.
     IncorrectAttestationSource,
     /// An arithmetic operation occurred which would have overflowed or divided by 0.
