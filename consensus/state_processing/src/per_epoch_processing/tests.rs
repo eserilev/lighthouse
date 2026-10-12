@@ -46,28 +46,42 @@ mod pending_deposits {
 
     const VALIDATOR_COUNT: usize = 8;
 
-    fn signed_pending_deposit(
+    /// A pending deposit with an empty signature.
+    fn unsigned_pending_deposit(
         validator_index: usize,
         withdrawal_prefix: u8,
+        amount: u64,
         spec: &ChainSpec,
     ) -> PendingDeposit {
         let keypair = generate_deterministic_keypair(validator_index);
         let mut withdrawal_credentials = [0u8; 32];
         withdrawal_credentials[0] = withdrawal_prefix;
-        let mut deposit_data = DepositData {
+        PendingDeposit {
             pubkey: keypair.pk.compress(),
             withdrawal_credentials: Hash256::from_slice(&withdrawal_credentials),
-            amount: spec.min_activation_balance,
+            amount,
             signature: SignatureBytes::empty(),
-        };
-        deposit_data.signature = deposit_data.create_signature(&keypair.sk, spec);
-        PendingDeposit {
-            pubkey: deposit_data.pubkey,
-            withdrawal_credentials: deposit_data.withdrawal_credentials,
-            amount: deposit_data.amount,
-            signature: deposit_data.signature,
             slot: spec.genesis_slot,
         }
+    }
+
+    fn signed_pending_deposit(
+        validator_index: usize,
+        withdrawal_prefix: u8,
+        amount: u64,
+        spec: &ChainSpec,
+    ) -> PendingDeposit {
+        let mut deposit =
+            unsigned_pending_deposit(validator_index, withdrawal_prefix, amount, spec);
+        let deposit_data = DepositData {
+            pubkey: deposit.pubkey,
+            withdrawal_credentials: deposit.withdrawal_credentials,
+            amount: deposit.amount,
+            signature: SignatureBytes::empty(),
+        };
+        let keypair = generate_deterministic_keypair(validator_index);
+        deposit.signature = deposit_data.create_signature(&keypair.sk, spec);
+        deposit
     }
 
     /// Apply the deposits from `make_deposits` to a genesis state at the first epoch boundary.
@@ -99,7 +113,6 @@ mod pending_deposits {
         )
         .unwrap();
 
-        assert!(state.pending_deposits().unwrap().is_empty());
         assert_eq!(state.validators().len(), state.balances().len());
         (genesis_state, state, spec)
     }
@@ -110,9 +123,11 @@ mod pending_deposits {
             vec![signed_pending_deposit(
                 VALIDATOR_COUNT,
                 spec.bls_withdrawal_prefix_byte,
+                spec.min_activation_balance,
                 spec,
             )]
         });
+        assert!(state.pending_deposits().unwrap().is_empty());
         assert_eq!(state.validators().len(), VALIDATOR_COUNT);
     }
 
@@ -122,9 +137,11 @@ mod pending_deposits {
             vec![signed_pending_deposit(
                 VALIDATOR_COUNT,
                 spec.bls_withdrawal_prefix_byte,
+                spec.min_activation_balance,
                 spec,
             )]
         });
+        assert!(state.pending_deposits().unwrap().is_empty());
         assert_eq!(state.validators().len(), VALIDATOR_COUNT + 1);
     }
 
@@ -135,9 +152,11 @@ mod pending_deposits {
             vec![signed_pending_deposit(
                 validator_index,
                 spec.bls_withdrawal_prefix_byte,
+                spec.min_activation_balance,
                 spec,
             )]
         });
+        assert!(state.pending_deposits().unwrap().is_empty());
         assert_eq!(state.validators().len(), VALIDATOR_COUNT);
         assert_eq!(
             *state.balances().get(validator_index).unwrap(),
@@ -149,14 +168,21 @@ mod pending_deposits {
     async fn new_eth1_validator_added_after_skipped_bls_deposit_in_heze() {
         let (_, state, spec) = state_after_deposits(ForkName::Heze, |spec| {
             vec![
-                signed_pending_deposit(VALIDATOR_COUNT, spec.bls_withdrawal_prefix_byte, spec),
+                signed_pending_deposit(
+                    VALIDATOR_COUNT,
+                    spec.bls_withdrawal_prefix_byte,
+                    spec.min_activation_balance,
+                    spec,
+                ),
                 signed_pending_deposit(
                     VALIDATOR_COUNT,
                     spec.eth1_address_withdrawal_prefix_byte,
+                    spec.min_activation_balance,
                     spec,
                 ),
             ]
         });
+        assert!(state.pending_deposits().unwrap().is_empty());
         assert_eq!(state.validators().len(), VALIDATOR_COUNT + 1);
         let validator = state.get_validator(VALIDATOR_COUNT).unwrap();
         assert!(validator.has_eth1_withdrawal_credential(&spec));
@@ -164,6 +190,67 @@ mod pending_deposits {
             *state.balances().get(VALIDATOR_COUNT).unwrap(),
             spec.min_activation_balance
         );
+    }
+
+    #[tokio::test]
+    async fn bls_top_up_with_invalid_signature_applied_in_heze() {
+        let validator_index = 0;
+        let (genesis_state, state, spec) = state_after_deposits(ForkName::Heze, |spec| {
+            vec![unsigned_pending_deposit(
+                validator_index,
+                spec.bls_withdrawal_prefix_byte,
+                spec.min_activation_balance,
+                spec,
+            )]
+        });
+        assert!(state.pending_deposits().unwrap().is_empty());
+        assert_eq!(state.validators().len(), VALIDATOR_COUNT);
+        assert_eq!(
+            *state.balances().get(validator_index).unwrap(),
+            genesis_state.balances().get(validator_index).unwrap() + spec.min_activation_balance
+        );
+    }
+
+    /// A skipped deposit still uses churn and leaves the queue.
+    #[tokio::test]
+    async fn skipped_bls_deposit_consumes_churn_in_heze() {
+        let (genesis_state, state, spec) = state_after_deposits(ForkName::Heze, |spec| {
+            vec![
+                signed_pending_deposit(
+                    VALIDATOR_COUNT,
+                    spec.bls_withdrawal_prefix_byte,
+                    spec.min_activation_balance,
+                    spec,
+                ),
+                signed_pending_deposit(
+                    VALIDATOR_COUNT + 1,
+                    spec.eth1_address_withdrawal_prefix_byte,
+                    spec.min_per_epoch_churn_limit_electra,
+                    spec,
+                ),
+            ]
+        });
+        let churn_limit = genesis_state
+            .get_activation_exit_churn_limit(&spec)
+            .unwrap();
+        assert_eq!(churn_limit, spec.min_per_epoch_churn_limit_electra);
+
+        // The second deposit only fits in the churn if the skipped deposit uses none.
+        assert_eq!(state.validators().len(), VALIDATOR_COUNT);
+        assert_eq!(
+            state.deposit_balance_to_consume().unwrap(),
+            churn_limit - spec.min_activation_balance
+        );
+        let pending_deposits = state.pending_deposits().unwrap();
+        assert_eq!(pending_deposits.len(), 1);
+        let remaining_deposit = pending_deposits.get(0).unwrap();
+        assert_eq!(
+            remaining_deposit.pubkey,
+            generate_deterministic_keypair(VALIDATOR_COUNT + 1)
+                .pk
+                .compress()
+        );
+        assert_eq!(remaining_deposit.amount, churn_limit);
     }
 }
 

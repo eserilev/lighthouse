@@ -23,6 +23,7 @@ use types::{
         NUM_FLAG_INDICES, PARTICIPATION_FLAG_WEIGHTS, TIMELY_HEAD_FLAG_INDEX,
         TIMELY_TARGET_FLAG_INDEX, WEIGHT_DENOMINATOR,
     },
+    is_bls_withdrawal_credential,
 };
 
 pub struct SinglePassConfig {
@@ -408,8 +409,7 @@ pub fn process_epoch_single_pass<E: EthSpec>(
                     .get_balance_mut(validator_index)?
                     .safe_add_assign(deposit_data.amount)?;
             } else if fork_name.heze_enabled()
-                && deposit_data.withdrawal_credentials.as_slice().first()
-                    == Some(&spec.bls_withdrawal_prefix_byte)
+                && is_bls_withdrawal_credential(deposit_data.withdrawal_credentials, spec)
             {
                 // [New in Heze:EIP8365] Do not create validators with BLS withdrawal credentials.
                 continue;
