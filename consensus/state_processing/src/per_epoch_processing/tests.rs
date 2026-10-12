@@ -33,6 +33,140 @@ async fn runs_without_error() {
     process_epoch(&mut new_head_state, &harness.spec).unwrap();
 }
 
+#[cfg(not(feature = "fake_crypto"))]
+mod pending_deposits {
+    use super::*;
+    use crate::state_advance::complete_state_advance;
+    use bls::SignatureBytes;
+    use std::sync::Arc;
+    use types::test_utils::generate_deterministic_keypair;
+    use types::{BeaconState, ChainSpec, DepositData, ForkName, Hash256, PendingDeposit};
+
+    type E = MinimalEthSpec;
+
+    const VALIDATOR_COUNT: usize = 8;
+
+    fn signed_pending_deposit(
+        validator_index: usize,
+        withdrawal_prefix: u8,
+        spec: &ChainSpec,
+    ) -> PendingDeposit {
+        let keypair = generate_deterministic_keypair(validator_index);
+        let mut withdrawal_credentials = [0u8; 32];
+        withdrawal_credentials[0] = withdrawal_prefix;
+        let mut deposit_data = DepositData {
+            pubkey: keypair.pk.compress(),
+            withdrawal_credentials: Hash256::from_slice(&withdrawal_credentials),
+            amount: spec.min_activation_balance,
+            signature: SignatureBytes::empty(),
+        };
+        deposit_data.signature = deposit_data.create_signature(&keypair.sk, spec);
+        PendingDeposit {
+            pubkey: deposit_data.pubkey,
+            withdrawal_credentials: deposit_data.withdrawal_credentials,
+            amount: deposit_data.amount,
+            signature: deposit_data.signature,
+            slot: spec.genesis_slot,
+        }
+    }
+
+    /// Apply the deposits from `make_deposits` to a genesis state at the first epoch boundary.
+    ///
+    /// Returns the genesis state, the post state and the spec.
+    fn state_after_deposits(
+        fork_name: ForkName,
+        make_deposits: impl Fn(&ChainSpec) -> Vec<PendingDeposit>,
+    ) -> (BeaconState<E>, BeaconState<E>, Arc<ChainSpec>) {
+        let spec = Arc::new(fork_name.make_genesis_spec(E::default_spec()));
+        let harness = BeaconChainHarness::builder(E::default())
+            .spec(spec.clone())
+            .deterministic_keypairs(VALIDATOR_COUNT)
+            .fresh_ephemeral_store()
+            .mock_execution_layer()
+            .build();
+        let genesis_state = harness.get_current_state();
+        let mut state = genesis_state.clone();
+        state
+            .set_pending_deposits_from_iter(make_deposits(&spec))
+            .unwrap();
+
+        complete_state_advance(
+            &mut state,
+            None,
+            Slot::new(E::slots_per_epoch()),
+            None,
+            &spec,
+        )
+        .unwrap();
+
+        assert!(state.pending_deposits().unwrap().is_empty());
+        assert_eq!(state.validators().len(), state.balances().len());
+        (genesis_state, state, spec)
+    }
+
+    #[tokio::test]
+    async fn new_bls_validator_skipped_in_heze() {
+        let (_, state, _) = state_after_deposits(ForkName::Heze, |spec| {
+            vec![signed_pending_deposit(
+                VALIDATOR_COUNT,
+                spec.bls_withdrawal_prefix_byte,
+                spec,
+            )]
+        });
+        assert_eq!(state.validators().len(), VALIDATOR_COUNT);
+    }
+
+    #[tokio::test]
+    async fn new_bls_validator_added_before_heze() {
+        let (_, state, _) = state_after_deposits(ForkName::Gloas, |spec| {
+            vec![signed_pending_deposit(
+                VALIDATOR_COUNT,
+                spec.bls_withdrawal_prefix_byte,
+                spec,
+            )]
+        });
+        assert_eq!(state.validators().len(), VALIDATOR_COUNT + 1);
+    }
+
+    #[tokio::test]
+    async fn bls_top_up_applied_in_heze() {
+        let validator_index = 0;
+        let (genesis_state, state, spec) = state_after_deposits(ForkName::Heze, |spec| {
+            vec![signed_pending_deposit(
+                validator_index,
+                spec.bls_withdrawal_prefix_byte,
+                spec,
+            )]
+        });
+        assert_eq!(state.validators().len(), VALIDATOR_COUNT);
+        assert_eq!(
+            *state.balances().get(validator_index).unwrap(),
+            genesis_state.balances().get(validator_index).unwrap() + spec.min_activation_balance
+        );
+    }
+
+    #[tokio::test]
+    async fn new_eth1_validator_added_after_skipped_bls_deposit_in_heze() {
+        let (_, state, spec) = state_after_deposits(ForkName::Heze, |spec| {
+            vec![
+                signed_pending_deposit(VALIDATOR_COUNT, spec.bls_withdrawal_prefix_byte, spec),
+                signed_pending_deposit(
+                    VALIDATOR_COUNT,
+                    spec.eth1_address_withdrawal_prefix_byte,
+                    spec,
+                ),
+            ]
+        });
+        assert_eq!(state.validators().len(), VALIDATOR_COUNT + 1);
+        let validator = state.get_validator(VALIDATOR_COUNT).unwrap();
+        assert!(validator.has_eth1_withdrawal_credential(&spec));
+        assert_eq!(
+            *state.balances().get(VALIDATOR_COUNT).unwrap(),
+            spec.min_activation_balance
+        );
+    }
+}
+
 #[cfg(not(debug_assertions))]
 mod release_tests {
     use super::*;
