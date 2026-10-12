@@ -152,8 +152,7 @@ pub fn initialize_beacon_state_from_eth1<E: EthSpec>(
         // Remove intermediate Electra fork from `state.fork`.
         state.fork_mut().previous_version = spec.fulu_fork_version;
 
-        // Fulu does not use the eth1 bridge, so the genesis deposits are the last eth1 deposits.
-        // `upgrade_to_heze` checks this.
+        // Mirrors `create_genesis_state` in the pyspec test helpers. `upgrade_to_heze` needs it.
         *state.deposit_requests_start_index_mut()? = state.eth1_deposit_index()?;
 
         // Override latest execution payload header.
