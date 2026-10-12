@@ -23,6 +23,15 @@ pub fn upgrade_state_to_heze<E: EthSpec>(
 ) -> Result<BeaconState<E>, Error> {
     let epoch = pre_state.current_epoch();
     let pre = pre_state.as_gloas_mut()?;
+
+    // [New in Heze:EIP8015]
+    if pre.eth1_deposit_index != pre.deposit_requests_start_index {
+        return Err(Error::Eth1DepositsIncomplete {
+            eth1_deposit_index: pre.eth1_deposit_index,
+            deposit_requests_start_index: pre.deposit_requests_start_index,
+        });
+    }
+
     // Where possible, use something like `mem::take` to move fields from behind the &mut
     // reference. For other fields that don't have a good default value, use `clone`.
     //
@@ -43,10 +52,6 @@ pub fn upgrade_state_to_heze<E: EthSpec>(
         block_roots: pre.block_roots.clone(),
         state_roots: pre.state_roots.clone(),
         historical_roots: mem::take(&mut pre.historical_roots),
-        // Eth1
-        eth1_data: pre.eth1_data.clone(),
-        eth1_data_votes: mem::take(&mut pre.eth1_data_votes),
-        eth1_deposit_index: pre.eth1_deposit_index,
         // Registry
         validators: mem::take(&mut pre.validators),
         balances: mem::take(&mut pre.balances),
@@ -93,7 +98,6 @@ pub fn upgrade_state_to_heze<E: EthSpec>(
         next_withdrawal_validator_index: pre.next_withdrawal_validator_index,
         historical_summaries: pre.historical_summaries.clone(),
         // Electra
-        deposit_requests_start_index: pre.deposit_requests_start_index,
         deposit_balance_to_consume: pre.deposit_balance_to_consume,
         exit_balance_to_consume: pre.exit_balance_to_consume,
         earliest_exit_epoch: pre.earliest_exit_epoch,
@@ -123,4 +127,55 @@ pub fn upgrade_state_to_heze<E: EthSpec>(
     });
 
     Ok(post)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use beacon_chain::test_utils::BeaconChainHarness;
+    use std::sync::Arc;
+    use types::{ForkName, MinimalEthSpec};
+
+    type E = MinimalEthSpec;
+
+    fn gloas_state() -> (BeaconState<E>, Arc<ChainSpec>) {
+        let spec = Arc::new(ForkName::Gloas.make_genesis_spec(E::default_spec()));
+
+        let harness = BeaconChainHarness::builder(E::default())
+            .spec(spec.clone())
+            .deterministic_keypairs(E::slots_per_epoch() as usize)
+            .fresh_ephemeral_store()
+            .mock_execution_layer()
+            .build();
+
+        (harness.get_current_state(), spec)
+    }
+
+    #[test]
+    fn upgrade_with_eth1_deposits_complete() {
+        let (mut state, spec) = gloas_state();
+
+        upgrade_to_heze(&mut state, &spec).unwrap();
+
+        assert!(state.as_heze().is_ok());
+        assert!(state.eth1_data().is_err());
+        assert!(state.eth1_deposit_index().is_err());
+        assert!(state.deposit_requests_start_index().is_err());
+    }
+
+    #[test]
+    fn upgrade_with_eth1_deposits_incomplete() {
+        let (mut state, spec) = gloas_state();
+        let eth1_deposit_index = state.eth1_deposit_index().unwrap();
+        *state.deposit_requests_start_index_mut().unwrap() = eth1_deposit_index + 1;
+
+        assert_eq!(
+            upgrade_to_heze(&mut state, &spec),
+            Err(Error::Eth1DepositsIncomplete {
+                eth1_deposit_index,
+                deposit_requests_start_index: eth1_deposit_index + 1,
+            })
+        );
+        assert!(state.as_gloas().is_ok());
+    }
 }

@@ -31,7 +31,7 @@ use types::consts::gloas::BUILDER_INDEX_SELF_BUILD;
 use types::{
     Address, Attestation, AttestationGloas, AttesterSlashing, AttesterSlashingGloas, BeaconBlock,
     BeaconBlockBodyGloas, BeaconBlockBodyHeze, BeaconBlockGloas, BeaconBlockHeze, BeaconState,
-    BeaconStateError, BlobsList, BuilderIndex, Deposit, Eth1Data, EthSpec, ExecutionBlockHash,
+    BeaconStateError, BlobsList, BuilderIndex, EthSpec, ExecutionBlockHash,
     ExecutionPayloadBidGloas, ExecutionPayloadBidHeze, ExecutionPayloadEnvelope,
     ExecutionRequestsGloas, FullPayload, Graffiti, Hash256, IndexedAttestation, KzgProofs,
     PayloadAttestation, ProgressiveTransactions, ProposerSlashing, RelativeEpoch,
@@ -93,13 +93,11 @@ pub struct PartialBeaconBlock<E: EthSpec> {
     proposer_index: u64,
     parent_root: Hash256,
     randao_reveal: Signature,
-    eth1_data: Eth1Data,
     graffiti: Graffiti,
     proposer_slashings: Vec<ProposerSlashing>,
     attester_slashings: Vec<AttesterSlashingGloas<E>>,
     attestations: Vec<AttestationGloas<E>>,
     payload_attestations: Vec<PayloadAttestation<E>>,
-    deposits: Vec<Deposit>,
     voluntary_exits: Vec<SignedVoluntaryExit>,
     sync_aggregate: SyncAggregate<E>,
     bls_to_execution_changes: Vec<SignedBlsToExecutionChange>,
@@ -413,10 +411,6 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
 
         drop(slashings_and_exits_span);
 
-        let eth1_data = state.eth1_data().clone();
-
-        let deposits = vec![];
-
         let bls_changes_span = debug_span!("get_bls_to_execution_changes").entered();
         let bls_to_execution_changes = self
             .op_pool
@@ -653,12 +647,10 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 proposer_index,
                 parent_root,
                 randao_reveal,
-                eth1_data,
                 graffiti,
                 proposer_slashings,
                 attester_slashings,
                 attestations,
-                deposits,
                 voluntary_exits,
                 sync_aggregate,
                 payload_attestations,
@@ -707,12 +699,10 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             proposer_index,
             parent_root,
             randao_reveal,
-            eth1_data,
             graffiti,
             proposer_slashings,
             attester_slashings,
             attestations,
-            deposits,
             voluntary_exits,
             sync_aggregate,
             payload_attestations,
@@ -731,7 +721,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                     "Cannot construct a block pre-Gloas".to_owned(),
                 ));
             }
-            BeaconState::Gloas(_) => {
+            BeaconState::Gloas(gloas_state) => {
                 let SignedExecutionPayloadBid::Gloas(signed_execution_payload_bid) =
                     signed_execution_payload_bid
                 else {
@@ -748,7 +738,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                     state_root: Hash256::ZERO,
                     body: BeaconBlockBodyGloas {
                         randao_reveal,
-                        eth1_data,
+                        eth1_data: gloas_state.eth1_data.clone(),
                         graffiti,
                         // The operation list lengths are bounded by the op pool packing limits above.
                         proposer_slashings: ProgressiveVariableList::try_from_iter(
@@ -761,8 +751,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                         .map_err(BlockProductionError::SszTypesError)?,
                         attestations: ProgressiveVariableList::try_from_iter(attestations)
                             .map_err(BlockProductionError::SszTypesError)?,
-                        deposits: ProgressiveVariableList::try_from_iter(deposits)
-                            .map_err(BlockProductionError::SszTypesError)?,
+                        deposits: ProgressiveVariableList::empty(),
                         voluntary_exits: ProgressiveVariableList::try_from_iter(voluntary_exits)
                             .map_err(BlockProductionError::SszTypesError)?,
                         sync_aggregate,
@@ -797,7 +786,6 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                     state_root: Hash256::ZERO,
                     body: BeaconBlockBodyHeze {
                         randao_reveal,
-                        eth1_data,
                         graffiti,
                         // The operation list lengths are bounded by the op pool packing limits above.
                         proposer_slashings: ProgressiveVariableList::try_from_iter(
@@ -809,8 +797,6 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                         )
                         .map_err(BlockProductionError::SszTypesError)?,
                         attestations: ProgressiveVariableList::try_from_iter(attestations)
-                            .map_err(BlockProductionError::SszTypesError)?,
-                        deposits: ProgressiveVariableList::try_from_iter(deposits)
                             .map_err(BlockProductionError::SszTypesError)?,
                         voluntary_exits: ProgressiveVariableList::try_from_iter(voluntary_exits)
                             .map_err(BlockProductionError::SszTypesError)?,
