@@ -1385,6 +1385,10 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             return cached_block;
         }
 
+        if let Some((block, source)) = self.pending_payload_cache.get_block(block_root) {
+            return BlockProcessStatus::NotValidated(block, source);
+        }
+
         BlockProcessStatus::Unknown
     }
 
@@ -1768,8 +1772,18 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         let relative_epoch = RelativeEpoch::from_epoch(state.current_epoch(), epoch)
             .map_err(Error::IncorrectStateForAttestation)?;
 
-        let dependent_root =
-            state.attester_shuffling_decision_root(dependent_block_root, relative_epoch)?;
+        let dependent_root = if self.spec.gloas_fork_epoch == Some(epoch) {
+            let decision_slot = epoch
+                .start_slot(T::EthSpec::slots_per_epoch())
+                .saturating_sub(1_u64);
+            if state.slot() == decision_slot {
+                dependent_block_root
+            } else {
+                *state.get_block_root(decision_slot)?
+            }
+        } else {
+            state.attester_shuffling_decision_root(dependent_block_root, relative_epoch)?
+        };
 
         let pubkey_cache = self.validator_pubkey_cache.read();
 
@@ -2218,7 +2232,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         // the envelopes_times_cache internally?
         // The payload is considered present only if it was observed before
         // the payload due deadline (PAYLOAD_DUE_BPS into the slot).
-        let payload_due = self.spec.get_payload_due();
+        let payload_due = self.spec.get_payload_due::<T::EthSpec>(request_slot);
         let payload_present = self
             .envelope_times_cache
             .read()
@@ -3920,14 +3934,9 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
 
             let block = execution_pending.block.block_cloned();
             if block.fork_name_unchecked().gloas_enabled() {
-                let bid = Arc::new(
-                    block
-                        .message()
-                        .body()
-                        .signed_execution_payload_bid()?
-                        .clone(),
-                );
-                chain.pending_payload_cache.insert_bid(block_root, bid);
+                chain
+                    .pending_payload_cache
+                    .insert_block(block_root, block, block_source);
             }
 
             publish_fn()?;
@@ -5477,8 +5486,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                     let slot_delay = now.saturating_sub(slot_start);
                     let re_org_cutoff_duration = self
                         .spec
-                        .compute_slot_component_duration(self.spec.proposer_reorg_cutoff_bps)
-                        .ok()?;
+                        .get_proposer_reorg_cutoff::<T::EthSpec>(re_org_block_slot);
 
                     Some(slot_delay <= re_org_cutoff_duration)
                 })
@@ -6646,10 +6654,10 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             return Ok(None);
         }
 
-        let execution_layer = self
-            .execution_layer
-            .clone()
-            .ok_or(Error::ExecutionLayerMissing)?;
+        // Nor is there anything to prepare when the node runs with no execution layer.
+        let Some(execution_layer) = self.execution_layer.clone() else {
+            return Ok(None);
+        };
 
         // Nothing to do if there are no proposers registered with the EL, exit early to avoid
         // wasting cycles.
@@ -6681,7 +6689,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                     }
 
                     let canonical_fcu_params = cached_head.forkchoice_update_parameters();
-                    let fcu_params = if chain
+                    let mut fcu_params = if chain
                         .spec
                         .fork_name_at_slot::<T::EthSpec>(head_slot)
                         .gloas_enabled()
@@ -6704,10 +6712,72 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                             &chain.spec,
                         )?;
                     let head_payload_status = cached_head.head_payload_status();
+                    // Use `should_build_on_full` for the proposal slot so prep matches block
+                    // production and bid validation. Canonical head can be Full while PTC votes
+                    // force building on Empty.
+                    let mut build_payload_status = head_payload_status;
+                    if chain
+                        .spec
+                        .fork_name_at_slot::<T::EthSpec>(prepare_slot)
+                        .gloas_enabled()
+                    {
+                        // Keep status and head_hash consistent so cache, withdrawals, SSE, and
+                        // prep FCU share the same build parent.
+                        let fork_choice = chain.canonical_head.fork_choice_read_lock();
+                        if let Some(proto_block) = fork_choice.get_block(&fcu_params.head_root) {
+                            match fork_choice.should_build_on_full(
+                                &fcu_params.head_root,
+                                head_payload_status,
+                                prepare_slot,
+                            ) {
+                                Ok(should_build_on_full) => {
+                                    build_payload_status = if should_build_on_full {
+                                        fork_choice::PayloadStatus::Full
+                                    } else {
+                                        fork_choice::PayloadStatus::Empty
+                                    };
+                                    let PayloadBlockHash::Hash(hash) =
+                                        proto_block.head_payload_block_hash(build_payload_status)
+                                    else {
+                                        return Err(Error::PreMergeBlockHasNoExecutionHash(
+                                            fcu_params.head_root,
+                                        ));
+                                    };
+                                    fcu_params.head_hash = Some(hash);
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        error = ?e,
+                                        head_root = ?fcu_params.head_root,
+                                        ?head_payload_status,
+                                        %prepare_slot,
+                                        "should_build_on_full failed during proposer prep; \
+                                         using canonical payload status"
+                                    );
+                                }
+                            }
+                        } else {
+                            warn!(
+                                head_root = ?fcu_params.head_root,
+                                "Missing proto array block for proposer prep build parent; \
+                                 using canonical payload status"
+                            );
+                        }
+                    }
+                    if build_payload_status != head_payload_status {
+                        debug!(
+                            %prepare_slot,
+                            head_root = ?fcu_params.head_root,
+                            canonical_payload_status = ?head_payload_status,
+                            build_payload_status = ?build_payload_status,
+                            parent_block_hash = ?fcu_params.head_hash,
+                            "Proposer prep build parent differs from canonical head payload status"
+                        );
+                    }
                     Ok::<_, Error>(Some((
                         fcu_params,
                         pre_payload_attributes,
-                        head_payload_status,
+                        build_payload_status,
                         proposer_shuffling_decision_root,
                     )))
                 },
@@ -6718,7 +6788,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         let Some((
             forkchoice_update_params,
             Some(pre_payload_attributes),
-            head_payload_status,
+            build_payload_status,
             proposer_shuffling_decision_root,
         )) = maybe_prep_data
         else {
@@ -6742,14 +6812,13 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         // if no matching entry is found. This saves recomputing the withdrawals which can take
         // considerable time to compute if a state load is required.
         let head_root = forkchoice_update_params.head_root;
+        let prepare_slot_fork = self.spec.fork_name_at_slot::<T::EthSpec>(prepare_slot);
         let payload_attributes = if let Some(payload_attributes) = execution_layer
-            .payload_attributes(prepare_slot, head_root, head_payload_status)
+            .payload_attributes(prepare_slot, head_root, build_payload_status)
             .await
         {
             payload_attributes
         } else {
-            let prepare_slot_fork = self.spec.fork_name_at_slot::<T::EthSpec>(prepare_slot);
-
             let withdrawals = if prepare_slot_fork.capella_enabled() {
                 let chain = self.clone();
                 self.spawn_blocking_handle(
@@ -6823,7 +6892,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 .insert_proposer(
                     prepare_slot,
                     head_root,
-                    head_payload_status,
+                    build_payload_status,
                     proposer,
                     payload_attributes.clone(),
                 )
@@ -6835,7 +6904,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 %prepare_slot,
                 validator = proposer,
                 parent_root = ?head_root,
-                payload_status = ?head_payload_status,
+                payload_status = ?build_payload_status,
                 "Prepared beacon proposer"
             );
             payload_attributes
@@ -6845,6 +6914,23 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         if let Some(event_handler) = &self.event_handler
             && event_handler.has_payload_attributes_subscribers()
         {
+            let (safe_block_hash, finalized_block_hash) = if prepare_slot_fork.gloas_enabled() {
+                (
+                    Some(
+                        forkchoice_update_params
+                            .justified_hash
+                            .unwrap_or_else(ExecutionBlockHash::zero),
+                    ),
+                    Some(
+                        forkchoice_update_params
+                            .finalized_hash
+                            .unwrap_or_else(ExecutionBlockHash::zero),
+                    ),
+                )
+            } else {
+                (None, None)
+            };
+
             event_handler.register(EventKind::PayloadAttributes(ForkVersionedResponse {
                 data: SseExtendedPayloadAttributes {
                     proposal_slot: prepare_slot,
@@ -6854,6 +6940,8 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                         .parent_block_number
                         .map(|value| Quoted { value }),
                     parent_block_hash: forkchoice_update_params.head_hash.unwrap_or_default(),
+                    safe_block_hash,
+                    finalized_block_hash,
                     payload_attributes: payload_attributes.into(),
                 },
                 metadata: Default::default(),
@@ -6889,7 +6977,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             self.update_execution_engine_forkchoice(
                 current_slot,
                 forkchoice_update_params,
-                head_payload_status,
+                build_payload_status,
                 OverrideForkchoiceUpdate::AlreadyApplied,
             )
             .await?;
@@ -6905,10 +6993,10 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         head_payload_status: fork_choice::PayloadStatus,
         override_forkchoice_update: OverrideForkchoiceUpdate,
     ) -> Result<(), Error> {
-        let execution_layer = self
-            .execution_layer
-            .as_ref()
-            .ok_or(Error::ExecutionLayerMissing)?;
+        // There is no engine to notify when the node runs with no execution layer.
+        let Some(execution_layer) = self.execution_layer.as_ref() else {
+            return Ok(());
+        };
 
         // Determine whether to override the forkchoiceUpdated message if we want to re-org
         // the current head at the next slot.
@@ -6982,6 +7070,11 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         match forkchoice_updated_response {
             Ok(status) => match status {
                 PayloadStatus::Valid => {
+                    // EIP-8025: only the proofs promote a payload to valid.
+                    if self.execution_proofs_enabled() {
+                        return Ok(());
+                    }
+
                     // Ensure that fork choice knows that the payload is no longer optimistic. The
                     // EL judged `head_hash`, which for a Gloas head on its `EMPTY` node is an
                     // ancestor's payload, not the head block's.

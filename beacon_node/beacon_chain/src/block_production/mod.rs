@@ -193,9 +193,11 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         let re_org_max_epochs_since_finalization =
             Epoch::new(self.spec.reorg_max_epochs_since_finalization);
 
+        // Read the clock at millisecond precision, as the re-org cutoff need not fall on a whole
+        // second (it is 833ms for 5s slots).
         let slot_delay = self
             .slot_clock
-            .seconds_from_current_slot_start()
+            .millis_from_current_slot_start()
             .or_else(|| {
                 warn!(error = "unable to read slot clock", "Not attempting re-org");
                 None
@@ -206,10 +208,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         // 1. It seems we have time to propagate and still receive the proposer boost.
         // 2. The current head block was seen late.
         // 3. The `get_proposer_head` conditions from fork choice pass.
-        let re_org_cutoff_duration = self
-            .spec
-            .compute_slot_component_duration(self.spec.proposer_reorg_cutoff_bps)
-            .ok()?;
+        let re_org_cutoff_duration = self.spec.get_proposer_reorg_cutoff::<T::EthSpec>(slot);
 
         let proposing_on_time = slot_delay < re_org_cutoff_duration;
         if !proposing_on_time {
