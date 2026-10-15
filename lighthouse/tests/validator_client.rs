@@ -623,6 +623,78 @@ fn no_builder_boost_factor_flag() {
         .with_config(|config| assert_eq!(config.validator_store.builder_boost_factor, None));
 }
 #[test]
+fn builder_boost_factor_flag_sets_gloas_global() {
+    CommandLineTest::new()
+        .flag("builder-boost-factor", Some("150"))
+        .run()
+        .with_config(|config| assert_eq!(config.builder_globals.builder_boost_factor, Some(150)));
+}
+#[test]
+fn no_gloas_builder_flags() {
+    CommandLineTest::new()
+        .run()
+        .with_config(|config| assert_eq!(config.builder_globals, Default::default()));
+}
+#[test]
+fn builder_min_bid_flag() {
+    CommandLineTest::new()
+        .flag("builder-min-bid", Some("1000000"))
+        .run()
+        .with_config(|config| assert_eq!(config.builder_globals.min_bid, Some(1_000_000)));
+}
+#[test]
+fn builder_urls_flag() {
+    CommandLineTest::new()
+        .flag(
+            "builder-urls",
+            Some("https://a.example,https://b.example#0x0123"),
+        )
+        .flag("builder-max-execution-payment", Some("5"))
+        .run()
+        .with_config(|config| {
+            let builders = config.builder_globals.builders.as_ref().unwrap();
+            assert_eq!(builders.len(), 2);
+            assert_eq!(builders[0].url.to_string(), "https://a.example");
+            assert_eq!(builders[0].auth_data, None);
+            assert_eq!(builders[1].url.to_string(), "https://b.example");
+            assert_eq!(
+                builders[1].auth_data.as_ref().map(|data| data.to_vec()),
+                Some(vec![0x01, 0x23])
+            );
+            assert!(
+                builders
+                    .iter()
+                    .all(|b| b.enabled && b.max_execution_payment == 5)
+            );
+        });
+}
+#[test]
+fn builder_urls_flag_default_max_execution_payment() {
+    CommandLineTest::new()
+        .flag("builder-urls", Some("https://a.example"))
+        .run()
+        .with_config(|config| {
+            let builders = config.builder_globals.builders.as_ref().unwrap();
+            assert_eq!(builders[0].max_execution_payment, 0);
+        });
+}
+#[test]
+#[should_panic]
+fn builder_max_execution_payment_requires_builder_urls() {
+    CommandLineTest::new()
+        .flag("builder-max-execution-payment", Some("5"))
+        .run()
+        .with_config(|_| ());
+}
+#[test]
+#[should_panic]
+fn builder_urls_flag_invalid_auth_data() {
+    CommandLineTest::new()
+        .flag("builder-urls", Some("https://a.example#0123"))
+        .run()
+        .with_config(|_| ());
+}
+#[test]
 fn prefer_builder_proposals_flag() {
     CommandLineTest::new()
         .flag("prefer-builder-proposals", None)

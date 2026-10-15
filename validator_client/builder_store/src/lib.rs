@@ -1,9 +1,9 @@
 mod builder_definitions;
-use builder_definitions::BuilderConfigFile;
 pub use builder_definitions::{
-    BuilderDefinition, Error, ResolvedBuilderConfig, ValidatorBuilderConfig,
-    ValidatorBuilderDefinition,
+    BUILDERS_FILENAME, BuilderDefinition, BuilderGlobals, DEFAULT_BUILDER_BOOST_FACTOR, Error,
+    ResolvedBuilderConfig, ValidatorBuilderConfig, ValidatorBuilderDefinition, parse_builder_url,
 };
+use builder_definitions::{BuilderConfigFile, validate_builders};
 use builder_types::{
     BuilderConfig, BuilderEntry, BuilderPubkeys, RequestAuthData, SignedRequestAuth,
 };
@@ -12,22 +12,37 @@ use ssz_types::VariableList;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::error;
+use tracing::{error, info, warn};
 
 #[derive(Clone)]
 pub struct BuilderStore {
+    /// The contents of the config file. Only this value is written to disk.
     config: Arc<RwLock<BuilderConfigFile>>,
+    /// The process-level defaults from the CLI. They take precedence over the file globals.
+    globals: Arc<BuilderGlobals>,
     validators_dir: PathBuf,
 }
 
 impl BuilderStore {
     pub fn open_or_create<P: AsRef<Path>>(validators_dir: P) -> Result<Self, Error> {
+        Self::open_or_create_with_globals(validators_dir, BuilderGlobals::default())
+    }
+
+    /// Open or create the config file and apply the process-level defaults from the CLI.
+    pub fn open_or_create_with_globals<P: AsRef<Path>>(
+        validators_dir: P,
+        globals: BuilderGlobals,
+    ) -> Result<Self, Error> {
         let validators_dir = validators_dir.as_ref().to_path_buf();
+        if let Some(builders) = &globals.builders {
+            validate_builders(builders)?;
+        }
+        let config = BuilderConfigFile::open_or_create(&validators_dir)?;
+        log_globals(&config, &globals);
 
         Ok(Self {
-            config: Arc::new(RwLock::new(BuilderConfigFile::open_or_create(
-                &validators_dir,
-            )?)),
+            config: Arc::new(RwLock::new(config)),
+            globals: Arc::new(globals),
             validators_dir,
         })
     }
@@ -59,7 +74,7 @@ impl BuilderStore {
         // it, so the lock is never held across an `.await`.
         let (definitions, min_bid, builder_boost_factor) = {
             let config = self.config.read();
-            let resolved = config.resolved_for(validator_pubkey);
+            let resolved = config.resolved_for(validator_pubkey, &self.globals);
             (
                 resolved.builders,
                 resolved.min_bid,
@@ -158,7 +173,9 @@ impl BuilderStore {
         &self,
         validator_pubkey: &bls::PublicKeyBytes,
     ) -> ResolvedBuilderConfig {
-        self.config.read().resolved_for(validator_pubkey)
+        self.config
+            .read()
+            .resolved_for(validator_pubkey, &self.globals)
     }
 
     /// Replace the per-validator configuration and persist it atomically.
@@ -208,6 +225,74 @@ impl BuilderStore {
         candidate.save(&self.validators_dir)?;
         *RwLockUpgradableReadGuard::upgrade(config) = candidate;
         Ok(())
+    }
+}
+
+/// Warn about each file global that a CLI value overrides, then log the effective globals.
+fn log_globals(file: &BuilderConfigFile, globals: &BuilderGlobals) {
+    if let (Some(cli), Some(file)) = (globals.min_bid, file.min_bid)
+        && cli != file
+    {
+        warn!(
+            cli_value = cli,
+            file_value = file,
+            "--builder-min-bid overrides min_bid in {BUILDERS_FILENAME}"
+        );
+    }
+    if let (Some(cli), Some(file)) = (globals.builder_boost_factor, file.builder_boost_factor)
+        && cli != file
+    {
+        warn!(
+            cli_value = cli,
+            file_value = file,
+            "--builder-boost-factor overrides builder_boost_factor in {BUILDERS_FILENAME}"
+        );
+    }
+    if let Some(cli) = &globals.builders
+        && !file.builders.is_empty()
+        && *cli != file.builders
+    {
+        warn!(
+            cli_builders = cli.len(),
+            file_builders = file.builders.len(),
+            "--builder-urls replaces the builders list in {BUILDERS_FILENAME}"
+        );
+    }
+
+    let source = |cli: bool, file: bool| match (cli, file) {
+        (true, _) => "cli",
+        (false, true) => "file",
+        (false, false) => "default",
+    };
+    let builders = globals.builders.as_deref().unwrap_or(&file.builders);
+    let enabled_builders = builders.iter().filter(|builder| builder.enabled);
+    info!(
+        min_bid = globals.min_bid.or(file.min_bid).unwrap_or_default(),
+        min_bid_source = source(globals.min_bid.is_some(), file.min_bid.is_some()),
+        builder_boost_factor = globals
+            .builder_boost_factor
+            .or(file.builder_boost_factor)
+            .unwrap_or(DEFAULT_BUILDER_BOOST_FACTOR),
+        builder_boost_factor_source = source(
+            globals.builder_boost_factor.is_some(),
+            file.builder_boost_factor.is_some()
+        ),
+        builders = enabled_builders.clone().count(),
+        builders_source = source(globals.builders.is_some(), !file.builders.is_empty()),
+        validator_overrides = file.validator_configs.len(),
+        "Gloas builder configuration"
+    );
+    for builder in enabled_builders {
+        let url = builder
+            .url
+            .to_sensitive_url()
+            .map(|url| url.to_string())
+            .unwrap_or_default();
+        info!(
+            builder_url = url,
+            max_execution_payment = builder.max_execution_payment,
+            "Gloas builder"
+        );
     }
 }
 
@@ -533,5 +618,168 @@ mod tests {
         let resolved = store.get_validator_config(&validator);
         assert_eq!(resolved.builders[0].max_execution_payment, 9);
         assert_eq!(resolved.builders[1].max_execution_payment, 0);
+    }
+
+    fn write_file(directory: &Path, file: builder_definitions::BuilderConfigFile) {
+        file.save(directory).unwrap();
+    }
+
+    #[test]
+    fn new_file_does_not_write_globals() {
+        let directory = tempdir().unwrap();
+        BuilderStore::open_or_create(directory.path()).unwrap();
+        let contents = std::fs::read_to_string(directory.path().join(BUILDERS_FILENAME)).unwrap();
+        for field in ["min_bid", "builder_boost_factor", "builders"] {
+            assert!(
+                !contents.contains(field),
+                "unexpected `{field}`:\n{contents}"
+            );
+        }
+    }
+
+    #[test]
+    fn cli_globals_override_file_globals_per_field() {
+        let directory = tempdir().unwrap();
+        write_file(
+            directory.path(),
+            builder_definitions::BuilderConfigFile {
+                min_bid: Some(7),
+                builder_boost_factor: Some(150),
+                builders: vec![global_builder("https://file.example", 5)],
+                validator_configs: Default::default(),
+            },
+        );
+        let store = BuilderStore::open_or_create_with_globals(
+            directory.path(),
+            BuilderGlobals {
+                min_bid: Some(9),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let resolved = store.get_validator_config(&Keypair::random().pk.compress());
+        assert_eq!(resolved.min_bid, 9);
+        assert_eq!(resolved.builder_boost_factor, 150);
+        assert_eq!(resolved.builders.len(), 1);
+        assert_eq!(
+            resolved.builders[0].url,
+            "https://file.example".parse().unwrap()
+        );
+        assert_eq!(resolved.builders[0].min_bid, Some(9));
+    }
+
+    #[test]
+    fn cli_builders_replace_file_builders_and_supply_inherited_caps() {
+        let directory = tempdir().unwrap();
+        write_file(
+            directory.path(),
+            builder_definitions::BuilderConfigFile {
+                min_bid: None,
+                builder_boost_factor: None,
+                builders: vec![global_builder("https://file.example", 5)],
+                validator_configs: Default::default(),
+            },
+        );
+        let store = BuilderStore::open_or_create_with_globals(
+            directory.path(),
+            BuilderGlobals {
+                builders: Some(vec![global_builder("https://cli.example", 3)]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let inherited = store.get_validator_config(&Keypair::random().pk.compress());
+        assert_eq!(inherited.builders.len(), 1);
+        assert_eq!(
+            inherited.builders[0].url,
+            "https://cli.example".parse().unwrap()
+        );
+        assert_eq!(inherited.builders[0].max_execution_payment, 3);
+
+        let validator = Keypair::random().pk.compress();
+        store
+            .set_validator_config(
+                &validator,
+                ValidatorBuilderConfig {
+                    builders: Some(vec![
+                        validator_builder("https://cli.example"),
+                        validator_builder("https://file.example"),
+                    ]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let custom = store.get_validator_config(&validator);
+        assert_eq!(custom.builders[0].max_execution_payment, 3);
+        assert_eq!(custom.builders[1].max_execution_payment, 0);
+    }
+
+    #[test]
+    fn validator_updates_do_not_persist_cli_globals() {
+        let directory = tempdir().unwrap();
+        let store = BuilderStore::open_or_create_with_globals(
+            directory.path(),
+            BuilderGlobals {
+                min_bid: Some(9),
+                builder_boost_factor: Some(120),
+                builders: Some(vec![global_builder("https://cli.example", 3)]),
+            },
+        )
+        .unwrap();
+        store
+            .set_validator_config(
+                &Keypair::random().pk.compress(),
+                ValidatorBuilderConfig {
+                    min_bid: Some(1),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        let file = builder_definitions::BuilderConfigFile::open(directory.path()).unwrap();
+        assert_eq!(file.min_bid, None);
+        assert_eq!(file.builder_boost_factor, None);
+        assert!(file.builders.is_empty());
+        assert_eq!(file.validator_configs.len(), 1);
+    }
+
+    #[test]
+    fn invalid_cli_builders_are_rejected() {
+        let directory = tempdir().unwrap();
+        let result = BuilderStore::open_or_create_with_globals(
+            directory.path(),
+            BuilderGlobals {
+                builders: Some(vec![
+                    global_builder("https://cli.example", 0),
+                    global_builder("https://cli.example", 0),
+                ]),
+                ..Default::default()
+            },
+        );
+        assert!(matches!(result, Err(Error::DuplicateBuilderAuth(_))));
+    }
+
+    #[test]
+    fn parse_builder_url_reads_auth_data_fragment() {
+        let (url, auth_data) = parse_builder_url("https://builder.example").unwrap();
+        assert_eq!(url, "https://builder.example".parse().unwrap());
+        assert_eq!(auth_data, None);
+
+        let (url, auth_data) = parse_builder_url("https://builder.example/path#0x0123").unwrap();
+        assert_eq!(url, "https://builder.example/path".parse().unwrap());
+        assert_eq!(
+            auth_data,
+            Some(RequestAuthData::new(vec![0x01, 0x23]).unwrap())
+        );
+
+        for invalid in [
+            "https://builder.example#0123",
+            "https://builder.example#0xzz",
+            "https://builder.example#0x",
+        ] {
+            assert!(parse_builder_url(invalid).is_err(), "{invalid}");
+        }
     }
 }

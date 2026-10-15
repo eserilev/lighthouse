@@ -24,10 +24,32 @@ Options:
       --builder-boost-factor <UINT64>
           Defines the boost factor, a percentage multiplier to apply to the
           builder's payload value when choosing between a builder payload header
-          and payload from the local execution node.
+          and payload from the local execution node. From Gloas, the boost
+          factor applies to the bids of all builders, and overrides
+          builder_boost_factor in builder_definitions.yml. Per-validator values
+          take precedence.
+      --builder-max-execution-payment <GWEI>
+          The maximum execution payment in Gwei that counts toward a bid from a
+          builder in --builder-urls. The builder stake does not back this
+          payment: you trust the builder to pay it. Default is 0, which counts
+          only the bid value. Only used from Gloas.
+      --builder-min-bid <GWEI>
+          The minimum total payment in Gwei that a builder bid must offer, for
+          all validators. The total is the bid value plus its execution payment,
+          up to the max execution payment. Overrides min_bid in
+          builder_definitions.yml. Per-validator values take precedence. Only
+          used from Gloas.
       --builder-registration-timestamp-override <UNIX-TIMESTAMP>
           This flag takes a unix timestamp value that will be used to override
           the timestamp used in the builder api registration.
+      --builder-urls <URLS>
+          Comma-separated URLs of the builders to request execution payload bids
+          from, for all validators. To set the auth data agreed with a builder,
+          append it as a hex fragment, for example
+          https://builder.example#0x0123. Without a fragment, the auth data is
+          the hostname of the URL. Replaces the builders list in
+          builder_definitions.yml. Per-validator values take precedence. Only
+          used from Gloas.
   -d, --datadir <DIR>
           Used to specify a custom root data directory for lighthouse keys and
           databases. Defaults to $HOME/.lighthouse/{network} where network is

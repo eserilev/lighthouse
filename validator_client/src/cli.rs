@@ -456,11 +456,50 @@ pub struct ValidatorClient {
         help = "Defines the boost factor, \
                 a percentage multiplier to apply to the builder's payload value \
                 when choosing between a builder payload header and payload from \
-                the local execution node.",
+                the local execution node. From Gloas, the boost factor applies to the bids \
+                of all builders, and overrides builder_boost_factor in builder_definitions.yml. \
+                Per-validator values take precedence.",
         conflicts_with = "prefer_builder_proposals",
         display_order = 0
     )]
     pub builder_boost_factor: Option<u64>,
+
+    #[clap(
+        long,
+        value_name = "URLS",
+        value_delimiter = ',',
+        help = "Comma-separated URLs of the builders to request execution payload bids from, \
+                for all validators. To set the auth data agreed with a builder, append it as \
+                a hex fragment, for example https://builder.example#0x0123. Without a fragment, \
+                the auth data is the hostname of the URL. Replaces the builders list in \
+                builder_definitions.yml. Per-validator values take precedence. \
+                Only used from Gloas.",
+        display_order = 0
+    )]
+    pub builder_urls: Option<Vec<String>>,
+
+    #[clap(
+        long,
+        value_name = "GWEI",
+        help = "The minimum total payment in Gwei that a builder bid must offer, \
+                for all validators. The total is the bid value plus its execution payment, \
+                up to the max execution payment. Overrides min_bid in builder_definitions.yml. \
+                Per-validator values take precedence. Only used from Gloas.",
+        display_order = 0
+    )]
+    pub builder_min_bid: Option<u64>,
+
+    #[clap(
+        long,
+        value_name = "GWEI",
+        requires = "builder_urls",
+        help = "The maximum execution payment in Gwei that counts toward a bid from a builder \
+                in --builder-urls. The builder stake does not back this payment: you trust the \
+                builder to pay it. Default is 0, which counts only the bid value. \
+                Only used from Gloas.",
+        display_order = 0
+    )]
+    pub builder_max_execution_payment: Option<u64>,
 
     #[clap(
         long,

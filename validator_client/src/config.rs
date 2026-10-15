@@ -1,6 +1,7 @@
 use crate::cli::ValidatorClient;
 use beacon_node_fallback::ApiTopic;
 use beacon_node_fallback::beacon_node_health::BeaconNodeSyncDistanceTiers;
+use builder_store::{BuilderDefinition, BuilderGlobals, parse_builder_url};
 use clap::ArgMatches;
 use clap_utils::{flags::DISABLE_MALLOC_TUNING_FLAG, parse_required};
 use directory::{
@@ -98,6 +99,8 @@ pub struct Config {
     pub disable_attesting: bool,
     /// Fetch proposer duties using the v1 endpoint instead of v2.
     pub disable_proposer_duties_v2: bool,
+    /// Process-level Gloas builder defaults from the CLI.
+    pub builder_globals: BuilderGlobals,
 }
 
 impl Default for Config {
@@ -148,6 +151,7 @@ impl Default for Config {
             initialized_validators: <_>::default(),
             disable_attesting: false,
             disable_proposer_duties_v2: false,
+            builder_globals: BuilderGlobals::default(),
         }
     }
 }
@@ -388,6 +392,33 @@ impl Config {
             validator_client_config.builder_registration_timestamp_override;
 
         config.validator_store.builder_boost_factor = validator_client_config.builder_boost_factor;
+
+        config.builder_globals = BuilderGlobals {
+            min_bid: validator_client_config.builder_min_bid,
+            builder_boost_factor: validator_client_config.builder_boost_factor,
+            builders: validator_client_config
+                .builder_urls
+                .as_ref()
+                .map(|urls| {
+                    urls.iter()
+                        .map(|url| {
+                            let (url, auth_data) = parse_builder_url(url)?;
+                            Ok(BuilderDefinition {
+                                enabled: true,
+                                url,
+                                auth_data,
+                                builder_pubkeys: vec![],
+                                max_execution_payment: validator_client_config
+                                    .builder_max_execution_payment
+                                    .unwrap_or_default(),
+                                min_bid: None,
+                                builder_boost_factor: None,
+                            })
+                        })
+                        .collect::<Result<Vec<_>, String>>()
+                })
+                .transpose()?,
+        };
         config.enable_latency_measurement_service =
             !validator_client_config.disable_latency_measurement_service;
         config.enable_beacon_head_monitor = !validator_client_config.disable_beacon_head_monitor;

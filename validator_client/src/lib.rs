@@ -3,7 +3,7 @@ pub mod config;
 
 use crate::cli::ValidatorClient;
 use crate::duties_service::SelectionProofConfig;
-use builder_store::BuilderStore;
+use builder_store::{BuilderGlobals, BuilderStore};
 pub use config::Config;
 use initialized_validators::InitializedValidators;
 use metrics::set_gauge;
@@ -532,8 +532,16 @@ impl<E: EthSpec> ProductionValidatorClient<E> {
             ctx.shared.write().duties_service = Some(duties_service.clone());
         }
 
-        let configured_builders = BuilderStore::open_or_create(&config.validator_dir)
-            .map_err(|e| format!("Unable to open or create builder definitions: {:?}", e))?;
+        if config.builder_globals != BuilderGlobals::default()
+            && context.eth2_config.spec.gloas_fork_epoch.is_none()
+        {
+            warn!("Gloas builder flags have no effect because no Gloas fork is scheduled");
+        }
+        let configured_builders = BuilderStore::open_or_create_with_globals(
+            &config.validator_dir,
+            config.builder_globals.clone(),
+        )
+        .map_err(|e| format!("Unable to open or create builder definitions: {:?}", e))?;
         let request_auth_cache = RequestAuthCache::default();
 
         let mut block_service_builder = BlockServiceBuilder::new()

@@ -17,6 +17,39 @@ The validator client reads its external-builder settings from a YAML file named
 Use `GET`, `POST`, and `DELETE` at `/eth/v1/validator/{pubkey}/builder_config`. `GET` returns the
 configuration in use. `POST` replaces the stored configuration. `DELETE` restores global inheritance.
 
+## CLI flags
+
+You can set the global values with CLI flags instead of the file:
+
+| Flag | File field | Meaning |
+| ------ | ------------ | --------- |
+| `--builder-urls` | `builders` | Comma-separated builder URLs. Replaces the `builders` list in the file. |
+| `--builder-min-bid` | `min_bid` | Minimum total payment, in gwei. |
+| `--builder-boost-factor` | `builder_boost_factor` | Boost factor, in percent. The same flag also applies before Gloas. |
+| `--builder-max-execution-payment` | `max_execution_payment` | Cap, in gwei, for each builder in `--builder-urls`. Default is `0`. |
+
+```bash
+lighthouse vc \
+  --builder-urls https://builder-a.example.com,https://builder-b.example.com#0x0123 \
+  --builder-min-bid 500000000 \
+  --builder-max-execution-payment 1000000000
+```
+
+To set the `auth_data` of a builder, append it to the URL as a `#0x` hex fragment. Without a fragment,
+`auth_data` is the hostname of the URL.
+
+The order of precedence for each value is:
+
+1. The per-validator configuration (`validator_configs` and the keymanager API).
+2. The CLI flag.
+3. The global value in `builder_definitions.yml`.
+4. The default.
+
+The validator client keeps the CLI values in memory. It never writes them to `builder_definitions.yml`.
+If a CLI flag and the file both set a global value, the CLI value applies and the validator client logs
+a warning at startup. At startup, the validator client also logs the global values in use and the
+source of each value.
+
 ## Example
 
 ```yaml
