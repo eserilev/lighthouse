@@ -440,7 +440,7 @@ fn global_max_execution_payment(
 }
 
 /// Validate a global builders list, from the config file or from the CLI.
-pub(crate) fn validate_builders(builders: &[BuilderDefinition]) -> Result<(), Error> {
+pub fn validate_builders(builders: &[BuilderDefinition]) -> Result<(), Error> {
     // The enabled builders must fit in a `BuilderConfig`'s bounded list, so
     // `BuilderStore::builder_config` cannot overflow when constructing it.
     let enabled = builders.iter().filter(|d| d.enabled).count();
@@ -469,24 +469,27 @@ pub(crate) fn validate_builders(builders: &[BuilderDefinition]) -> Result<(), Er
 ///
 /// A `#0x`-prefixed hex fragment holds the auth data agreed with the builder, for example
 /// `https://builder.example#0x0123`. The fragment is not part of the returned URL.
+/// The returned errors do not contain the URL, because it can contain credentials.
 pub fn parse_builder_url(value: &str) -> Result<(BuilderUrl, Option<RequestAuthData>), String> {
-    let (url, auth_data) = match value.split_once('#') {
+    let (url, auth_data) = match value.trim().split_once('#') {
         Some((url, fragment)) => {
-            let hex_data = fragment.strip_prefix("0x").ok_or_else(|| {
-                format!("Builder URL fragment must be 0x-prefixed hex auth data: {url}")
-            })?;
+            let hex_data = fragment
+                .strip_prefix("0x")
+                .ok_or("the URL fragment must be 0x-prefixed hex auth data")?;
             let bytes = hex::decode(hex_data)
-                .map_err(|e| format!("Invalid builder auth data for {url}: {e}"))?;
+                .map_err(|e| format!("the auth data is not valid hex: {e}"))?;
             if bytes.is_empty() {
-                return Err(format!("Builder auth data for {url} is empty"));
+                return Err("the auth data is empty".to_string());
             }
             let auth_data = RequestAuthData::new(bytes)
-                .map_err(|_| format!("Builder auth data for {url} exceeds the maximum size"))?;
+                .map_err(|_| "the auth data exceeds the maximum size".to_string())?;
             (url, Some(auth_data))
         }
-        None => (value, None),
+        None => (value.trim(), None),
     };
-    let url = BuilderUrl::from_str(url).map_err(|e| format!("Invalid builder URL {url}: {e:?}"))?;
+    let url = BuilderUrl::from_str(url).map_err(|_| "the URL exceeds the maximum size")?;
+    url.to_sensitive_url()
+        .map_err(|_| "the URL is not valid".to_string())?;
     Ok((url, auth_data))
 }
 

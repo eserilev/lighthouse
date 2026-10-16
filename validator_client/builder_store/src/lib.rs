@@ -1,9 +1,11 @@
 mod builder_definitions;
+use builder_definitions::BuilderConfigFile;
 pub use builder_definitions::{
     BUILDERS_FILENAME, BuilderDefinition, BuilderGlobals, DEFAULT_BUILDER_BOOST_FACTOR, Error,
     ResolvedBuilderConfig, ValidatorBuilderConfig, ValidatorBuilderDefinition, parse_builder_url,
+    validate_builders,
 };
-use builder_definitions::{BuilderConfigFile, validate_builders};
+pub use builder_types::BuilderUrl;
 use builder_types::{
     BuilderConfig, BuilderEntry, BuilderPubkeys, RequestAuthData, SignedRequestAuth,
 };
@@ -228,34 +230,50 @@ impl BuilderStore {
     }
 }
 
+/// The file globals in use. `v8.3.0-rc.0` wrote the defaults to new files, so a default value
+/// counts as unset.
+fn file_globals(file: &BuilderConfigFile) -> (Option<u64>, Option<u64>) {
+    (
+        file.min_bid.filter(|min_bid| *min_bid != 0),
+        file.builder_boost_factor
+            .filter(|factor| *factor != DEFAULT_BUILDER_BOOST_FACTOR),
+    )
+}
+
+/// The CLI flags that override a different value in the file.
+fn overridden_file_globals(
+    file: &BuilderConfigFile,
+    globals: &BuilderGlobals,
+) -> Vec<&'static str> {
+    let (file_min_bid, file_builder_boost_factor) = file_globals(file);
+    let mut overridden = vec![];
+    if globals.min_bid.is_some() && file_min_bid.is_some() && globals.min_bid != file_min_bid {
+        overridden.push("--builder-min-bid");
+    }
+    if globals.builder_boost_factor.is_some()
+        && file_builder_boost_factor.is_some()
+        && globals.builder_boost_factor != file_builder_boost_factor
+    {
+        overridden.push("--builder-boost-factor");
+    }
+    if globals
+        .builders
+        .as_ref()
+        .is_some_and(|builders| !file.builders.is_empty() && *builders != file.builders)
+    {
+        overridden.push("--builder-urls");
+    }
+    overridden
+}
+
 /// Warn about each file global that a CLI value overrides, then log the effective globals.
 fn log_globals(file: &BuilderConfigFile, globals: &BuilderGlobals) {
-    if let (Some(cli), Some(file)) = (globals.min_bid, file.min_bid)
-        && cli != file
-    {
+    let (file_min_bid, file_builder_boost_factor) = file_globals(file);
+    for flag in overridden_file_globals(file, globals) {
         warn!(
-            cli_value = cli,
-            file_value = file,
-            "--builder-min-bid overrides min_bid in {BUILDERS_FILENAME}"
-        );
-    }
-    if let (Some(cli), Some(file)) = (globals.builder_boost_factor, file.builder_boost_factor)
-        && cli != file
-    {
-        warn!(
-            cli_value = cli,
-            file_value = file,
-            "--builder-boost-factor overrides builder_boost_factor in {BUILDERS_FILENAME}"
-        );
-    }
-    if let Some(cli) = &globals.builders
-        && !file.builders.is_empty()
-        && *cli != file.builders
-    {
-        warn!(
-            cli_builders = cli.len(),
-            file_builders = file.builders.len(),
-            "--builder-urls replaces the builders list in {BUILDERS_FILENAME}"
+            flag,
+            file = BUILDERS_FILENAME,
+            "CLI flag overrides a different global value in the builder definitions file"
         );
     }
 
@@ -267,15 +285,15 @@ fn log_globals(file: &BuilderConfigFile, globals: &BuilderGlobals) {
     let builders = globals.builders.as_deref().unwrap_or(&file.builders);
     let enabled_builders = builders.iter().filter(|builder| builder.enabled);
     info!(
-        min_bid = globals.min_bid.or(file.min_bid).unwrap_or_default(),
-        min_bid_source = source(globals.min_bid.is_some(), file.min_bid.is_some()),
+        min_bid = globals.min_bid.or(file_min_bid).unwrap_or_default(),
+        min_bid_source = source(globals.min_bid.is_some(), file_min_bid.is_some()),
         builder_boost_factor = globals
             .builder_boost_factor
-            .or(file.builder_boost_factor)
+            .or(file_builder_boost_factor)
             .unwrap_or(DEFAULT_BUILDER_BOOST_FACTOR),
         builder_boost_factor_source = source(
             globals.builder_boost_factor.is_some(),
-            file.builder_boost_factor.is_some()
+            file_builder_boost_factor.is_some()
         ),
         builders = enabled_builders.clone().count(),
         builders_source = source(globals.builders.is_some(), !file.builders.is_empty()),
@@ -781,5 +799,57 @@ mod tests {
         ] {
             assert!(parse_builder_url(invalid).is_err(), "{invalid}");
         }
+    }
+
+    #[test]
+    fn overridden_file_globals_ignore_defaults_and_equal_values() {
+        let file =
+            |min_bid, builder_boost_factor, builders| builder_definitions::BuilderConfigFile {
+                min_bid,
+                builder_boost_factor,
+                builders,
+                validator_configs: Default::default(),
+            };
+        let globals = BuilderGlobals {
+            min_bid: Some(9),
+            builder_boost_factor: Some(120),
+            builders: Some(vec![global_builder("https://cli.example", 0)]),
+        };
+
+        // The defaults that `v8.3.0-rc.0` wrote to new files.
+        let rc_default = file(Some(0), Some(DEFAULT_BUILDER_BOOST_FACTOR), vec![]);
+        assert!(overridden_file_globals(&rc_default, &globals).is_empty());
+
+        let equal = file(
+            Some(9),
+            Some(120),
+            vec![global_builder("https://cli.example", 0)],
+        );
+        assert!(overridden_file_globals(&equal, &globals).is_empty());
+
+        let different = file(
+            Some(7),
+            Some(150),
+            vec![global_builder("https://file.example", 0)],
+        );
+        assert_eq!(
+            overridden_file_globals(&different, &globals),
+            vec![
+                "--builder-min-bid",
+                "--builder-boost-factor",
+                "--builder-urls"
+            ]
+        );
+        assert!(overridden_file_globals(&different, &BuilderGlobals::default()).is_empty());
+    }
+
+    #[test]
+    fn parse_builder_url_trims_whitespace_and_hides_url_in_errors() {
+        let (url, _) = parse_builder_url(" https://builder.example ").unwrap();
+        assert_eq!(url, "https://builder.example".parse().unwrap());
+
+        let error = parse_builder_url("https://user:secret@builder.example#0xzz").unwrap_err();
+        assert!(!error.contains("secret"), "{error}");
+        assert!(parse_builder_url("not a url").is_err());
     }
 }

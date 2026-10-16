@@ -41,14 +41,19 @@ To set the `auth_data` of a builder, append it to the URL as a `#0x` hex fragmen
 The order of precedence for each value is:
 
 1. The per-validator configuration (`validator_configs` and the keymanager API).
-2. The CLI flag.
-3. The global value in `builder_definitions.yml`.
-4. The default.
+2. The per-builder `min_bid` and `builder_boost_factor` of a builder in the `builders` list of
+   `builder_definitions.yml`. These apply only when `--builder-urls` is not set.
+3. The CLI flag.
+4. The global value in `builder_definitions.yml`.
+5. The default.
 
 The validator client keeps the CLI values in memory. It never writes them to `builder_definitions.yml`.
-If a CLI flag and the file both set a global value, the CLI value applies and the validator client logs
-a warning at startup. At startup, the validator client also logs the global values in use and the
+If a CLI flag and the file set different global values, the CLI value applies and the validator client
+logs a warning at startup. At startup, the validator client also logs the global values in use and the
 source of each value.
+
+`--builder-boost-factor` conflicts with `--prefer-builder-proposals`. If you use
+`--prefer-builder-proposals`, set the Gloas boost factor in `builder_definitions.yml`.
 
 ## Example
 

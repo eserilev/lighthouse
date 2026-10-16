@@ -688,6 +688,14 @@ fn builder_max_execution_payment_requires_builder_urls() {
 }
 #[test]
 #[should_panic]
+fn builder_urls_flag_duplicate_url() {
+    CommandLineTest::new()
+        .flag("builder-urls", Some("https://a.example, https://a.example"))
+        .run()
+        .with_config(|_| ());
+}
+#[test]
+#[should_panic]
 fn builder_urls_flag_invalid_auth_data() {
     CommandLineTest::new()
         .flag("builder-urls", Some("https://a.example#0123"))

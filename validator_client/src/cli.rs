@@ -458,7 +458,8 @@ pub struct ValidatorClient {
                 when choosing between a builder payload header and payload from \
                 the local execution node. From Gloas, the boost factor applies to the bids \
                 of all builders, and overrides builder_boost_factor in builder_definitions.yml. \
-                Per-validator values take precedence.",
+                Per-validator values, and per-builder values in builder_definitions.yml, \
+                take precedence.",
         conflicts_with = "prefer_builder_proposals",
         display_order = 0
     )]
@@ -484,7 +485,8 @@ pub struct ValidatorClient {
         help = "The minimum total payment in Gwei that a builder bid must offer, \
                 for all validators. The total is the bid value plus its execution payment, \
                 up to the max execution payment. Overrides min_bid in builder_definitions.yml. \
-                Per-validator values take precedence. Only used from Gloas.",
+                Per-validator values, and per-builder values in builder_definitions.yml, \
+                take precedence. Only used from Gloas.",
         display_order = 0
     )]
     pub builder_min_bid: Option<u64>,

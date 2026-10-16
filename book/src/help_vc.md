@@ -26,8 +26,8 @@ Options:
           builder's payload value when choosing between a builder payload header
           and payload from the local execution node. From Gloas, the boost
           factor applies to the bids of all builders, and overrides
-          builder_boost_factor in builder_definitions.yml. Per-validator values
-          take precedence.
+          builder_boost_factor in builder_definitions.yml. Per-validator values,
+          and per-builder values in builder_definitions.yml, take precedence.
       --builder-max-execution-payment <GWEI>
           The maximum execution payment in Gwei that counts toward a bid from a
           builder in --builder-urls. The builder stake does not back this
@@ -37,8 +37,8 @@ Options:
           The minimum total payment in Gwei that a builder bid must offer, for
           all validators. The total is the bid value plus its execution payment,
           up to the max execution payment. Overrides min_bid in
-          builder_definitions.yml. Per-validator values take precedence. Only
-          used from Gloas.
+          builder_definitions.yml. Per-validator values, and per-builder values
+          in builder_definitions.yml, take precedence. Only used from Gloas.
       --builder-registration-timestamp-override <UNIX-TIMESTAMP>
           This flag takes a unix timestamp value that will be used to override
           the timestamp used in the builder api registration.

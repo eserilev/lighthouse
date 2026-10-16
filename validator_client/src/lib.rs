@@ -3,7 +3,7 @@ pub mod config;
 
 use crate::cli::ValidatorClient;
 use crate::duties_service::SelectionProofConfig;
-use builder_store::{BuilderGlobals, BuilderStore};
+use builder_store::BuilderStore;
 pub use config::Config;
 use initialized_validators::InitializedValidators;
 use metrics::set_gauge;
@@ -532,10 +532,13 @@ impl<E: EthSpec> ProductionValidatorClient<E> {
             ctx.shared.write().duties_service = Some(duties_service.clone());
         }
 
-        if config.builder_globals != BuilderGlobals::default()
-            && context.eth2_config.spec.gloas_fork_epoch.is_none()
+        if (config.builder_globals.min_bid.is_some() || config.builder_globals.builders.is_some())
+            && !context.eth2_config.spec.is_gloas_scheduled()
         {
-            warn!("Gloas builder flags have no effect because no Gloas fork is scheduled");
+            warn!(
+                "--builder-urls and --builder-min-bid have no effect because no Gloas fork is \
+                 scheduled"
+            );
         }
         let configured_builders = BuilderStore::open_or_create_with_globals(
             &config.validator_dir,
