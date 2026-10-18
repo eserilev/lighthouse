@@ -199,6 +199,20 @@ where
             })
             .transpose()?;
 
+        if let Some(gloas_fork_epoch) = spec.gloas_fork_epoch
+            && spec.is_gloas_scheduled()
+            && config
+                .execution_layer
+                .as_ref()
+                .is_some_and(|el| el.builder_url.is_some())
+        {
+            warn!(
+                %gloas_fork_epoch,
+                "The --builder flag has no effect from the Gloas fork. Set the builders in the \
+                 validator client with --builder-urls"
+            );
+        }
+
         // Construct the Gloas builder handle (Builder API client) when the Gloas fork is scheduled.
         // The client is stateless w.r.t. the target builder — each request carries its own URL — but
         // still honors the same `--builder-user-agent` / `--builder-disable-ssz` flags as the

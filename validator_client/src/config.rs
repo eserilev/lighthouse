@@ -1,10 +1,7 @@
 use crate::cli::ValidatorClient;
 use beacon_node_fallback::ApiTopic;
 use beacon_node_fallback::beacon_node_health::BeaconNodeSyncDistanceTiers;
-use builder_store::{
-    BuilderDefinition, BuilderGlobals, BuilderUrl, Error as BuilderError, parse_builder_url,
-    validate_builders,
-};
+use builder_store::{BuilderDefinition, BuilderGlobals, parse_builder_url, validate_builders};
 
 use clap::ArgMatches;
 use clap_utils::{flags::DISABLE_MALLOC_TUNING_FLAG, parse_required};
@@ -399,7 +396,14 @@ impl Config {
 
         config.builder_globals = BuilderGlobals {
             min_bid: validator_client_config.builder_min_bid,
-            builder_boost_factor: validator_client_config.builder_boost_factor,
+            // `--prefer-builder-proposals` conflicts with `--builder-boost-factor`.
+            builder_boost_factor: if validator_client_config.prefer_builder_proposals {
+                Some(u64::MAX)
+            } else {
+                validator_client_config.builder_boost_factor
+            },
+            prefer_builder_proposals: validator_client_config.prefer_builder_proposals,
+            max_execution_payment: validator_client_config.builder_max_execution_payment,
             builders: validator_client_config
                 .builder_urls
                 .as_ref()
@@ -416,17 +420,14 @@ impl Config {
                                 url,
                                 auth_data,
                                 builder_pubkeys: vec![],
-                                max_execution_payment: validator_client_config
-                                    .builder_max_execution_payment
-                                    .unwrap_or_default(),
+                                max_execution_payment: None,
                                 min_bid: None,
                                 builder_boost_factor: None,
                             })
                         })
                         .collect::<Result<Vec<_>, String>>()?;
-                    validate_builders(&builders).map_err(|e| {
-                        format!("Invalid --builder-urls: {}", builder_error_message(&e))
-                    })?;
+                    validate_builders(&builders)
+                        .map_err(|e| format!("Invalid --builder-urls: {e}"))?;
                     Ok::<_, String>(builders)
                 })
                 .transpose()?,
@@ -460,28 +461,6 @@ impl Config {
         config.disable_proposer_duties_v2 = validator_client_config.disable_proposer_duties_v2;
 
         Ok(config)
-    }
-}
-
-/// Describe a builder list error without exposing the credentials in a URL.
-fn builder_error_message(error: &BuilderError) -> String {
-    let redacted = |url: &BuilderUrl| {
-        url.to_sensitive_url()
-            .map(|url| url.to_string())
-            .unwrap_or_else(|_| "an invalid URL".to_string())
-    };
-    match error {
-        BuilderError::DuplicateBuilderAuth(url) => {
-            format!("{} occurs twice with the same auth data", redacted(url))
-        }
-        BuilderError::InvalidBuilderUrl(url) => format!("{} is not valid", redacted(url)),
-        BuilderError::UnsupportedUrlScheme(url) => {
-            format!("{} must use http or https", redacted(url))
-        }
-        BuilderError::TooManyEnabledBuilders { enabled, max } => {
-            format!("{enabled} builders is more than the maximum of {max}")
-        }
-        other => format!("{other:?}"),
     }
 }
 

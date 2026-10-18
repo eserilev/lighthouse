@@ -12,7 +12,7 @@ use account_utils::{
     random_password_string, validator_definitions::ValidatorDefinitions,
 };
 use bls::{Keypair, PublicKeyBytes};
-use builder_store::{BuilderDefinition, BuilderStore};
+use builder_store::{BuilderDefinition, BuilderGlobals, BuilderStore};
 use deposit_contract::decode_eth1_tx_data;
 use eth2::{
     Error as ApiError,
@@ -67,10 +67,19 @@ impl ApiTester {
     }
 
     pub async fn new_with_config(config: ValidatorStoreConfig) -> Self {
+        Self::new_with_builder_globals(config, BuilderGlobals::default()).await
+    }
+
+    pub async fn new_with_builder_globals(
+        config: ValidatorStoreConfig,
+        builder_globals: BuilderGlobals,
+    ) -> Self {
         let validator_dir = tempdir().unwrap();
         let secrets_dir = tempdir().unwrap();
         let token_path = tempdir().unwrap().path().join("api-token.txt");
-        let configured_builders = BuilderStore::open_or_create(validator_dir.path()).unwrap();
+        let configured_builders =
+            BuilderStore::open_or_create_with_globals(validator_dir.path(), builder_globals)
+                .unwrap();
 
         let validator_defs = ValidatorDefinitions::open_or_create(validator_dir.path()).unwrap();
 
@@ -1007,7 +1016,17 @@ async fn routes_with_invalid_auth() {
 }
 
 async fn builder_configuration_tester() -> (ApiTester, PublicKeyBytes) {
-    let tester = ApiTester::new()
+    builder_configuration_tester_with_globals(BuilderGlobals::default()).await
+}
+
+async fn builder_configuration_tester_with_globals(
+    builder_globals: BuilderGlobals,
+) -> (ApiTester, PublicKeyBytes) {
+    let config = ValidatorStoreConfig {
+        fee_recipient: Some(TEST_DEFAULT_FEE_RECIPIENT),
+        ..Default::default()
+    };
+    let tester = ApiTester::new_with_builder_globals(config, builder_globals)
         .await
         .create_hd_validators(HdValidatorScenario {
             count: 1,
@@ -1047,7 +1066,7 @@ async fn builder_configuration_lifecycle() {
             url: "https://global-builder.example".parse().unwrap(),
             auth_data: None,
             builder_pubkeys: vec![],
-            max_execution_payment: 7,
+            max_execution_payment: Some(7),
             min_bid: None,
             builder_boost_factor: None,
         })
@@ -1147,6 +1166,82 @@ async fn builder_configuration_lifecycle() {
         .await
         .unwrap();
     assert_eq!(delete.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        tester.client.get_builder_config(&validator).await.unwrap(),
+        inherited
+    );
+}
+
+/// The API shows the CLI globals, and its writes never persist them.
+#[tokio::test]
+async fn builder_configuration_with_cli_globals() {
+    let (tester, validator) = builder_configuration_tester_with_globals(BuilderGlobals {
+        min_bid: Some(9),
+        builder_boost_factor: Some(120),
+        max_execution_payment: Some(4),
+        builders: Some(vec![BuilderDefinition {
+            enabled: true,
+            url: "https://cli-builder.example".parse().unwrap(),
+            auth_data: None,
+            builder_pubkeys: vec![],
+            max_execution_payment: Some(4),
+            min_bid: None,
+            builder_boost_factor: None,
+        }]),
+        ..Default::default()
+    })
+    .await;
+
+    let inherited = tester.client.get_builder_config(&validator).await.unwrap();
+    assert_eq!(inherited.min_bid.unwrap().value, 9);
+    assert_eq!(inherited.builder_boost_factor.unwrap().value, 120);
+    let inherited_builders = inherited.builders.as_ref().unwrap();
+    assert_eq!(inherited_builders.len(), 1);
+    assert_eq!(
+        inherited_builders[0].url,
+        "https://cli-builder.example".parse().unwrap()
+    );
+    assert_eq!(
+        inherited_builders[0].max_execution_payment.unwrap().value,
+        4
+    );
+
+    tester
+        .client
+        .post_builder_config(
+            &validator,
+            &BuilderConfig {
+                builders: Some(vec![builder_entry("https://other-builder.example")]),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let custom = tester.client.get_builder_config(&validator).await.unwrap();
+    assert_eq!(custom.min_bid.unwrap().value, 9);
+    assert_eq!(
+        custom.builders.as_ref().unwrap()[0]
+            .max_execution_payment
+            .unwrap()
+            .value,
+        4
+    );
+
+    let contents = std::fs::read_to_string(
+        tester
+            ._validator_dir
+            .path()
+            .join(builder_store::BUILDERS_FILENAME),
+    )
+    .unwrap();
+    assert!(!contents.contains("cli-builder.example"), "{contents}");
+    assert!(!contents.contains("min_bid"), "{contents}");
+
+    tester
+        .client
+        .delete_builder_config(&validator)
+        .await
+        .unwrap();
     assert_eq!(
         tester.client.get_builder_config(&validator).await.unwrap(),
         inherited

@@ -784,6 +784,26 @@ fn test_builder_disable_ssz_flag() {
     );
 }
 
+#[test]
+fn builder_client_flags_without_builder() {
+    let dir = TempDir::new().expect("Unable to create temporary directory");
+    CommandLineTest::new_with_no_execution_endpoint()
+        .flag("execution-endpoint", Some("http://meow.cats"))
+        .flag(
+            "execution-jwt",
+            dir.path().join("jwt-file").as_os_str().to_str(),
+        )
+        .flag("builder-user-agent", Some("anon"))
+        .flag("builder-disable-ssz", None)
+        .run_with_zero_port()
+        .with_config(|config| {
+            let execution_layer = config.execution_layer.as_ref().unwrap();
+            assert_eq!(execution_layer.builder_url, None);
+            assert_eq!(execution_layer.builder_user_agent.as_deref(), Some("anon"));
+            assert!(execution_layer.disable_builder_ssz_requests);
+        });
+}
+
 fn run_jwt_optional_flags_test(jwt_flag: &str, jwt_id_flag: &str, jwt_version_flag: &str) {
     let dir = TempDir::new().expect("Unable to create temporary directory");
     let execution_endpoint = "http://meow.cats";

@@ -579,7 +579,6 @@ fn no_gas_limit_flag() {
 fn gas_limit_flag() {
     CommandLineTest::new()
         .flag("gas-limit", Some("600"))
-        .flag("builder-proposals", None)
         .run()
         .with_config(|config| assert_eq!(config.validator_store.gas_limit, Some(600)));
 }
@@ -664,8 +663,9 @@ fn builder_urls_flag() {
             assert!(
                 builders
                     .iter()
-                    .all(|b| b.enabled && b.max_execution_payment == 5)
+                    .all(|b| b.enabled && b.max_execution_payment.is_none())
             );
+            assert_eq!(config.builder_globals.max_execution_payment, Some(5));
         });
 }
 #[test]
@@ -675,19 +675,22 @@ fn builder_urls_flag_default_max_execution_payment() {
         .run()
         .with_config(|config| {
             let builders = config.builder_globals.builders.as_ref().unwrap();
-            assert_eq!(builders[0].max_execution_payment, 0);
+            assert_eq!(builders[0].max_execution_payment, None);
+            assert_eq!(config.builder_globals.max_execution_payment, None);
         });
 }
 #[test]
-#[should_panic]
-fn builder_max_execution_payment_requires_builder_urls() {
+fn builder_max_execution_payment_flag_without_builder_urls() {
     CommandLineTest::new()
         .flag("builder-max-execution-payment", Some("5"))
         .run()
-        .with_config(|_| ());
+        .with_config(|config| {
+            assert_eq!(config.builder_globals.max_execution_payment, Some(5));
+            assert_eq!(config.builder_globals.builders, None);
+        });
 }
 #[test]
-#[should_panic]
+#[should_panic(expected = "Invalid --builder-urls: builder https://a.example/ occurs twice")]
 fn builder_urls_flag_duplicate_url() {
     CommandLineTest::new()
         .flag("builder-urls", Some("https://a.example, https://a.example"))
@@ -695,12 +698,25 @@ fn builder_urls_flag_duplicate_url() {
         .with_config(|_| ());
 }
 #[test]
-#[should_panic]
+#[should_panic(
+    expected = "Invalid entry 1 in --builder-urls: the URL fragment must be 0x-prefixed"
+)]
 fn builder_urls_flag_invalid_auth_data() {
     CommandLineTest::new()
         .flag("builder-urls", Some("https://a.example#0123"))
         .run()
         .with_config(|_| ());
+}
+#[test]
+fn prefer_builder_proposals_flag_sets_gloas_boost_factor() {
+    CommandLineTest::new()
+        .flag("prefer-builder-proposals", None)
+        .run()
+        .with_config(|config| {
+            assert_eq!(config.builder_globals.builder_boost_factor, Some(u64::MAX));
+            assert!(config.builder_globals.prefer_builder_proposals);
+            assert_eq!(config.validator_store.builder_boost_factor, None);
+        });
 }
 #[test]
 fn prefer_builder_proposals_flag() {

@@ -26,30 +26,40 @@ Options:
           builder's payload value when choosing between a builder payload header
           and payload from the local execution node. From Gloas, the boost
           factor applies to the bids of all builders, and overrides
-          builder_boost_factor in builder_definitions.yml. Per-validator values,
-          and per-builder values in builder_definitions.yml, take precedence.
+          builder_boost_factor in builder_definitions.yml. 100 is neutral, 0
+          always uses the local payload. Values set for one validator in
+          builder_definitions.yml or with the keymanager builder_config API, and
+          the values of a builder in builder_definitions.yml, take precedence.
+          Conflicts with --prefer-builder-proposals.
       --builder-max-execution-payment <GWEI>
-          The maximum execution payment in Gwei that counts toward a bid from a
-          builder in --builder-urls. The builder stake does not back this
-          payment: you trust the builder to pay it. Default is 0, which counts
-          only the bid value. Only used from Gloas.
+          The maximum execution payment in Gwei that counts toward a builder
+          bid, for each builder that does not set its own value. The builder
+          stake does not back this payment: you trust the builder to pay it. If
+          the builder does not pay, you lose up to this amount for each block.
+          Default is 0, which counts only the bid value. For example, 1000000000
+          is 1 ETH. Only used from Gloas.
       --builder-min-bid <GWEI>
-          The minimum total payment in Gwei that a builder bid must offer, for
-          all validators. The total is the bid value plus its execution payment,
-          up to the max execution payment. Overrides min_bid in
-          builder_definitions.yml. Per-validator values, and per-builder values
-          in builder_definitions.yml, take precedence. Only used from Gloas.
+          The minimum total payment in Gwei for a builder bid, for all
+          validators. The total is the bid value plus its execution payment, up
+          to the max execution payment. A bid below this value ranks behind the
+          local payload, and wins only if no other payload is available.
+          Overrides min_bid in builder_definitions.yml. Values set for one
+          validator in builder_definitions.yml or with the keymanager
+          builder_config API, and the values of a builder in
+          builder_definitions.yml, take precedence. Only used from Gloas.
       --builder-registration-timestamp-override <UNIX-TIMESTAMP>
           This flag takes a unix timestamp value that will be used to override
-          the timestamp used in the builder api registration.
+          the timestamp used in the builder api registration. Has no effect from
+          Gloas.
       --builder-urls <URLS>
           Comma-separated URLs of the builders to request execution payload bids
           from, for all validators. To set the auth data agreed with a builder,
           append it as a hex fragment, for example
           https://builder.example#0x0123. Without a fragment, the auth data is
-          the hostname of the URL. Replaces the builders list in
-          builder_definitions.yml. Per-validator values take precedence. Only
-          used from Gloas.
+          the hostname of the URL. Most builders do not need auth data. Replaces
+          the builders list in builder_definitions.yml. Values set for one
+          validator in builder_definitions.yml or with the keymanager
+          builder_config API take precedence. Only used from Gloas.
   -d, --datadir <DIR>
           Used to specify a custom root data directory for lighthouse keys and
           databases. Defaults to $HOME/.lighthouse/{network} where network is
@@ -59,11 +69,13 @@ Options:
           Specifies the verbosity level used when emitting logs to the terminal.
           [default: info] [possible values: info, debug, trace, warn, error]
       --gas-limit <INTEGER>
-          The gas limit to be used in all builder proposals for all validators
-          managed by this validator client. If this value is not set, the gas
-          limit schedule from the network config is used, falling back to a
-          default of 60,000,000. Note this will not necessarily be used if the
-          gas limit set here moves too far from the previous block's gas limit.
+          The gas limit for all validators managed by this validator client.
+          Before Gloas, it applies only to builder proposals. From Gloas, it is
+          the target gas limit in the proposer preferences. If this value is not
+          set, the gas limit schedule from the network config is used, falling
+          back to a default of 60,000,000. Note this will not necessarily be
+          used if the gas limit set here moves too far from the previous block's
+          gas limit.
       --genesis-state-url <URL>
           A URL of a beacon-API compatible server from which to download the
           genesis state. Checkpoint sync server URLs can generally be used with
@@ -167,7 +179,7 @@ Options:
       --validator-registration-batch-size <INTEGER>
           Defines the number of validators per validator/register_validator
           request sent to the BN. This value can be reduced to avoid timeouts
-          from builders. [default: 500]
+          from builders. Has no effect from Gloas. [default: 500]
       --validators-dir <VALIDATORS_DIR>
           The directory which contains the validator keystores, deposit data for
           each validator along with the common slashing protection database and
@@ -199,7 +211,8 @@ Flags:
       --builder-proposals
           If this flag is set, Lighthouse will query the Beacon Node for only
           block headers during proposals and will sign over headers. Useful for
-          outsourcing execution payload construction during proposals.
+          outsourcing execution payload construction during proposals. Has no
+          effect from Gloas: use --builder-urls.
       --disable-attesting
           Disable the performance of attestation duties (and sync committee
           duties). This flag should only be used in emergencies to prioritise
@@ -315,7 +328,11 @@ Flags:
           Enable the Prometheus metrics HTTP server. Disabled by default.
       --prefer-builder-proposals
           If this flag is set, Lighthouse will always prefer blocks constructed
-          by builders, regardless of payload value.
+          by builders, regardless of payload value. From Gloas, this sets the
+          builder boost factor to its maximum, so a builder bid of any value
+          above zero, including a gossip bid, beats the local payload. Use
+          --builder-min-bid to set a minimum. Conflicts with
+          --builder-boost-factor.
       --stateless-block-production
           Request the execution payload with each Gloas block and publish the
           self-built payload envelope from that response, so it can be published

@@ -3,9 +3,8 @@ use builder_definitions::BuilderConfigFile;
 pub use builder_definitions::{
     BUILDERS_FILENAME, BuilderDefinition, BuilderGlobals, DEFAULT_BUILDER_BOOST_FACTOR, Error,
     ResolvedBuilderConfig, ValidatorBuilderConfig, ValidatorBuilderDefinition, parse_builder_url,
-    validate_builders,
+    redacted_builder_url, validate_builders,
 };
-pub use builder_types::BuilderUrl;
 use builder_types::{
     BuilderConfig, BuilderEntry, BuilderPubkeys, RequestAuthData, SignedRequestAuth,
 };
@@ -14,7 +13,7 @@ use ssz_types::VariableList;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 #[derive(Clone)]
 pub struct BuilderStore {
@@ -144,7 +143,7 @@ impl BuilderStore {
                 url: definition.url,
                 auth,
                 builder_pubkeys,
-                max_execution_payment: definition.max_execution_payment,
+                max_execution_payment: definition.max_execution_payment.unwrap_or_default(),
                 min_bid: definition.min_bid.unwrap_or(min_bid),
                 builder_boost_factor: definition
                     .builder_boost_factor
@@ -168,6 +167,19 @@ impl BuilderStore {
             candidate.validate()?;
             Ok(true)
         })
+    }
+
+    /// True when the global builders list in use has an enabled builder.
+    pub fn has_global_builders(&self) -> bool {
+        match &self.globals.builders {
+            Some(builders) => !builders.is_empty(),
+            None => self
+                .config
+                .read()
+                .builders
+                .iter()
+                .any(|builder| builder.enabled),
+        }
     }
 
     /// Return the fully resolved configuration for a validator without signing builder auth data.
@@ -230,6 +242,16 @@ impl BuilderStore {
     }
 }
 
+/// A cap above this value (10 ETH, in gwei) is likely a unit error.
+const MAX_EXPECTED_EXECUTION_PAYMENT: u64 = 10_000_000_000;
+
+const GWEI_PER_ETH: u64 = 1_000_000_000;
+
+fn gwei_to_eth(gwei: u64) -> String {
+    let eth = format!("{}.{:09}", gwei / GWEI_PER_ETH, gwei % GWEI_PER_ETH);
+    eth.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
 /// The file globals in use. `v8.3.0-rc.0` wrote the defaults to new files, so a default value
 /// counts as unset.
 fn file_globals(file: &BuilderConfigFile) -> (Option<u64>, Option<u64>) {
@@ -240,41 +262,187 @@ fn file_globals(file: &BuilderConfigFile) -> (Option<u64>, Option<u64>) {
     )
 }
 
-/// The CLI flags that override a different value in the file.
-fn overridden_file_globals(
-    file: &BuilderConfigFile,
-    globals: &BuilderGlobals,
-) -> Vec<&'static str> {
+fn enabled_file_builders(file: &BuilderConfigFile) -> Vec<BuilderDefinition> {
+    file.builders
+        .iter()
+        .filter(|builder| builder.enabled)
+        .cloned()
+        .collect()
+}
+
+fn boost_factor_flag(globals: &BuilderGlobals) -> &'static str {
+    if globals.prefer_builder_proposals {
+        "--prefer-builder-proposals"
+    } else {
+        "--builder-boost-factor"
+    }
+}
+
+/// A CLI flag that overrides a different value in the file.
+#[derive(Debug, PartialEq)]
+struct Override {
+    flag: &'static str,
+    cli_value: u64,
+    file_value: u64,
+}
+
+/// The CLI flags that override a different global value in the file. For `--builder-urls`, the
+/// values are the number of builders.
+fn overridden_file_globals(file: &BuilderConfigFile, globals: &BuilderGlobals) -> Vec<Override> {
     let (file_min_bid, file_builder_boost_factor) = file_globals(file);
     let mut overridden = vec![];
-    if globals.min_bid.is_some() && file_min_bid.is_some() && globals.min_bid != file_min_bid {
-        overridden.push("--builder-min-bid");
-    }
-    if globals.builder_boost_factor.is_some()
-        && file_builder_boost_factor.is_some()
-        && globals.builder_boost_factor != file_builder_boost_factor
+    if let (Some(cli_value), Some(file_value)) = (globals.min_bid, file_min_bid)
+        && cli_value != file_value
     {
-        overridden.push("--builder-boost-factor");
+        overridden.push(Override {
+            flag: "--builder-min-bid",
+            cli_value,
+            file_value,
+        });
     }
-    if globals
-        .builders
-        .as_ref()
-        .is_some_and(|builders| !file.builders.is_empty() && *builders != file.builders)
+    if let (Some(cli_value), Some(file_value)) =
+        (globals.builder_boost_factor, file_builder_boost_factor)
+        && cli_value != file_value
     {
-        overridden.push("--builder-urls");
+        overridden.push(Override {
+            flag: boost_factor_flag(globals),
+            cli_value,
+            file_value,
+        });
+    }
+    let file_builders = enabled_file_builders(file);
+    if let Some(cli_builders) = &globals.builders
+        && !file_builders.is_empty()
+        && *cli_builders != file_builders
+    {
+        overridden.push(Override {
+            flag: "--builder-urls",
+            cli_value: cli_builders.len() as u64,
+            file_value: file_builders.len() as u64,
+        });
     }
     overridden
 }
 
-/// Warn about each file global that a CLI value overrides, then log the effective globals.
+/// A value of a builder in the file that takes precedence over a CLI flag.
+#[derive(Debug, PartialEq)]
+struct BuilderOverride {
+    index: usize,
+    flag: &'static str,
+    builder_value: u64,
+    cli_value: u64,
+}
+
+/// The values of builders in the file that take precedence over CLI flags. This happens only when
+/// `--builder-urls` is not set, because the file builders are then in use.
+fn overriding_file_builders(
+    file: &BuilderConfigFile,
+    globals: &BuilderGlobals,
+) -> Vec<BuilderOverride> {
+    if globals.builders.is_some() {
+        return vec![];
+    }
+    let mut overrides = vec![];
+    for (index, builder) in enabled_file_builders(file).iter().enumerate() {
+        let values = [
+            ("--builder-min-bid", builder.min_bid, globals.min_bid),
+            (
+                boost_factor_flag(globals),
+                builder.builder_boost_factor,
+                globals.builder_boost_factor,
+            ),
+            (
+                "--builder-max-execution-payment",
+                builder.max_execution_payment,
+                globals.max_execution_payment,
+            ),
+        ];
+        for (flag, builder_value, cli_value) in values {
+            if let (Some(builder_value), Some(cli_value)) = (builder_value, cli_value)
+                && builder_value != cli_value
+            {
+                overrides.push(BuilderOverride {
+                    index,
+                    flag,
+                    builder_value,
+                    cli_value,
+                });
+            }
+        }
+    }
+    overrides
+}
+
+/// Warn about each conflict between the CLI and the file, then log the effective globals.
 fn log_globals(file: &BuilderConfigFile, globals: &BuilderGlobals) {
-    let (file_min_bid, file_builder_boost_factor) = file_globals(file);
-    for flag in overridden_file_globals(file, globals) {
+    for Override {
+        flag,
+        cli_value,
+        file_value,
+    } in overridden_file_globals(file, globals)
+    {
+        if flag == "--builder-urls" {
+            warn!(
+                flag,
+                cli_builders = cli_value,
+                file_builders = file_value,
+                file = BUILDERS_FILENAME,
+                "CLI flag replaces the builders list in the builder definitions file, including \
+                 its builder_pubkeys and max_execution_payment values"
+            );
+        } else {
+            warn!(
+                flag,
+                cli_value,
+                file_value,
+                file = BUILDERS_FILENAME,
+                "CLI flag overrides a different global value in the builder definitions file"
+            );
+        }
+    }
+    for BuilderOverride {
+        index,
+        flag,
+        builder_value,
+        cli_value,
+    } in overriding_file_builders(file, globals)
+    {
         warn!(
+            builder = index,
             flag,
+            builder_value,
+            cli_value,
             file = BUILDERS_FILENAME,
-            "CLI flag overrides a different global value in the builder definitions file"
+            "Builder value in the builder definitions file takes precedence over CLI flag"
         );
+    }
+
+    let (file_min_bid, file_builder_boost_factor) = file_globals(file);
+    let file_builders = enabled_file_builders(file);
+    let builders = globals.builders.as_deref().unwrap_or(&file_builders);
+
+    if let Some(cap) = globals.max_execution_payment
+        && cap > MAX_EXPECTED_EXECUTION_PAYMENT
+    {
+        warn!(
+            max_execution_payment_gwei = cap,
+            max_execution_payment_eth = gwei_to_eth(cap),
+            "--builder-max-execution-payment is more than 10 ETH. Make sure that the value is in \
+             Gwei"
+        );
+    }
+    for (index, builder) in builders.iter().enumerate() {
+        if let Some(cap) = builder.max_execution_payment
+            && cap > MAX_EXPECTED_EXECUTION_PAYMENT
+        {
+            warn!(
+                builder = index,
+                max_execution_payment_gwei = cap,
+                max_execution_payment_eth = gwei_to_eth(cap),
+                "Builder max_execution_payment is more than 10 ETH. Make sure that the value is \
+                 in Gwei"
+            );
+        }
     }
 
     let source = |cli: bool, file: bool| match (cli, file) {
@@ -282,33 +450,45 @@ fn log_globals(file: &BuilderConfigFile, globals: &BuilderGlobals) {
         (false, true) => "file",
         (false, false) => "default",
     };
-    let builders = globals.builders.as_deref().unwrap_or(&file.builders);
-    let enabled_builders = builders.iter().filter(|builder| builder.enabled);
+    let min_bid_source = source(globals.min_bid.is_some(), file_min_bid.is_some());
+    let builder_boost_factor_source = source(
+        globals.builder_boost_factor.is_some(),
+        file_builder_boost_factor.is_some(),
+    );
+    let builders_source = source(globals.builders.is_some(), !file_builders.is_empty());
+    if min_bid_source == "default"
+        && builder_boost_factor_source == "default"
+        && builders_source == "default"
+        && globals.max_execution_payment.is_none()
+        && file.validator_configs.is_empty()
+    {
+        debug!("Gloas builder configuration uses the defaults");
+        return;
+    }
     info!(
         min_bid = globals.min_bid.or(file_min_bid).unwrap_or_default(),
-        min_bid_source = source(globals.min_bid.is_some(), file_min_bid.is_some()),
+        min_bid_source,
         builder_boost_factor = globals
             .builder_boost_factor
             .or(file_builder_boost_factor)
             .unwrap_or(DEFAULT_BUILDER_BOOST_FACTOR),
-        builder_boost_factor_source = source(
-            globals.builder_boost_factor.is_some(),
-            file_builder_boost_factor.is_some()
-        ),
-        builders = enabled_builders.clone().count(),
-        builders_source = source(globals.builders.is_some(), !file.builders.is_empty()),
+        builder_boost_factor_source,
+        max_execution_payment_gwei = globals.max_execution_payment,
+        builders = builders.len(),
+        builders_source,
         validator_overrides = file.validator_configs.len(),
         "Gloas builder configuration"
     );
-    for builder in enabled_builders {
-        let url = builder
-            .url
-            .to_sensitive_url()
-            .map(|url| url.to_string())
+    for (index, builder) in builders.iter().enumerate() {
+        let cap = builder
+            .max_execution_payment
+            .or(globals.max_execution_payment)
             .unwrap_or_default();
         info!(
-            builder_url = url,
-            max_execution_payment = builder.max_execution_payment,
+            builder = index,
+            builder_url = redacted_builder_url(&builder.url),
+            max_execution_payment_gwei = cap,
+            max_execution_payment_eth = gwei_to_eth(cap),
             "Gloas builder"
         );
     }
@@ -328,7 +508,7 @@ mod tests {
             url: url.parse().unwrap(),
             auth_data: None,
             builder_pubkeys: vec![],
-            max_execution_payment,
+            max_execution_payment: Some(max_execution_payment),
             min_bid: None,
             builder_boost_factor: None,
         }
@@ -387,7 +567,7 @@ mod tests {
         assert_eq!(inherited.min_bid, 5);
         assert_eq!(inherited.builder_boost_factor, 125);
         assert_eq!(inherited.builders.len(), 1);
-        assert_eq!(inherited.builders[0].max_execution_payment, 7);
+        assert_eq!(inherited.builders[0].max_execution_payment, Some(7));
         assert_eq!(inherited.builders[0].min_bid, Some(5));
         assert_eq!(inherited.builders[0].builder_boost_factor, Some(125));
 
@@ -614,7 +794,7 @@ mod tests {
                 url: "https://disabled-builder.example".parse().unwrap(),
                 auth_data: None,
                 builder_pubkeys: vec![],
-                max_execution_payment: 9,
+                max_execution_payment: Some(9),
                 min_bid: None,
                 builder_boost_factor: None,
             })
@@ -634,8 +814,8 @@ mod tests {
             .unwrap();
 
         let resolved = store.get_validator_config(&validator);
-        assert_eq!(resolved.builders[0].max_execution_payment, 9);
-        assert_eq!(resolved.builders[1].max_execution_payment, 0);
+        assert_eq!(resolved.builders[0].max_execution_payment, Some(9));
+        assert_eq!(resolved.builders[1].max_execution_payment, Some(0));
     }
 
     fn write_file(directory: &Path, file: builder_definitions::BuilderConfigFile) {
@@ -714,7 +894,7 @@ mod tests {
             inherited.builders[0].url,
             "https://cli.example".parse().unwrap()
         );
-        assert_eq!(inherited.builders[0].max_execution_payment, 3);
+        assert_eq!(inherited.builders[0].max_execution_payment, Some(3));
 
         let validator = Keypair::random().pk.compress();
         store
@@ -730,8 +910,8 @@ mod tests {
             )
             .unwrap();
         let custom = store.get_validator_config(&validator);
-        assert_eq!(custom.builders[0].max_execution_payment, 3);
-        assert_eq!(custom.builders[1].max_execution_payment, 0);
+        assert_eq!(custom.builders[0].max_execution_payment, Some(3));
+        assert_eq!(custom.builders[1].max_execution_payment, Some(0));
     }
 
     #[test]
@@ -742,7 +922,9 @@ mod tests {
             BuilderGlobals {
                 min_bid: Some(9),
                 builder_boost_factor: Some(120),
+                max_execution_payment: Some(3),
                 builders: Some(vec![global_builder("https://cli.example", 3)]),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -814,6 +996,7 @@ mod tests {
             min_bid: Some(9),
             builder_boost_factor: Some(120),
             builders: Some(vec![global_builder("https://cli.example", 0)]),
+            ..Default::default()
         };
 
         // The defaults that `v8.3.0-rc.0` wrote to new files.
@@ -835,21 +1018,229 @@ mod tests {
         assert_eq!(
             overridden_file_globals(&different, &globals),
             vec![
-                "--builder-min-bid",
-                "--builder-boost-factor",
-                "--builder-urls"
+                Override {
+                    flag: "--builder-min-bid",
+                    cli_value: 9,
+                    file_value: 7,
+                },
+                Override {
+                    flag: "--builder-boost-factor",
+                    cli_value: 120,
+                    file_value: 150,
+                },
+                Override {
+                    flag: "--builder-urls",
+                    cli_value: 1,
+                    file_value: 1,
+                },
             ]
         );
         assert!(overridden_file_globals(&different, &BuilderGlobals::default()).is_empty());
+
+        // A file with only disabled builders supplies no builders.
+        let mut disabled = global_builder("https://file.example", 0);
+        disabled.enabled = false;
+        let only_disabled = file(None, None, vec![disabled]);
+        assert!(overridden_file_globals(&only_disabled, &globals).is_empty());
+
+        let prefer = BuilderGlobals {
+            builder_boost_factor: Some(u64::MAX),
+            prefer_builder_proposals: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            overridden_file_globals(&different, &prefer)[0].flag,
+            "--prefer-builder-proposals"
+        );
     }
 
     #[test]
-    fn parse_builder_url_trims_whitespace_and_hides_url_in_errors() {
+    fn file_builder_values_that_beat_cli_flags_are_reported() {
+        let mut builder = global_builder("https://file.example", 5);
+        builder.min_bid = Some(0);
+        builder.builder_boost_factor = Some(120);
+        let file = builder_definitions::BuilderConfigFile {
+            min_bid: None,
+            builder_boost_factor: None,
+            builders: vec![builder],
+            validator_configs: Default::default(),
+        };
+        let globals = BuilderGlobals {
+            min_bid: Some(1),
+            builder_boost_factor: Some(120),
+            max_execution_payment: Some(7),
+            ..Default::default()
+        };
+        assert_eq!(
+            overriding_file_builders(&file, &globals),
+            vec![
+                BuilderOverride {
+                    index: 0,
+                    flag: "--builder-min-bid",
+                    builder_value: 0,
+                    cli_value: 1,
+                },
+                BuilderOverride {
+                    index: 0,
+                    flag: "--builder-max-execution-payment",
+                    builder_value: 5,
+                    cli_value: 7,
+                },
+            ]
+        );
+
+        // With `--builder-urls`, the file builders are not in use.
+        let with_urls = BuilderGlobals {
+            builders: Some(vec![]),
+            ..globals
+        };
+        assert!(overriding_file_builders(&file, &with_urls).is_empty());
+    }
+
+    #[test]
+    fn file_builder_without_cap_inherits_the_cli_cap() {
+        let directory = tempdir().unwrap();
+        let mut uncapped = global_builder("https://uncapped.example", 0);
+        uncapped.max_execution_payment = None;
+        write_file(
+            directory.path(),
+            builder_definitions::BuilderConfigFile {
+                min_bid: None,
+                builder_boost_factor: None,
+                builders: vec![uncapped, global_builder("https://capped.example", 5)],
+                validator_configs: Default::default(),
+            },
+        );
+        let validator = Keypair::random().pk.compress();
+        let caps = |globals| {
+            let store =
+                BuilderStore::open_or_create_with_globals(directory.path(), globals).unwrap();
+            store
+                .get_validator_config(&validator)
+                .builders
+                .iter()
+                .map(|builder| builder.max_execution_payment)
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(caps(BuilderGlobals::default()), vec![Some(0), Some(5)]);
+        assert_eq!(
+            caps(BuilderGlobals {
+                max_execution_payment: Some(7),
+                ..Default::default()
+            }),
+            vec![Some(7), Some(5)]
+        );
+    }
+
+    #[test]
+    fn has_global_builders_uses_the_builders_in_use() {
+        let directory = tempdir().unwrap();
+        let mut disabled = global_builder("https://disabled.example", 1);
+        disabled.enabled = false;
+        write_file(
+            directory.path(),
+            builder_definitions::BuilderConfigFile {
+                min_bid: None,
+                builder_boost_factor: None,
+                builders: vec![disabled],
+                validator_configs: Default::default(),
+            },
+        );
+        let has_builders = |globals| {
+            BuilderStore::open_or_create_with_globals(directory.path(), globals)
+                .unwrap()
+                .has_global_builders()
+        };
+
+        assert!(!has_builders(BuilderGlobals::default()));
+        assert!(has_builders(BuilderGlobals {
+            builders: Some(vec![global_builder("https://cli.example", 1)]),
+            ..Default::default()
+        }));
+    }
+
+    #[test]
+    fn validator_builders_inherit_the_cli_max_execution_payment() {
+        let directory = tempdir().unwrap();
+        write_file(
+            directory.path(),
+            builder_definitions::BuilderConfigFile {
+                min_bid: None,
+                builder_boost_factor: None,
+                builders: vec![global_builder("https://file.example", 5)],
+                validator_configs: Default::default(),
+            },
+        );
+        let store = BuilderStore::open_or_create_with_globals(
+            directory.path(),
+            BuilderGlobals {
+                max_execution_payment: Some(7),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let validator = Keypair::random().pk.compress();
+        let mut own_cap = validator_builder("https://own.example");
+        own_cap.max_execution_payment = Some(3);
+        store
+            .set_validator_config(
+                &validator,
+                ValidatorBuilderConfig {
+                    builders: Some(vec![
+                        own_cap,
+                        validator_builder("https://file.example"),
+                        validator_builder("https://other.example"),
+                    ]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        let resolved = store.get_validator_config(&validator);
+        let caps: Vec<_> = resolved
+            .builders
+            .iter()
+            .map(|builder| builder.max_execution_payment)
+            .collect();
+        assert_eq!(caps, vec![Some(3), Some(5), Some(7)]);
+    }
+
+    #[test]
+    fn error_display_hides_url_credentials() {
+        let url: builder_types::BuilderUrl =
+            "https://user:secret@builder.example/token".parse().unwrap();
+        for error in [
+            Error::DuplicateBuilderAuth(url.clone()),
+            Error::InvalidBuilderUrl(url.clone()),
+            Error::UnsupportedUrlScheme(url.clone()),
+            Error::TooManyBuilderPubkeys(url.clone()),
+            Error::EmptyAuthData(url),
+        ] {
+            let message = error.to_string();
+            assert!(message.contains("builder.example"), "{message}");
+            assert!(!message.contains("secret"), "{message}");
+            assert!(!message.contains("token"), "{message}");
+        }
+    }
+
+    #[test]
+    fn gwei_to_eth_formats_without_trailing_zeros() {
+        assert_eq!(gwei_to_eth(1_000_000_000), "1");
+        assert_eq!(gwei_to_eth(1_500_000_000), "1.5");
+        assert_eq!(gwei_to_eth(1), "0.000000001");
+        assert_eq!(gwei_to_eth(0), "0");
+    }
+
+    #[test]
+    fn parse_builder_url_trims_whitespace() {
         let (url, _) = parse_builder_url(" https://builder.example ").unwrap();
         assert_eq!(url, "https://builder.example".parse().unwrap());
 
-        let error = parse_builder_url("https://user:secret@builder.example#0xzz").unwrap_err();
-        assert!(!error.contains("secret"), "{error}");
+        let (url, auth_data) = parse_builder_url("https://builder.example # 0x01 ").unwrap();
+        assert_eq!(url, "https://builder.example".parse().unwrap());
+        assert_eq!(auth_data, Some(RequestAuthData::new(vec![0x01]).unwrap()));
+
         assert!(parse_builder_url("not a url").is_err());
     }
 }

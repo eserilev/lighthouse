@@ -204,6 +204,23 @@ impl<E: EthSpec> ProductionValidatorClient<E> {
         // Check for all validators' fee recipient
         validator_defs.check_all_fee_recipients(config.validator_store.fee_recipient)?;
 
+        let legacy_builder_definitions = validator_defs
+            .as_slice()
+            .iter()
+            .filter(|def| {
+                def.builder_proposals.is_some()
+                    || def.prefer_builder_proposals.is_some()
+                    || def.builder_boost_factor.is_some()
+            })
+            .count();
+        let builder_proposal_definitions = validator_defs
+            .as_slice()
+            .iter()
+            .filter(|def| {
+                def.builder_proposals == Some(true) || def.prefer_builder_proposals == Some(true)
+            })
+            .count();
+
         let validators = InitializedValidators::from_definitions(
             validator_defs,
             config.validator_dir.clone(),
@@ -532,19 +549,46 @@ impl<E: EthSpec> ProductionValidatorClient<E> {
             ctx.shared.write().duties_service = Some(duties_service.clone());
         }
 
-        if (config.builder_globals.min_bid.is_some() || config.builder_globals.builders.is_some())
+        let builder_globals = &config.builder_globals;
+        if (builder_globals.min_bid.is_some()
+            || builder_globals.builders.is_some()
+            || builder_globals.max_execution_payment.is_some())
             && !context.eth2_config.spec.is_gloas_scheduled()
         {
             warn!(
-                "--builder-urls and --builder-min-bid have no effect because no Gloas fork is \
-                 scheduled"
+                "--builder-urls, --builder-min-bid and --builder-max-execution-payment have no \
+                 effect because no Gloas fork is scheduled"
             );
         }
         let configured_builders = BuilderStore::open_or_create_with_globals(
             &config.validator_dir,
             config.builder_globals.clone(),
         )
-        .map_err(|e| format!("Unable to open or create builder definitions: {:?}", e))?;
+        .map_err(|e| format!("Unable to load the Gloas builder configuration: {e}"))?;
+        let spec = &context.eth2_config.spec;
+        if let Some(gloas_fork_epoch) = spec.gloas_fork_epoch
+            && spec.is_gloas_scheduled()
+        {
+            if legacy_builder_definitions > 0 {
+                warn!(
+                    validators = legacy_builder_definitions,
+                    %gloas_fork_epoch,
+                    "The builder_proposals, prefer_builder_proposals and builder_boost_factor \
+                     values in validator_definitions.yml have no effect from the Gloas fork. Use \
+                     builder_definitions.yml"
+                );
+            }
+            if (config.validator_store.builder_proposals || builder_proposal_definitions > 0)
+                && !configured_builders.has_global_builders()
+            {
+                warn!(
+                    %gloas_fork_epoch,
+                    "Builder proposals are enabled, but no Gloas builders are configured. From the \
+                     Gloas fork, blocks use the local payload or bids received over gossip. Set \
+                     --builder-urls or the builders list in builder_definitions.yml"
+                );
+            }
+        }
         let request_auth_cache = RequestAuthCache::default();
 
         let mut block_service_builder = BlockServiceBuilder::new()

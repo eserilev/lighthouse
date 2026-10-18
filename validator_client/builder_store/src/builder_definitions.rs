@@ -43,6 +43,60 @@ pub enum Error {
     EmptyAuthData(BuilderUrl),
 }
 
+/// The URL without credentials, path or query, for messages.
+pub fn redacted_builder_url(url: &BuilderUrl) -> String {
+    url.to_sensitive_url()
+        .map(|url| url.to_string())
+        .unwrap_or_else(|_| "an invalid URL".to_string())
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::UnableToOpenFile(e) => write!(f, "unable to open {BUILDERS_FILENAME}: {e}"),
+            Error::UnableToParseFile(e) => write!(f, "unable to parse {BUILDERS_FILENAME}: {e}"),
+            Error::UnableToEncodeFile(e) => write!(f, "unable to encode {BUILDERS_FILENAME}: {e}"),
+            Error::UnableToWriteFile(e) => write!(f, "unable to write {BUILDERS_FILENAME}: {e:?}"),
+            Error::UnableToCreateValidatorDir(path) => {
+                write!(
+                    f,
+                    "unable to create the validator directory {}",
+                    path.display()
+                )
+            }
+            Error::DuplicateBuilderAuth(url) => write!(
+                f,
+                "builder {} occurs twice with the same auth data",
+                redacted_builder_url(url)
+            ),
+            Error::InvalidBuilderUrl(url) => {
+                write!(f, "builder URL {} is not valid", redacted_builder_url(url))
+            }
+            Error::UnsupportedUrlScheme(url) => write!(
+                f,
+                "builder URL {} must use http or https",
+                redacted_builder_url(url)
+            ),
+            Error::TooManyEnabledBuilders { enabled, max } => write!(
+                f,
+                "{enabled} builders are enabled, which is more than the maximum of {max}"
+            ),
+            Error::TooManyBuilderPubkeys(url) => write!(
+                f,
+                "builder {} has more builder_pubkeys than the maximum",
+                redacted_builder_url(url)
+            ),
+            Error::EmptyAuthData(url) => {
+                write!(
+                    f,
+                    "builder {} has empty auth_data",
+                    redacted_builder_url(url)
+                )
+            }
+        }
+    }
+}
+
 /// A single builder in the config file: a direct bid request, with optional per-builder overrides
 /// of the global bid policy.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -65,7 +119,9 @@ pub struct BuilderDefinition {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub builder_pubkeys: Vec<PublicKeyBytes>,
     /// The maximum execution payment, in gwei, that we're willing to accept from this builder.
-    pub max_execution_payment: u64,
+    /// Inherits `--builder-max-execution-payment` when unset, else 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_execution_payment: Option<u64>,
     /// Per-builder override of the global minimum total payment (gwei). Inherits the global when
     /// unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -86,6 +142,12 @@ pub const DEFAULT_BUILDER_BOOST_FACTOR: u64 = 100;
 pub struct BuilderGlobals {
     pub min_bid: Option<u64>,
     pub builder_boost_factor: Option<u64>,
+    /// True when `--prefer-builder-proposals` sets `builder_boost_factor`.
+    #[serde(default)]
+    pub prefer_builder_proposals: bool,
+    /// The cap for a builder that does not set its own and has no matching global builder.
+    #[serde(default)]
+    pub max_execution_payment: Option<u64>,
     /// `Some` replaces the builders list in the config file.
     pub builders: Option<Vec<BuilderDefinition>>,
 }
@@ -137,8 +199,7 @@ pub struct ValidatorBuilderConfig {
 
 /// A builder entry in a per-validator configuration.
 ///
-/// Unlike [`BuilderDefinition`], `max_execution_payment` is optional because the keymanager API
-/// allows it to inherit from the validator client's matching global builder definition.
+/// An unset `max_execution_payment` inherits from the matching global builder definition.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ValidatorBuilderDefinition {
     pub url: BuilderUrl,
@@ -334,6 +395,7 @@ impl BuilderConfigFile {
                 .map(|builder| {
                     resolve_validator_builder(
                         global_builders,
+                        globals.max_execution_payment,
                         builder,
                         min_bid,
                         builder_boost_factor,
@@ -368,6 +430,12 @@ impl BuilderConfigFile {
                 })
                 .map(|builder| {
                     let mut builder = builder.clone();
+                    builder.max_execution_payment = Some(
+                        builder
+                            .max_execution_payment
+                            .or(globals.max_execution_payment)
+                            .unwrap_or_default(),
+                    );
                     // Validator defaults override values on inherited global builders.
                     builder.min_bid = Some(
                         validator_min_bid
@@ -394,6 +462,7 @@ impl BuilderConfigFile {
 
 fn resolve_validator_builder(
     global_builders: &[BuilderDefinition],
+    default_max_execution_payment: Option<u64>,
     builder: &ValidatorBuilderDefinition,
     min_bid: u64,
     builder_boost_factor: u64,
@@ -401,6 +470,7 @@ fn resolve_validator_builder(
     let max_execution_payment = builder
         .max_execution_payment
         .or_else(|| global_max_execution_payment(global_builders, builder))
+        .or(default_max_execution_payment)
         .unwrap_or_default();
 
     BuilderDefinition {
@@ -408,7 +478,7 @@ fn resolve_validator_builder(
         url: builder.url.clone(),
         auth_data: builder.auth_data.clone(),
         builder_pubkeys: builder.builder_pubkeys.clone(),
-        max_execution_payment,
+        max_execution_payment: Some(max_execution_payment),
         min_bid: Some(builder.min_bid.unwrap_or(min_bid)),
         builder_boost_factor: Some(builder.builder_boost_factor.unwrap_or(builder_boost_factor)),
     }
@@ -436,7 +506,7 @@ fn global_max_execution_payment(
                     .unwrap_or_else(|| global.url.to_default_auth_data())
                     .is_ok_and(|global_auth| global_auth == auth_data)
         })
-        .map(|global| global.max_execution_payment)
+        .and_then(|global| global.max_execution_payment)
 }
 
 /// Validate a global builders list, from the config file or from the CLI.
@@ -474,6 +544,7 @@ pub fn parse_builder_url(value: &str) -> Result<(BuilderUrl, Option<RequestAuthD
     let (url, auth_data) = match value.trim().split_once('#') {
         Some((url, fragment)) => {
             let hex_data = fragment
+                .trim()
                 .strip_prefix("0x")
                 .ok_or("the URL fragment must be 0x-prefixed hex auth data")?;
             let bytes = hex::decode(hex_data)
@@ -483,7 +554,7 @@ pub fn parse_builder_url(value: &str) -> Result<(BuilderUrl, Option<RequestAuthD
             }
             let auth_data = RequestAuthData::new(bytes)
                 .map_err(|_| "the auth data exceeds the maximum size".to_string())?;
-            (url, Some(auth_data))
+            (url.trim(), Some(auth_data))
         }
         None => (value.trim(), None),
     };
@@ -540,7 +611,7 @@ mod tests {
             url: "http://builder.example.com".parse().unwrap(),
             auth_data: Some(RequestAuthData::new(b"hello".to_vec()).unwrap()),
             builder_pubkeys: vec![],
-            max_execution_payment: 1,
+            max_execution_payment: Some(1),
             min_bid: None,
             builder_boost_factor: None,
         };
@@ -557,13 +628,20 @@ mod tests {
     }
 
     #[test]
+    fn max_execution_payment_is_optional() {
+        let yaml = "enabled: true\nurl: \"https://builder.example\"\n";
+        let definition: BuilderDefinition = yaml_serde::from_str(yaml).unwrap();
+        assert_eq!(definition.max_execution_payment, None);
+    }
+
+    #[test]
     fn omits_none_optional_fields() {
         let definition = BuilderDefinition {
             enabled: true,
             url: "http://builder.example.com".parse().unwrap(),
             auth_data: None,
             builder_pubkeys: vec![],
-            max_execution_payment: 1,
+            max_execution_payment: Some(1),
             min_bid: None,
             builder_boost_factor: None,
         };

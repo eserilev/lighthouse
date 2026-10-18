@@ -101,7 +101,7 @@ fn into_api_builder_config(
                 auth_data: Some(auth_data),
                 builder_pubkeys: Some(builder.builder_pubkeys),
                 max_execution_payment: Some(api_types::Quoted {
-                    value: builder.max_execution_payment,
+                    value: builder.max_execution_payment.unwrap_or_default(),
                 }),
                 min_bid: Some(api_types::Quoted {
                     value: builder.min_bid.unwrap_or(min_bid),

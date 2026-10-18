@@ -1,5 +1,9 @@
 # Maximal Extractable Value (MEV)
 
+> This page applies before the **Gloas** fork. From Gloas, the validator client configures the
+> builders, and the beacon node `--builder` flag has no effect. See
+> [Gloas Builder Configuration](./gloas_builder_config.md).
+
 Lighthouse is able to interact with servers that implement the [builder
 API](https://github.com/ethereum/builder-specs), allowing it to produce blocks without having
 knowledge of the transactions included in the block. This enables Lighthouse to outsource the job of
@@ -58,6 +62,10 @@ relays, run one of the following services and configure lighthouse to use it wit
 * [`mev-rs`][mev-rs]
 
 ## Validator Client Configuration
+
+> From Gloas, the `builder_proposals`, `builder_boost_factor` and `prefer_builder_proposals` fields
+> have no effect. The `gas_limit` field still applies. See
+> [Gloas Builder Configuration](./gloas_builder_config.md).
 
 In the validator client you can configure gas limit and fee recipient on a per-validator basis. If no gas limit is
 configured, Lighthouse will use a default gas limit of 60,000,000, which is the current default value used in execution

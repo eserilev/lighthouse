@@ -27,9 +27,12 @@ Options:
           One or more comma-delimited base64-encoded ENR's to bootstrap the p2p
           network. Multiaddr is also supported.
       --builder <builder>
-          The URL of a service compatible with the MEV-boost API.
+          The URL of a service compatible with the MEV-boost API. Has no effect
+          from Gloas: set the builders in the validator client with
+          --builder-urls.
       --builder-disable-ssz
-          Disables sending requests using SSZ over the builder API.
+          Disables sending requests using SSZ over the builder API. Also used
+          for Gloas builders.
       --builder-fallback-epochs-since-finalization <builder-fallback-epochs-since-finalization>
           If this node is proposing a block and the chain has not finalized
           within this number of epochs, it will NOT query any connected
@@ -37,7 +40,8 @@ Options:
           construction. Setting this value to anything less than 2 will cause
           the node to NEVER query connected builders. Setting it to 2 will cause
           this condition to be hit if there are skips slots at the start of an
-          epoch, right before this node is set to propose. [default: 3]
+          epoch, right before this node is set to propose. Has no effect from
+          Gloas. [default: 3]
       --builder-fallback-skips <builder-fallback-skips>
           If this node is proposing a block and has seen this number of skip
           slots on the canonical chain in a row, it will NOT query any connected
@@ -50,10 +54,10 @@ Options:
           engine for payload construction. [default: 8]
       --builder-header-timeout <MILLISECONDS>
           Defines a timeout value (in milliseconds) to use when fetching a block
-          header from the builder API. [default: 1000]
+          header from the builder API. Has no effect from Gloas. [default: 1000]
       --builder-user-agent <STRING>
           The HTTP user agent to send alongside requests to the builder URL. The
-          default is Lighthouse's version string.
+          default is Lighthouse's version string. Also used for Gloas builders.
       --checkpoint-blobs <BLOBS_SSZ>
           Set the checkpoint blobs to start syncing from. Must be aligned and
           match --checkpoint-block. Using --checkpoint-sync-url instead is

@@ -384,7 +384,7 @@ mod tests {
                 url: "http://builder.example.com".parse().unwrap(),
                 auth_data: None,
                 builder_pubkeys: vec![],
-                max_execution_payment: 0,
+                max_execution_payment: Some(0),
                 min_bid: None,
                 builder_boost_factor: None,
             })
@@ -465,7 +465,7 @@ mod tests {
                 url: "http://builder.example.com".parse().unwrap(),
                 auth_data: None,
                 builder_pubkeys: vec![],
-                max_execution_payment: 0,
+                max_execution_payment: Some(0),
                 min_bid: None,
                 builder_boost_factor: None,
             })
