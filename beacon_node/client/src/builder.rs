@@ -208,8 +208,8 @@ where
         {
             warn!(
                 %gloas_fork_epoch,
-                "The --builder flag has no effect from the Gloas fork. Set the builders in the \
-                 validator client with --builder-urls"
+                info = "https://lighthouse-book.sigmaprime.io/gloas_builder_config.html",
+                "The --builder flag has no effect post Gloas"
             );
         }
 

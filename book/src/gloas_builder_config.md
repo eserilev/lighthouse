@@ -19,8 +19,8 @@ configuration in use. `POST` replaces the stored configuration. `DELETE` restore
 
 ## Moving from mev-boost
 
-From the Gloas fork, the validator client sends its list of builders to the beacon node. The beacon
-node requests bids from these builders directly. These settings have no effect from Gloas:
+Post Gloas, the validator client sends its list of builders to the beacon node. The beacon
+node requests bids from these builders directly. These settings have no effect post Gloas:
 
 - The beacon node `--builder` flag and mev-boost.
 - The beacon node `--builder-header-timeout` flag.
@@ -28,7 +28,7 @@ node requests bids from these builders directly. These settings have no effect f
 - The validator client `--builder-proposals` flag.
 - The validator client `--builder-registration-timestamp-override` and
   `--validator-registration-batch-size` flags. The validator client does not send validator
-  registrations from Gloas.
+  registrations post Gloas.
 - The `builder_proposals`, `prefer_builder_proposals` and `builder_boost_factor` fields in
   `validator_definitions.yml`. The same fields in the validator client `PATCH`
   `/lighthouse/validators/{pubkey}` endpoint, and the same `lighthouse vm` flags.
@@ -38,14 +38,14 @@ If Gloas is scheduled, the beacon node logs a warning at startup when `--builder
 validator client logs a warning when `validator_definitions.yml` has one of these fields. It also
 logs a warning when builder proposals are enabled and no builders are configured.
 
-These settings still apply from Gloas:
+These settings still apply post Gloas:
 
 - The beacon node `--builder-user-agent` and `--builder-disable-ssz` flags. They do not need
   `--builder`.
 - The validator client `--gas-limit` flag and the `gas_limit` field in `validator_definitions.yml`.
-  From Gloas, the value is the target gas limit in the proposer preferences.
+  Post Gloas, the value is the target gas limit in the proposer preferences.
 
-To use external builders from Gloas, set `--builder-urls` or the `builders` list in
+To use external builders post Gloas, set `--builder-urls` or the `builders` list in
 `builder_definitions.yml`. Without builders, the beacon node still compares bids received over gossip
 with the local payload.
 
@@ -58,7 +58,7 @@ You can set the global values with CLI flags instead of the file:
 | `--builder-urls` | `builders` | Comma-separated builder URLs. Replaces the `builders` list in the file. |
 | `--builder-min-bid` | `min_bid` | Minimum total payment, in gwei. A bid below this value ranks behind the local payload. |
 | `--builder-boost-factor` | `builder_boost_factor` | Boost factor, in percent. `100` is neutral. The same flag also applies before Gloas. |
-| `--prefer-builder-proposals` | — | From Gloas, sets the boost factor to its maximum. |
+| `--prefer-builder-proposals` | — | Post Gloas, sets the boost factor to its maximum. |
 | `--builder-max-execution-payment` | `max_execution_payment` | Cap, in gwei, for each builder that does not set its own cap. Default is `0`. |
 
 All payment values are in gwei. 1 ETH is `1000000000` gwei. If a cap is more than 10 ETH, the
@@ -112,7 +112,7 @@ CLI flag. Then it logs the global values in use, the source of each value, and e
 The validator client validates `builder_definitions.yml` at startup, also when `--builder-urls`
 replaces its `builders` list. If the file is not valid, the validator client does not start.
 
-`--builder-boost-factor` conflicts with `--prefer-builder-proposals`. From Gloas,
+`--builder-boost-factor` conflicts with `--prefer-builder-proposals`. Post Gloas,
 `--prefer-builder-proposals` makes a builder bid of any value above zero beat the local payload. This
 includes bids received over gossip. Use `--builder-min-bid` to set a minimum.
 

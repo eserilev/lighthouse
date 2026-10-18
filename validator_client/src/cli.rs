@@ -402,7 +402,7 @@ pub struct ValidatorClient {
         alias = "private-tx-proposals",
         help = "If this flag is set, Lighthouse will query the Beacon Node for only block \
                 headers during proposals and will sign over headers. Useful for outsourcing \
-                execution payload construction during proposals. Has no effect from Gloas: \
+                execution payload construction during proposals. Has no effect post Gloas: \
                 use --builder-urls.",
         display_order = 0,
         help_heading = FLAG_HEADER
@@ -413,7 +413,7 @@ pub struct ValidatorClient {
         long,
         value_name = "UNIX-TIMESTAMP",
         help = "This flag takes a unix timestamp value that will be used to override the \
-                timestamp used in the builder api registration. Has no effect from Gloas.",
+                timestamp used in the builder api registration. Has no effect post Gloas.",
         display_order = 0
     )]
     pub builder_registration_timestamp_override: Option<u64>,
@@ -422,7 +422,7 @@ pub struct ValidatorClient {
         long,
         value_name = "INTEGER",
         help = "The gas limit for all validators managed by this validator client. Before \
-                Gloas, it applies only to builder proposals. From Gloas, it is the target gas \
+                Gloas, it applies only to builder proposals. Post Gloas, it is the target gas \
                 limit in the proposer preferences. If this value is not set, the gas limit schedule from \
                 the network config is used, falling back to a default of 60,000,000. Note this \
                 will not necessarily be used if the gas limit set here moves too far from the \
@@ -446,7 +446,7 @@ pub struct ValidatorClient {
         default_value_t = 500,
         help = "Defines the number of validators per \
                 validator/register_validator request sent to the BN. This value \
-                can be reduced to avoid timeouts from builders. Has no effect from Gloas.",
+                can be reduced to avoid timeouts from builders. Has no effect post Gloas.",
         display_order = 0
     )]
     pub validator_registration_batch_size: usize,
@@ -457,7 +457,7 @@ pub struct ValidatorClient {
         help = "Defines the boost factor, \
                 a percentage multiplier to apply to the builder's payload value \
                 when choosing between a builder payload header and payload from \
-                the local execution node. From Gloas, the boost factor applies to the bids \
+                the local execution node. Post Gloas, the boost factor applies to the bids \
                 of all builders, and overrides builder_boost_factor in builder_definitions.yml. \
                 100 is neutral, 0 always uses the local payload. Values set for one validator in builder_definitions.yml or with the keymanager \
                 builder_config API, and the values \
@@ -478,7 +478,7 @@ pub struct ValidatorClient {
                 the auth data is the hostname of the URL. Most builders do not need auth data. \
                 Replaces the builders list in builder_definitions.yml. Values set for one validator in builder_definitions.yml or with the keymanager \
                 builder_config API take \
-                precedence. Only used from Gloas.",
+                precedence. Only used post Gloas.",
         display_order = 0
     )]
     pub builder_urls: Option<Vec<String>>,
@@ -492,7 +492,7 @@ pub struct ValidatorClient {
                 if no other payload is available. Overrides min_bid in builder_definitions.yml. \
                 Values set for one validator in builder_definitions.yml or with the keymanager \
                 builder_config API, and the values of a builder in builder_definitions.yml, take \
-                precedence. Only used from Gloas.",
+                precedence. Only used post Gloas.",
         display_order = 0
     )]
     pub builder_min_bid: Option<u64>,
@@ -504,7 +504,7 @@ pub struct ValidatorClient {
                 each builder that does not set its own value. The builder stake does not back \
                 this payment: you trust the builder to pay it. If the builder does not pay, you \
                 lose up to this amount for each block. Default is 0, which counts only the bid \
-                value. For example, 1000000000 is 1 ETH. Only used from Gloas.",
+                value. For example, 1000000000 is 1 ETH. Only used post Gloas.",
         display_order = 0
     )]
     pub builder_max_execution_payment: Option<u64>,
@@ -512,7 +512,7 @@ pub struct ValidatorClient {
     #[clap(
         long,
         help = "If this flag is set, Lighthouse will always prefer blocks \
-                constructed by builders, regardless of payload value. From Gloas, this sets \
+                constructed by builders, regardless of payload value. Post Gloas, this sets \
                 the builder boost factor to its maximum, so a builder bid of any value above \
                 zero, including a gossip bid, beats the local payload. Use --builder-min-bid to \
                 set a minimum. Conflicts with --builder-boost-factor.",

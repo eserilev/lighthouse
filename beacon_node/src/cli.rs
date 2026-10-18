@@ -918,8 +918,9 @@ pub fn cli_app() -> Command {
                 .long("builder")
                 .alias("payload-builder")
                 .alias("payload-builders")
-                .help("The URL of a service compatible with the MEV-boost API. Has no effect from \
-                    Gloas: set the builders in the validator client with --builder-urls.")
+                .help("The URL of a service compatible with the MEV-boost API. Has no effect post \
+                    Gloas. See https://lighthouse-book.sigmaprime.io/gloas_builder_config.html \
+                    for more info.")
                 .requires("execution-endpoint")
                 .action(ArgAction::Set)
                 .display_order(0)
@@ -957,7 +958,7 @@ pub fn cli_app() -> Command {
                 .long("builder-header-timeout")
                 .value_name("MILLISECONDS")
                 .help("Defines a timeout value (in milliseconds) to use when \
-                    fetching a block header from the builder API. Has no effect from Gloas.")
+                    fetching a block header from the builder API. Has no effect post Gloas.")
                 .default_value("1000")
                 .value_parser(|timeout: &str| {
                     match timeout
@@ -1481,7 +1482,7 @@ pub fn cli_app() -> Command {
                         this value to anything less than 2 will cause the node to NEVER query \
                         connected builders. Setting it to 2 will cause this condition to be hit \
                         if there are skips slots at the start of an epoch, right before this node \
-                        is set to propose. Has no effect from Gloas.")
+                        is set to propose. Has no effect post Gloas.")
                 .default_value("3")
                 .action(ArgAction::Set)
                 .display_order(0)
@@ -1501,7 +1502,7 @@ pub fn cli_app() -> Command {
                 .long("builder-user-agent")
                 .value_name("STRING")
                 .help("The HTTP user agent to send alongside requests to the builder URL. The \
-                       default is Lighthouse's version string. Also used for Gloas builders.")
+                       default is Lighthouse's version string.")
                 .action(ArgAction::Set)
                 .display_order(0)
         )
@@ -1509,8 +1510,7 @@ pub fn cli_app() -> Command {
             Arg::new("builder-disable-ssz")
                 .long("builder-disable-ssz")
                 .value_name("BOOLEAN")
-                .help("Disables sending requests using SSZ over the builder API. Also used for \
-                    Gloas builders.")
+                .help("Disables sending requests using SSZ over the builder API.")
                 .action(ArgAction::SetTrue)
                 .display_order(0)
         )

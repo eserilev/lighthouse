@@ -1,6 +1,6 @@
 # Maximal Extractable Value (MEV)
 
-> This page applies before the **Gloas** fork. From Gloas, the validator client configures the
+> This page applies before the **Gloas** fork. Post Gloas, the validator client configures the
 > builders, and the beacon node `--builder` flag has no effect. See
 > [Gloas Builder Configuration](./gloas_builder_config.md).
 
@@ -63,7 +63,7 @@ relays, run one of the following services and configure lighthouse to use it wit
 
 ## Validator Client Configuration
 
-> From Gloas, the `builder_proposals`, `builder_boost_factor` and `prefer_builder_proposals` fields
+> Post Gloas, the `builder_proposals`, `builder_boost_factor` and `prefer_builder_proposals` fields
 > have no effect. The `gas_limit` field still applies. See
 > [Gloas Builder Configuration](./gloas_builder_config.md).
 

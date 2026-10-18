@@ -573,9 +573,9 @@ impl<E: EthSpec> ProductionValidatorClient<E> {
                 warn!(
                     validators = legacy_builder_definitions,
                     %gloas_fork_epoch,
+                    info = "https://lighthouse-book.sigmaprime.io/gloas_builder_config.html",
                     "The builder_proposals, prefer_builder_proposals and builder_boost_factor \
-                     values in validator_definitions.yml have no effect from the Gloas fork. Use \
-                     builder_definitions.yml"
+                     values in validator_definitions.yml have no effect post Gloas"
                 );
             }
             if (config.validator_store.builder_proposals || builder_proposal_definitions > 0)
@@ -583,9 +583,10 @@ impl<E: EthSpec> ProductionValidatorClient<E> {
             {
                 warn!(
                     %gloas_fork_epoch,
-                    "Builder proposals are enabled, but no Gloas builders are configured. From the \
-                     Gloas fork, blocks use the local payload or bids received over gossip. Set \
-                     --builder-urls or the builders list in builder_definitions.yml"
+                    info = "https://lighthouse-book.sigmaprime.io/gloas_builder_config.html",
+                    "Builder proposals are enabled, but no Gloas builders are configured. Post \
+                     Gloas, blocks use the local payload or bids received over gossip. Set \
+                     --builder-urls to request bids from builders"
                 );
             }
         }
