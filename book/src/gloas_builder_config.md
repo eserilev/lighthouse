@@ -21,14 +21,15 @@ the highest value option. See [How bids are selected](#how-bids-are-selected).
 The validator client sets builder configuration in the following order of precedence:
 
 1. *Per-validator* configurations via the keymanager API or `validator_configs`.
-2. *Per-builder* values in the `builders` list, unless the `--builder-urls` flag is set.
-3. *Global* values set via CLI flags. Does not overwrite individually configured validators.
-4. *Global* values listed outside the `builders` list in `builder_definitions.yml`.
+2. *Per-builder* values in the `builders` list, for bids from that builder only, unless
+   `--builder-urls` is set.
+3. *Global* values set via CLI flags.
+4. *Global* `min_bid` and `builder_boost_factor` outside the `builders` list in
+   `builder_definitions.yml`.
 5. *Defaults* `min_bid` `0`, `builder_boost_factor` `100`, `max_execution_payment` `0`.
 
-`builder_definitions.yml` is in the validator directory (`<datadir>/validators/`). For the keymanager
-API, `GET` returns the configuration in use. `POST` replaces the configuration for one validator.
-`DELETE` removes it, so the validator uses the values from steps 2 to 5 again.
+Use `GET`, `POST`, and `DELETE` at `/eth/v1/validator/{pubkey}/builder_config`. `GET` returns the
+configuration in use. `POST` replaces the stored configuration. `DELETE` restores global inheritance.
 
 ## Direct builder connections
 

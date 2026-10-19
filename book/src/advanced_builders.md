@@ -1,6 +1,6 @@
 # Maximal Extractable Value (MEV)
 
-> This information in this page is no longer relevant post **Gloas** fork.
+> The information in this page is no longer relevant post **Gloas** fork.
 > See [Gloas Builder Configuration](./gloas_builder_config.md) for more information.
 
 Lighthouse is able to interact with servers that implement the [builder
