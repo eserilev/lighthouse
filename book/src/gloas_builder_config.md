@@ -1,7 +1,7 @@
 # Builder Configuration
 
-> The information below applies from the **Gloas** fork and onwards. It describes how to configure the validator client to source
-> execution-payload bids from directly connected builders under ePBS.
+> This applies from the **Gloas** fork onwards. It configures how the validator client sources
+> execution-payload bids from external builders under ePBS.
 
 Enshrined Proposer-Builder Separation (ePBS) adds the builder role as a new type of protocol
 participant. A builder builds the execution payload for a block and offers it to proposers in the
@@ -148,14 +148,23 @@ Explicit values are signed exactly as configured. See the
 
 ## How bids are selected
 
-At block production, the beacon node requests a bid from each connected builder.
-It also uses the bids it received over gossip. Then it applies these rules:
+At block-production time the validator client requests a bid from each enabled builder with a `url`,
+and also considers bids seen over p2p. For each candidate bid:
 
-- **`min_bid`.** A bid must be at least `min_bid` in order to be selected above the locally constructed
-  payload. A bid below `min_bid` can be used as a backup in case the local build fails.
-- **`builder_boost_factor`.** A percentage multiplier applied to the bid value before it is compared
-  against the locally constructed payload. For example, `50` uses a bid only if it is worth 2x the
-  local payload. `0` always selects the local payload, unless the local build fails.
-- **`max_execution_payment`.** See [Execution payments](#execution-payments).
-- **`builder_pubkeys`.** If set, the beacon node discards a bid from a directly connected builder
-  that is not signed by one of these keys.
+- **`min_bid`** — a bid whose total value is below the applicable `min_bid` is ranked behind any
+  floor-clearing candidate (including the local block) rather than dropped, so it wins only when
+  nothing else is viable (e.g. the local build failed). Direct builders use their own (or the
+  inherited per-validator) value; p2p bids use the validator's `min_bid`.
+- **`builder_boost_factor`** — the surviving bid's value is scaled by its boost factor
+  (`boost × value ÷ 100`) before being compared against the locally-built block. A factor below
+  `100` favors the local block; above `100` favors the builder; `0` always prefers local;
+  `2^64 − 1` strongly favors the builder. The factor is a multiplier, not an absolute override, so a
+  zero-value bid still ranks `0` and loses to any non-zero local block.
+- **`max_execution_payment`** — bounds how much of a builder's (off-chain) execution payment counts
+  toward its bid value. This applies only to direct builders; p2p bids carry no trusted execution
+  payment.
+- **`builder_pubkeys`** — for a direct builder, if non-empty, the returned bid must be signed by
+  one of these keys or it is discarded.
+
+The highest-value bid after these rules wins. Per-builder `min_bid`/`builder_boost_factor` apply
+only to bids requested directly by URL. For p2p bids, per-validator defaults override the global values.
