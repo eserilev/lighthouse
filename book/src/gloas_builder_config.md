@@ -1,68 +1,54 @@
 # Builder Configuration
 
-> This applies from the **Gloas** fork onwards. It configures how the validator client sources
-> execution-payload bids from external builders under ePBS.
+> The information below applies from the **Gloas** fork and onwards. It describes how to configure the validator client to source
+> execution-payload bids from directly connected builders under ePBS.
 
-The validator client reads its external-builder settings from a YAML file named
-`builder_definitions.yml` in the validator directory
-(`<datadir>/validators/builder_definitions.yml`). The file contains:
+Enshrined Proposer-Builder Separation (ePBS) adds the builder role as a new type of protocol
+participant. A builder builds the execution payload for a block and offers it to proposers in the
+form of a bid.
 
-- **A global bid policy** — `min_bid` and `builder_boost_factor`, applied to bids received over p2p
-  (gossip) and used as the default for any builder that does not set its own.
-- **A list of builders** to request bids from directly, each with optional per-builder overrides of
-  the global policy.
-- **Per-validator configurations** under `validator_configs`, managed through the standard keymanager
-  API. Each map key is a validator public key.
+When a validator proposes a block, the beacon node collects bids from two sources:
 
-Use `GET`, `POST`, and `DELETE` at `/eth/v1/validator/{pubkey}/builder_config`. `GET` returns the
-configuration in use. `POST` replaces the stored configuration. `DELETE` restores global inheritance.
+- **Gossip.** Builders publish bids on the `execution_payload_bid` p2p topic.
+- **Direct builders.** The beacon node requests a bid from each builder that the validator client
+  configured as a directly connected builder.
 
-## Moving from mev-boost
+The beacon node compares the highest value bid against its locally constructed payload and selects
+the highest value option. See [How bids are selected](#how-bids-are-selected).
+
+## Configuration options
+
+The validator client sets builder configuration in the following order of precedence:
+
+1. *Per-validator* configurations via the keymanager API or `validator_configs`.
+2. *Per-builder* values in the `builders` list, unless the `--builder-urls` flag is set.
+3. *Global* values set via CLI flags. Does not overwrite individually configured validators.
+4. *Global* values listed outside the `builders` list in `builder_definitions.yml`.
+5. *Defaults* `min_bid` `0`, `builder_boost_factor` `100`, `max_execution_payment` `0`.
+
+`builder_definitions.yml` is in the validator directory (`<datadir>/validators/`). For the keymanager
+API, `GET` returns the configuration in use. `POST` replaces the configuration for one validator.
+`DELETE` removes it, so the validator uses the values from steps 2 to 5 again.
+
+## Direct builder connections
 
 Post Gloas, the validator client sends its list of builders to the beacon node. The beacon
-node requests bids from these builders directly. These settings have no effect post Gloas:
+node requests bids from these builders directly.
 
-- The beacon node `--builder` flag and mev-boost.
-- The beacon node `--builder-header-timeout` flag.
-- The beacon node `--builder-fallback-epochs-since-finalization` flag.
-- The validator client `--builder-proposals` flag.
-- The validator client `--builder-registration-timestamp-override` and
-  `--validator-registration-batch-size` flags. The validator client does not send validator
-  registrations post Gloas.
-- The `builder_proposals`, `prefer_builder_proposals` and `builder_boost_factor` fields in
-  `validator_definitions.yml`. The same fields in the validator client `PATCH`
-  `/lighthouse/validators/{pubkey}` endpoint, and the same `lighthouse vm` flags.
-
-Use the CLI flags below, `builder_definitions.yml` or the keymanager `builder_config` API instead.
-If Gloas is scheduled, the beacon node logs a warning at startup when `--builder` is set. The
-validator client logs a warning when `validator_definitions.yml` has one of these fields. It also
-logs a warning when builder proposals are enabled and no builders are configured.
-
-These settings still apply post Gloas:
-
-- The beacon node `--builder-user-agent` and `--builder-disable-ssz` flags. They do not need
-  `--builder`.
-- The validator client `--gas-limit` flag and the `gas_limit` field in `validator_definitions.yml`.
-  Post Gloas, the value is the target gas limit in the proposer preferences.
-
-To use external builders post Gloas, set `--builder-urls` or the `builders` list in
-`builder_definitions.yml`. Without builders, the beacon node still compares bids received over gossip
-with the local payload.
+To set this list, use `--builder-urls` or the `builders` list in `builder_definitions.yml`.
+Without builders, the beacon node still compares bids received over gossip against the locally constructed payload.
 
 ## CLI flags
-
-You can set the global values with CLI flags instead of the file:
 
 | Flag | File field | Meaning |
 | ------ | ------------ | --------- |
 | `--builder-urls` | `builders` | Comma-separated builder URLs. Replaces the `builders` list in the file. |
 | `--builder-min-bid` | `min_bid` | Minimum total payment, in gwei. A bid below this value ranks behind the local payload. |
-| `--builder-boost-factor` | `builder_boost_factor` | Boost factor, in percent. `100` is neutral. The same flag also applies before Gloas. |
+| `--builder-boost-factor` | `builder_boost_factor` | Boost factor, in percent. `100` is neutral. |
 | `--prefer-builder-proposals` | — | Post Gloas, sets the boost factor to its maximum. |
 | `--builder-max-execution-payment` | `max_execution_payment` | Cap, in gwei, for each builder that does not set its own cap. Default is `0`. |
 
-All payment values are in gwei. 1 ETH is `1000000000` gwei. If a cap is more than 10 ETH, the
-validator client logs a warning at startup.
+All payment values are in gwei. 1 ETH is `1000000000` gwei.
 
 ```bash
 lighthouse vc \
@@ -71,64 +57,39 @@ lighthouse vc \
   --builder-max-execution-payment 1000000000
 ```
 
-Most builders do not need `auth_data`. If a builder gives you a value, append it to the URL as a `#0x`
-hex fragment. Without a fragment, `auth_data` is the hostname of the URL.
+The validator client signs each bid request with the validator key. The signed message contains
+the slot and `auth_data`, a value that identifies the builder. The builder checks `auth_data` to
+make sure that the request is for this builder.
 
-> **Quote the URLs.** In a shell, an `.env` file or a Docker Compose file, a `#` can start a comment.
-> An unquoted `#0x0123` can then be removed without an error.
+By default, `auth_data` is the hostname of the URL. If a builder provides a value, append it to the URL as a `#0x` hex fragment.
 
-### Precedence
+### Execution payments
 
-If you set `--builder-urls`, the order of precedence for each value is:
+A bid from a builder has two payments:
 
-1. The configuration for one validator (`validator_configs` and the keymanager API).
-2. The CLI flag.
-3. The global value in `builder_definitions.yml`.
-4. The default.
+- The bid `value`. This payment is trustless, the protocol enforces this.
+- The `execution_payment`. This payment is trusted, the builder promises to pay it outside the protocol. Nothing on-chain enforces
+  this. `execution_payment` is only relevant for bids sourced from directly connected builders.
+  Bids received over gossip have no `execution_payment`.
 
-If you do not set `--builder-urls`, the validator client uses the `builders` list in the file. The
-order of precedence for each value is:
-
-1. The configuration for one validator (`validator_configs` and the keymanager API).
-2. The `min_bid`, `builder_boost_factor` and `max_execution_payment` of a builder in the file.
-3. The CLI flag.
-4. The global value in `builder_definitions.yml`.
-5. The default.
-
-A builder in the global list without `max_execution_payment` takes the value of
-`--builder-max-execution-payment`, else `0`. A builder in the configuration for one validator takes
-its `max_execution_payment` from the builder with the same URL in the global list. If no builder
-matches, it takes the value of `--builder-max-execution-payment`, else `0`.
-
-The validator client keeps the CLI values in memory. It never writes them to `builder_definitions.yml`.
-The keymanager `GET` returns the values in use, including the CLI values. If a client sends these
-values back with `POST`, they are stored for that validator, and later changes to the CLI flags do not
-apply to it.
-
-At startup, the validator client logs a warning for each CLI flag that overrides a different value in
-the file. It also logs a warning for each value of a builder in the file that takes precedence over a
-CLI flag. Then it logs the global values in use, the source of each value, and each builder.
-
-The validator client validates `builder_definitions.yml` at startup, also when `--builder-urls`
-replaces its `builders` list. If the file is not valid, the validator client does not start.
-
-`--builder-boost-factor` conflicts with `--prefer-builder-proposals`. Post Gloas,
-`--prefer-builder-proposals` makes a builder bid of any value above zero beat the local payload. This
-includes bids received over gossip. Use `--builder-min-bid` to set a minimum.
+`max_execution_payment` is the largest execution payment that the beacon node considers as part of the bid
+value. From the beacon nodes perspective a bid is worth `value + min(execution_payment, max_execution_payment)`. For example, if
+`max_execution_payment` is 1 ETH and a builder promises 3 ETH, the beacon node counts 1 ETH. The
+default `max_execution_payment` is `0`.
 
 ## Example
 
 ```yaml
-# Global bid policy: applies to p2p (gossip) bids, and is the default for any
-# builder below that omits the corresponding field.
-min_bid: 0                    # gwei — bids below this rank last; one wins only if nothing else is viable
+# Global values: apply to gossip bids, and to each builder below that does
+# not set its own value.
+min_bid: 0                    # gwei — a bid below this wins only if nothing else is available
 builder_boost_factor: 100     # percent — 100 = neutral, >100 favors builders, 0 = prefer local
 
 builders:
   # Minimal builder — inherits the global policy.
   - enabled: true
     url: "https://builder-a.example.com"
-    max_execution_payment: 1000000000   # gwei — cap on the trusted execution payment
+    max_execution_payment: 1000000000   # gwei — see "Execution payments"
 
   # Builder overriding the globals and pinning the expected builder key.
   - enabled: true
@@ -152,12 +113,12 @@ builders:
 
 ## Fields
 
-### Top level (global bid policy)
+### Global values
 
 | Field | Required | Default | Meaning |
 | ------- | ---------- | --------- | --------- |
-| `min_bid` | no | `0` | Minimum total payment, in gwei, for a p2p bid. A bid below the floor is ranked behind any floor-clearing candidate (including the local block) and only wins when nothing else is viable. Also the default `min_bid` for any builder that omits it. |
-| `builder_boost_factor` | no | `100` | Percentage multiplier applied to p2p bids when comparing against the local block. Also the default for any builder that omits it. |
+| `min_bid` | no | `0` | Minimum total payment, in gwei. A bid below this value ranks behind the locally constructed payload, and wins only if nothing else is available. Also the default for each builder that does not set its own `min_bid`. |
+| `builder_boost_factor` | no | `100` | Percentage multiplier applied to a bid value before it is compared against the locally constructed payload. Also the default for each builder that does not set its own `builder_boost_factor`. |
 | `builders` | no | `[]` | The list of builders to request bids from directly. |
 | `validator_configs` | no | `{}` | Builder settings for individual validators. Omitted fields use global values. An empty `builders` list uses no direct builders. |
 
@@ -167,7 +128,7 @@ builders:
 | ------- | ---------- | --------- | --------- |
 | `enabled` | **yes** | — | Whether this builder is used. Disabled builders are ignored. |
 | `url` | **yes** | — | The builder's `http`/`https` URL. Bids are requested from here at block-production time. |
-| `max_execution_payment` | no | *(`--builder-max-execution-payment`, else `0`)* | Cap, in gwei, on the *trusted* execution payment accepted from this builder. |
+| `max_execution_payment` | no | *(`--builder-max-execution-payment`, else `0`)* | Cap, in gwei, on the execution payment counted from this builder. See [Execution payments](#execution-payments). |
 | `min_bid` | no | *(global)* | Override the global minimum bid for this builder. |
 | `builder_boost_factor` | no | *(global)* | Override the global boost factor for this builder. |
 | `builder_pubkeys` | no | *(empty)* | The builder's BLS public keys, hex-encoded. If non-empty, a returned bid **not** signed by one of them is rejected. |
@@ -187,23 +148,14 @@ Explicit values are signed exactly as configured. See the
 
 ## How bids are selected
 
-At block-production time the beacon node requests a bid from each enabled builder with a `url`.
-It also considers bids seen over p2p. For each candidate bid:
+At block production, the beacon node requests a bid from each connected builder.
+It also uses the bids it received over gossip. Then it applies these rules:
 
-- **`min_bid`** — a bid whose total value is below the applicable `min_bid` is ranked behind any
-  floor-clearing candidate (including the local block) rather than dropped, so it wins only when
-  nothing else is viable (e.g. the local build failed). Direct builders use their own (or the
-  inherited per-validator) value; p2p bids use the validator's `min_bid`.
-- **`builder_boost_factor`** — the surviving bid's value is scaled by its boost factor
-  (`boost × value ÷ 100`) before being compared against the locally-built block. A factor below
-  `100` favors the local block; above `100` favors the builder; `0` always prefers local;
-  `2^64 − 1` strongly favors the builder. The factor is a multiplier, not an absolute override, so a
-  zero-value bid still ranks `0` and loses to any non-zero local block.
-- **`max_execution_payment`** — bounds how much of a builder's (off-chain) execution payment counts
-  toward its bid value. This applies only to direct builders; p2p bids carry no trusted execution
-  payment.
-- **`builder_pubkeys`** — for a direct builder, if non-empty, the returned bid must be signed by
-  one of these keys or it is discarded.
-
-The highest-value bid after these rules wins. Per-builder `min_bid`/`builder_boost_factor` apply
-only to bids requested directly by URL. For p2p bids, per-validator defaults override the global values.
+- **`min_bid`.** A bid must be at least `min_bid` in order to be selected above the locally constructed
+  payload. A bid below `min_bid` can be used as a backup in case the local build fails.
+- **`builder_boost_factor`.** A percentage multiplier applied to the bid value before it is compared
+  against the locally constructed payload. For example, `50` uses a bid only if it is worth 2x the
+  local payload. `0` always selects the local payload, unless the local build fails.
+- **`max_execution_payment`.** See [Execution payments](#execution-payments).
+- **`builder_pubkeys`.** If set, the beacon node discards a bid from a directly connected builder
+  that is not signed by one of these keys.
