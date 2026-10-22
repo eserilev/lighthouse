@@ -516,14 +516,18 @@ impl<T: BeaconChainTypes> CustodyContext<T> {
     /// A slice of ordered custody column indices for this epoch based on the node's custody configuration
     pub fn custody_columns_for_epoch(&self, epoch_opt: Option<Epoch>) -> &[ColumnIndex] {
         let custody_group_count = if let Some(epoch) = epoch_opt {
-            self.custody_group_count_at_epoch(epoch) as usize
+            self.custody_group_count_at_epoch(epoch)
         } else {
-            self.custody_group_count_at_head() as usize
+            self.custody_group_count_at_head()
         };
+        self.custody_columns_for_group_count(custody_group_count)
+    }
 
+    /// Returns the custody columns for a node with `custody_group_count` custody groups.
+    pub fn custody_columns_for_group_count(&self, custody_group_count: u64) -> &[ColumnIndex] {
         // This is an unnecessary conversion for spec compliance, basically just multiplying by 1.
         let columns_per_custody_group = self.spec.data_columns_per_group::<T::EthSpec>() as usize;
-        let custody_column_count = columns_per_custody_group * custody_group_count;
+        let custody_column_count = columns_per_custody_group * custody_group_count as usize;
 
         &self.ordered_custody_column_indices[..custody_column_count]
     }
