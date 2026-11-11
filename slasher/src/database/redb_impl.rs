@@ -10,7 +10,7 @@ use crate::{
 use educe::Educe;
 use redb::{ReadableTable, TableDefinition};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::{borrow::Cow, path::Path, path::PathBuf};
+use std::{borrow::Cow, ops::Bound, path::Path, path::PathBuf};
 use tracing::{info, warn};
 
 #[derive(Debug)]
@@ -115,7 +115,8 @@ impl Environment {
     }
 
     pub fn begin_rw_txn(&self) -> Result<RwTransaction<'_>, Error> {
-        let txn = self.begin_write()?;
+        let mut txn = self.begin_write()?;
+        txn.set_durability(redb::Durability::Immediate)?;
         Ok(RwTransaction {
             txn: Box::new(txn),
             _phantom: PhantomData,
@@ -226,10 +227,10 @@ impl<'env> Cursor<'env> {
             TableDefinition::new(&self.db.table_name);
         let table = self.txn.open_table(table_definition)?;
         if let Some(current_key) = &self.current_key {
-            let range: std::ops::RangeFrom<&[u8]> = current_key..;
+            let range = (Bound::Excluded(current_key.as_ref()), Bound::Unbounded);
 
             let next = table
-                .range(range)?
+                .range::<&[u8]>(range)?
                 .next()
                 .map(|x| x.map(|(key, _)| key.value().to_vec()));
 
@@ -256,23 +257,38 @@ impl<'env> Cursor<'env> {
         &self,
         f: impl Fn(&[u8]) -> Result<bool, Error>,
     ) -> Result<Vec<Cow<'_, [u8]>>, Error> {
-        let mut deleted_values = vec![];
-        if let Some(current_key) = &self.current_key {
-            let table_definition: TableDefinition<'_, &[u8], &[u8]> =
-                TableDefinition::new(&self.db.table_name);
-
-            let mut table = self.txn.open_table(table_definition)?;
-
-            let deleted =
-                table.extract_from_if(current_key.as_ref().., |key, _| f(key).unwrap_or(false))?;
-
-            deleted.for_each(|result| {
-                if let Ok(item) = result {
-                    let value = item.1.value().to_vec();
-                    deleted_values.push(Cow::from(value));
-                }
-            })
+        let Some(current_key) = &self.current_key else {
+            return Ok(vec![]);
         };
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> =
+            TableDefinition::new(&self.db.table_name);
+        let mut table = self.txn.open_table(table_definition)?;
+
+        // Find the first key that should be kept, so that only the deleted range is extracted.
+        let mut end_key = None;
+        for result in table.range(current_key.as_ref()..)? {
+            let (key, _) = result?;
+            if !f(key.value())? {
+                end_key = Some(key.value().to_vec());
+                break;
+            }
+        }
+
+        let mut deleted_values = vec![];
+        let mut extract = |range| -> Result<(), Error> {
+            for result in table.extract_from_if::<&[u8], _>(range, |_, _| true)? {
+                let (_, value) = result?;
+                deleted_values.push(Cow::from(value.value().to_vec()));
+            }
+            Ok(())
+        };
+        match &end_key {
+            Some(end_key) => extract((
+                Bound::Included(current_key.as_ref()),
+                Bound::Excluded(end_key.as_slice()),
+            ))?,
+            None => extract((Bound::Included(current_key.as_ref()), Bound::Unbounded))?,
+        }
         Ok(deleted_values)
     }
 
@@ -285,6 +301,7 @@ impl<'env> Cursor<'env> {
         Ok(())
     }
 }
+
 /// Log a full repair's progress, at most once per percent.
 ///
 /// A full repair re-reads the entire database file, which can take hours for large databases.
