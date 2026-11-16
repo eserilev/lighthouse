@@ -423,9 +423,7 @@ impl Drop for Redb {
 /// The first database opened, which `HotColdDB` opens as the hot database, is committed last, and
 /// only if the others were committed. A crash part-way through can then leave the hot database
 /// older than the others, but not newer. Block import writes the blobs database before the hot
-/// database, so it is safe. Blob pruning updates the hot database before deleting from the blobs
-/// database, so such a crash can leave the hot database advertising blobs that were deleted, until
-/// the next prune.
+/// database, so it is safe. Deleting blobs syncs the hot database first.
 fn flush() -> Result<(), Error> {
     let _flush_guard = FLUSH_LOCK.lock();
     flush_locked(None)

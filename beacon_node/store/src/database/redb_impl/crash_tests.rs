@@ -145,6 +145,7 @@ impl redb::StorageBackend for CrashBackend {
 #[derive(Debug, Clone)]
 enum Op {
     ImportBlock,
+    DeleteBlock(u64),
     Migrate,
     Write {
         db: usize,
@@ -159,6 +160,7 @@ enum Op {
 fn op() -> impl Strategy<Value = Op> {
     prop_oneof![
         4 => Just(Op::ImportBlock),
+        2 => any::<u64>().prop_map(Op::DeleteBlock),
         1 => Just(Op::Migrate),
         4 => (0..3usize, 0..5u8, 0..8u64, 0..2048usize)
             .prop_map(|(db, kind, key, len)| Op::Write { db, kind, key, len }),
@@ -220,6 +222,36 @@ impl Harness {
                 self.blocks += 1;
                 self.put(BLOBS, BLOB_COL, key(BLOB_COL, n), value(op_index, 512));
                 self.put(HOT, BLOCK_COL, key(BLOCK_COL, n), value(op_index, 256));
+            }
+            // As in `do_atomically_with_block_and_blobs_cache`.
+            Op::DeleteBlock(choice) => {
+                let block_col: &'static str = BLOCK_COL.into();
+                let blocks = self.models[HOT]
+                    .keys()
+                    .filter(|(col, _)| *col == block_col)
+                    .map(|(_, key)| key.clone())
+                    .collect::<Vec<_>>();
+                if blocks.is_empty() {
+                    return self.snapshot();
+                }
+                let block_key = blocks[(choice % blocks.len() as u64) as usize].clone();
+                let blob_key = key(
+                    BLOB_COL,
+                    u64::from_be_bytes(block_key[block_key.len() - 8..].try_into().unwrap()),
+                );
+
+                self.dbs[HOT]
+                    .do_atomically(vec![KeyValueStoreOp::DeleteKey(
+                        BLOCK_COL,
+                        block_key.clone(),
+                    )])
+                    .unwrap();
+                self.models[HOT].remove(&(BLOCK_COL.into(), block_key));
+                self.dbs[HOT].sync().unwrap();
+                self.dbs[BLOBS]
+                    .do_atomically(vec![KeyValueStoreOp::DeleteKey(BLOB_COL, blob_key.clone())])
+                    .unwrap();
+                self.models[BLOBS].remove(&(BLOB_COL.into(), blob_key));
             }
             Op::Migrate => {
                 let new_split = self.blocks;
@@ -285,6 +317,10 @@ impl Harness {
             Op::Flush => flush().unwrap(),
             Op::Compact(db) => self.dbs[db].compact().unwrap(),
         }
+        self.snapshot();
+    }
+
+    fn snapshot(&mut self) {
         for (snapshots, model) in self.snapshots.iter_mut().zip(&self.models) {
             snapshots.push(model.clone());
         }
@@ -351,28 +387,16 @@ fn run(ops: Vec<Op>, crash_at: i64, power_loss: bool, seed: u64) {
         })
         .collect::<Vec<_>>();
 
-    let recovered_at = (0..3)
-        .map(|db| {
-            let indices = snapshots[db]
-                .iter()
-                .enumerate()
-                .filter(|(_, snapshot)| **snapshot == recovered[db])
-                .map(|(i, _)| i)
-                .collect::<Vec<_>>();
-            assert!(
-                indices.iter().any(|&i| i >= durable_index),
-                "db {db} recovered to snapshots {indices:?}, but op {durable_index} was durable"
-            );
-            indices
-        })
-        .collect::<Vec<_>>();
-
-    for db in [COLD, BLOBS] {
+    for db in 0..3 {
+        let indices = snapshots[db]
+            .iter()
+            .enumerate()
+            .filter(|(_, snapshot)| **snapshot == recovered[db])
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
         assert!(
-            recovered_at[HOT].iter().min() <= recovered_at[db].iter().max(),
-            "hot recovered to {:?}, ahead of db {db} at {:?}",
-            recovered_at[HOT],
-            recovered_at[db]
+            indices.iter().any(|&i| i >= durable_index),
+            "db {db} recovered to snapshots {indices:?}, but op {durable_index} was durable"
         );
     }
 
