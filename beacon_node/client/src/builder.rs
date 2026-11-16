@@ -31,6 +31,7 @@ use futures::channel::mpsc::Receiver;
 use genesis::{DEFAULT_ETH1_BLOCK_HASH, interop_genesis_state};
 use lighthouse_network::identity::Keypair;
 use lighthouse_network::{NetworkGlobals, prometheus_client::registry::Registry};
+use logging::crit;
 use monitoring_api::{MonitoringHttpClient, ProcessType};
 use network::{NetworkConfig, NetworkSenders, NetworkService};
 use proof_engine::ProofEngine;
@@ -39,10 +40,12 @@ use rand::rngs::{OsRng, StdRng};
 use slasher::Slasher;
 use slasher_service::SlasherService;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
+use store::KeyValueStore;
 use store::database::interface::BeaconNodeBackend;
+use task_executor::{ShutdownReason, TaskExecutor};
 use timer::spawn_timer;
 use tracing::{debug, info, instrument, warn};
 use types::data::compute_ordered_custody_column_indices;
@@ -951,9 +954,58 @@ where
             spec,
         )
         .map_err(|e| format!("Unable to open database: {:?}", e))?;
+
+        if let Some(interval) = store.hot_db.sync_interval() {
+            let executor = self
+                .runtime_context
+                .as_ref()
+                .ok_or("disk_store requires a runtime context")?
+                .executor
+                .clone();
+            spawn_db_sync(executor, Arc::downgrade(&store), interval);
+        }
+
         self.store = Some(store);
         Ok(self)
     }
+}
+
+/// Periodically make database writes durable, shutting down if that fails.
+fn spawn_db_sync<E: EthSpec>(
+    executor: TaskExecutor,
+    store: Weak<HotColdDB<E, BeaconNodeBackend, BeaconNodeBackend>>,
+    interval: Duration,
+) {
+    let inner_executor = executor.clone();
+    executor.spawn(
+        async move {
+            loop {
+                tokio::time::sleep(interval).await;
+                let Some(store) = store.upgrade() else {
+                    return;
+                };
+                let Some(handle) =
+                    inner_executor.spawn_blocking_handle(move || store.hot_db.sync(), "db_sync")
+                else {
+                    return;
+                };
+                let error = match handle.await {
+                    Ok(Ok(())) => continue,
+                    Ok(Err(e)) => format!("{e:?}"),
+                    Err(e) => format!("{e:?}"),
+                };
+                crit!(
+                    error,
+                    "Failed to make database writes durable, shutting down"
+                );
+                let _ = inner_executor
+                    .shutdown_sender()
+                    .try_send(ShutdownReason::Failure("Database sync failure"));
+                return;
+            }
+        },
+        "db_sync",
+    );
 }
 
 impl<E, THotStore, TColdStore> ClientBuilder<Witness<SystemTimeSlotClock, E, THotStore, TColdStore>>

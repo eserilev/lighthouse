@@ -6,6 +6,7 @@ use crate::{ColumnIter, ColumnKeyIter, DBColumn, Error, ItemStore, Key, KeyValue
 use crate::{KeyValueStoreOp, StoreConfig, config::DatabaseBackend};
 use std::collections::HashSet;
 use std::path::Path;
+use std::time::Duration;
 
 pub enum BeaconNodeBackend {
     #[cfg(feature = "leveldb")]
@@ -192,6 +193,16 @@ impl BeaconNodeBackend {
             }
             #[cfg(feature = "redb")]
             DatabaseBackend::Redb => redb_impl::Redb::open(path).map(BeaconNodeBackend::Redb),
+        }
+    }
+
+    /// How often `sync` must be called to make writes durable, if writes aren't durable without it.
+    pub fn sync_interval(&self) -> Option<Duration> {
+        match self {
+            #[cfg(feature = "leveldb")]
+            BeaconNodeBackend::LevelDb(_) => None,
+            #[cfg(feature = "redb")]
+            BeaconNodeBackend::Redb(_) => Some(redb_impl::FLUSH_INTERVAL),
         }
     }
 }

@@ -5,7 +5,7 @@ use redb::{ReadableDatabase, TableDefinition};
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, LazyLock, OnceLock, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 use std::time::Duration;
 use strum::IntoEnumIterator;
 use tracing::{error, info, warn};
@@ -16,11 +16,11 @@ pub const DB_FILE_NAME: &str = "database.redb";
 
 type BytesTable<'txn> = redb::Table<'txn, &'static [u8], &'static [u8]>;
 
-/// How often commits are made durable in the background.
+/// How often `sync` should be called to make commits durable.
 ///
 /// A crash loses at most about this much of the most recent writes. Explicit syncs, such as
 /// `put_bytes_sync`, are durable when they return.
-const FLUSH_INTERVAL: Duration = Duration::from_secs(1);
+pub const FLUSH_INTERVAL: Duration = Duration::from_secs(1);
 
 // Lock ordering, to avoid deadlocks:
 //
@@ -34,8 +34,6 @@ const FLUSH_INTERVAL: Duration = Duration::from_secs(1);
 static OPEN_DATABASES: LazyLock<Mutex<Vec<Weak<Shared>>>> = LazyLock::new(Default::default);
 /// Held while flushing, and while a database is dropped or starts compacting.
 static FLUSH_LOCK: Mutex<()> = parking_lot::const_mutex(());
-/// Whether the background flush thread was started.
-static FLUSHER_STARTED: OnceLock<bool> = OnceLock::new();
 
 struct Shared {
     db: RwLock<redb::Database>,
@@ -51,27 +49,10 @@ pub struct Redb {
 
 impl Redb {
     pub fn open(path: &Path) -> Result<Self, Error> {
-        let flusher_started = *FLUSHER_STARTED.get_or_init(|| {
-            match std::thread::Builder::new()
-                .name("redb_flush".into())
-                .spawn(flush_periodically)
-            {
-                Ok(_) => true,
-                Err(error) => {
-                    error!(?error, "Failed to start redb flush thread");
-                    false
-                }
-            }
-        });
-        if !flusher_started {
-            return Err(Error::DBError {
-                message: "redb flush thread is not running".into(),
-            });
-        }
+        Self::from_database(create_or_upgrade(&path.join(DB_FILE_NAME))?)
+    }
 
-        let db_file = path.join(DB_FILE_NAME);
-        let db = create_or_upgrade(&db_file)?;
-
+    fn from_database(db: redb::Database) -> Result<Self, Error> {
         // Create all tables in a single transaction so that the allocator state is only written
         // once (see `begin_write`).
         let tx = Self::begin_write(&db)?;
@@ -528,15 +509,6 @@ fn commit_flush(shared: &Shared, tx: redb::WriteTransaction) -> Result<(), Error
     })
 }
 
-fn flush_periodically() {
-    loop {
-        std::thread::sleep(FLUSH_INTERVAL);
-        if let Err(error) = flush() {
-            error!(?error, "Failed to flush redb databases");
-        }
-    }
-}
-
 /// Log a full repair's progress, at most once per percent.
 ///
 /// A full repair re-reads the entire database file, which can take hours for large databases.
@@ -585,6 +557,13 @@ fn create_or_upgrade(path: &Path) -> Result<redb::Database, Error> {
     }
 }
 
+/// Serializes tests that open databases, since `flush` acts on all of them.
+#[cfg(test)]
+static TEST_LOCK: Mutex<()> = parking_lot::const_mutex(());
+
+#[cfg(test)]
+mod crash_tests;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -615,6 +594,7 @@ mod tests {
     /// after a crash, and check that it can be reopened without a full repair.
     #[test]
     fn reopen_after_unclean_shutdown_without_repair() {
+        let _test_guard = TEST_LOCK.lock();
         let col = DBColumn::BeaconBlock;
         let key = |i: u64| i.to_be_bytes().to_vec();
         let value = |i: u64| i.to_be_bytes().repeat(128);
@@ -681,6 +661,7 @@ mod tests {
 
     #[test]
     fn upgrade_v2_database() {
+        let _test_guard = TEST_LOCK.lock();
         let dir = tempfile::tempdir().unwrap();
         let table_name: &str = DBColumn::Dummy.into();
         let table: redb_v2::TableDefinition<'_, &[u8], &[u8]> =
@@ -704,6 +685,7 @@ mod tests {
 
     #[test]
     fn do_atomically_preserves_order_of_ops_on_same_key() {
+        let _test_guard = TEST_LOCK.lock();
         let dir = tempdir().unwrap();
         let db = Redb::open(dir.path()).unwrap();
         let (hot, cold) = (DBColumn::BeaconBlock, DBColumn::BeaconState);

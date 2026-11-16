@@ -9663,6 +9663,7 @@ dependencies = [
  "metrics",
  "milhouse",
  "parking_lot",
+ "proptest",
  "rand 0.9.5",
  "redb 2.6.4",
  "redb 4.4.0",
