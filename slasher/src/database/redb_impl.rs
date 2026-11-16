@@ -115,8 +115,7 @@ impl Environment {
     }
 
     pub fn begin_rw_txn(&self) -> Result<RwTransaction<'_>, Error> {
-        let mut txn = self.begin_write()?;
-        txn.set_durability(redb::Durability::Immediate)?;
+        let txn = self.begin_write()?;
         Ok(RwTransaction {
             txn: Box::new(txn),
             _phantom: PhantomData,
@@ -264,7 +263,7 @@ impl<'env> Cursor<'env> {
             TableDefinition::new(&self.db.table_name);
         let mut table = self.txn.open_table(table_definition)?;
 
-        // Find the first key that should be kept, so that only the deleted range is extracted.
+        // Stop at the first key to keep.
         let mut end_key = None;
         for result in table.range(current_key.as_ref()..)? {
             let (key, _) = result?;
@@ -273,23 +272,15 @@ impl<'env> Cursor<'env> {
                 break;
             }
         }
-
-        let mut deleted_values = vec![];
-        let mut extract = |range| -> Result<(), Error> {
-            for result in table.extract_from_if::<&[u8], _>(range, |_, _| true)? {
-                let (_, value) = result?;
-                deleted_values.push(Cow::from(value.value().to_vec()));
-            }
-            Ok(())
+        let end = match &end_key {
+            Some(end_key) => Bound::Excluded(end_key.as_slice()),
+            None => Bound::Unbounded,
         };
-        match &end_key {
-            Some(end_key) => extract((
-                Bound::Included(current_key.as_ref()),
-                Bound::Excluded(end_key.as_slice()),
-            ))?,
-            None => extract((Bound::Included(current_key.as_ref()), Bound::Unbounded))?,
-        }
-        Ok(deleted_values)
+
+        table
+            .extract_from_if::<&[u8], _>((Bound::Included(current_key.as_ref()), end), |_, _| true)?
+            .map(|result| Ok(Cow::from(result?.1.value().to_vec())))
+            .collect()
     }
 
     pub fn put<K: AsRef<[u8]>, V: AsRef<[u8]>>(&mut self, key: K, value: V) -> Result<(), Error> {
@@ -303,8 +294,6 @@ impl<'env> Cursor<'env> {
 }
 
 /// Log a full repair's progress, at most once per percent.
-///
-/// A full repair re-reads the entire database file, which can take hours for large databases.
 fn log_repair_progress(path: &str, last_logged: &AtomicU64, progress: f64) {
     // Offset by one so that the first call is logged.
     let marker = (progress * 100.0) as u64 + 1;
@@ -323,8 +312,7 @@ fn builder(path: &Path) -> redb::Builder {
     builder
 }
 
-/// Open the database file at `path`, upgrading it from the v2 file format used by redb 2.x if
-/// necessary.
+/// Open the database, upgrading it from the redb 2.x file format if necessary.
 fn create_or_upgrade(path: &Path) -> Result<redb::Database, Error> {
     match builder(path).create(path) {
         Err(redb::DatabaseError::UpgradeRequired(version)) => {

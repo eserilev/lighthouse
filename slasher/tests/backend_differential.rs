@@ -1,9 +1,6 @@
 #![cfg(any(feature = "mdbx", feature = "lmdb", feature = "redb"))]
 
-//! Differential tests for the database backends.
-//!
-//! Apply the same random operations to each backend and to an in-memory model, and check that
-//! every read agrees with the model.
+//! Apply random operations to each backend and to an in-memory model, and check they agree.
 
 use rand::{Rng, SeedableRng, rngs::SmallRng};
 use slasher::{Config, Database, DatabaseBackend, Environment, Error, RwTransaction};

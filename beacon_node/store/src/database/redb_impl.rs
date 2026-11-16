@@ -16,30 +16,19 @@ pub const DB_FILE_NAME: &str = "database.redb";
 
 type BytesTable<'txn> = redb::Table<'txn, &'static [u8], &'static [u8]>;
 
-/// How often `sync` should be called to make commits durable.
-///
-/// A crash loses at most about this much of the most recent writes. Explicit syncs, such as
-/// `put_bytes_sync`, are durable when they return.
+/// How often `sync` should be called. A crash loses up to about this much of the latest writes.
 pub const FLUSH_INTERVAL: Duration = Duration::from_secs(1);
 
-// Lock ordering, to avoid deadlocks:
-//
-// 1. `FLUSH_LOCK`.
-// 2. `OPEN_DATABASES`, or a `Shared::db` lock.
-// 3. A redb write transaction.
-//
-// `flush` must not be called while holding a `Shared::db` lock or a write transaction.
+// Lock order: `FLUSH_LOCK`, then `OPEN_DATABASES` or a `Shared::db` lock, then a write transaction.
 
-/// Every open redb database, in the order that they were opened.
+/// In the order they were opened.
 static OPEN_DATABASES: LazyLock<Mutex<Vec<Weak<Shared>>>> = LazyLock::new(Default::default);
-/// Held while flushing, and while a database is dropped or starts compacting.
 static FLUSH_LOCK: Mutex<()> = parking_lot::const_mutex(());
 
 struct Shared {
     db: RwLock<redb::Database>,
-    /// Whether this database has commits that are not yet durable.
+    /// Has commits that aren't durable yet.
     dirty: AtomicBool,
-    /// Whether this database is being compacted, during which it has no commits to flush.
     compacting: AtomicBool,
 }
 
@@ -57,7 +46,9 @@ impl Redb {
         // once (see `begin_write`).
         let tx = Self::begin_write(&db)?;
         for column in DBColumn::iter() {
-            tx.open_table(Self::table_definition(column))?;
+            let table_definition: TableDefinition<'_, &[u8], &[u8]> =
+                TableDefinition::new(column.into());
+            tx.open_table(table_definition)?;
         }
         tx.commit()?;
 
@@ -85,24 +76,17 @@ impl Redb {
         Ok(tx)
     }
 
-    /// Begin a write transaction whose commit is made durable later, by `flush`.
+    /// Made durable later, by `flush`.
     fn begin_unflushed_write(db: &redb::Database) -> Result<redb::WriteTransaction, Error> {
         let mut tx = Self::begin_write(db)?;
         tx.set_durability(redb::Durability::None)?;
         Ok(tx)
     }
 
-    /// Commit a transaction from `begin_unflushed_write`.
     fn commit(&self, tx: redb::WriteTransaction) -> Result<(), Error> {
-        // Set before committing, so that a flush, which waits for this transaction, sees it.
+        // Set before committing, so a flush waiting on this transaction sees it.
         self.shared.dirty.store(true, Ordering::Release);
         tx.commit().map_err(Into::into)
-    }
-
-    fn table_definition(
-        column: DBColumn,
-    ) -> TableDefinition<'static, &'static [u8], &'static [u8]> {
-        TableDefinition::new(column.into())
     }
 
     pub fn write_options(&self) -> WriteOptions {
@@ -130,7 +114,7 @@ impl Redb {
         );
         let timer = metrics::start_timer(&metrics::DISK_DB_WRITE_TIMES);
 
-        let table_definition = Self::table_definition(col);
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(col.into());
         let open_db = self.shared.db.read();
         let tx = Self::begin_unflushed_write(&open_db)?;
         let mut table = tx.open_table(table_definition)?;
@@ -167,7 +151,7 @@ impl Redb {
         metrics::inc_counter_vec(&metrics::DISK_DB_READ_COUNT, &[col.into()]);
         let timer = metrics::start_timer(&metrics::DISK_DB_READ_TIMES);
 
-        let table_definition = Self::table_definition(col);
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(col.into());
         let open_db = self.shared.db.read();
         let tx = open_db.begin_read()?;
         let table = tx.open_table(table_definition)?;
@@ -196,7 +180,7 @@ impl Redb {
     pub fn key_exists(&self, col: DBColumn, key: &[u8]) -> Result<bool, Error> {
         metrics::inc_counter_vec(&metrics::DISK_DB_EXISTS_COUNT, &[col.into()]);
 
-        let table_definition = Self::table_definition(col);
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(col.into());
         let open_db = self.shared.db.read();
         let tx = open_db.begin_read()?;
         let table = tx.open_table(table_definition)?;
@@ -209,7 +193,7 @@ impl Redb {
 
     /// Removes `key` from `column`.
     pub fn key_delete(&self, col: DBColumn, key: &[u8]) -> Result<(), Error> {
-        let table_definition = Self::table_definition(col);
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(col.into());
         let open_db = self.shared.db.read();
         let tx = Self::begin_unflushed_write(&open_db)?;
         let mut table = tx.open_table(table_definition)?;
@@ -221,8 +205,7 @@ impl Redb {
     }
 
     pub fn do_atomically(&self, mut ops_batch: Vec<KeyValueStoreOp>) -> Result<(), Error> {
-        // redb writes keys in ascending order faster and more compactly than in random order. The
-        // sort is stable, so ops on the same key are applied in their original order.
+        // Sorted writes are faster. The sort is stable, so ops on the same key keep their order.
         ops_batch.sort_by(|a, b| Self::op_column_and_key(a).cmp(&Self::op_column_and_key(b)));
 
         let open_db = self.shared.db.read();
@@ -274,8 +257,7 @@ impl Redb {
     pub fn compact(&self) -> Result<(), Error> {
         let _timer = metrics::start_timer(&metrics::DISK_DB_COMPACT_TIMES);
 
-        // Compaction commits durably, which would make this database durable ahead of the others
-        // (see `flush`). Flush with it write-locked, so that it has no commits to make durable.
+        // Compaction commits durably, so flush first to keep this database in step with the others.
         let mut open_db = {
             let _flush_guard = FLUSH_LOCK.lock();
             let open_db = self.shared.db.write();
@@ -286,14 +268,11 @@ impl Redb {
 
         let result = (|| {
             open_db.compact()?;
-            // Compaction commits without quick-repair, which deletes the saved allocator state.
-            // Re-save it so that an unclean shutdown before the next write doesn't need a full
-            // repair.
+            // Compaction commits without quick-repair, so re-save the allocator state.
             Self::begin_write(&open_db)?.commit()?;
             Ok(())
         })();
-        // Cleared while write-locked, so that a flush that sees it cleared waits for the lock
-        // rather than skipping this database while it may have commits to flush.
+        // Cleared while write-locked, so a flush can't skip this database once it has commits.
         self.shared.compacting.store(false, Ordering::Release);
         drop(open_db);
         result
@@ -304,7 +283,8 @@ impl Redb {
         column: DBColumn,
         from: &[u8],
     ) -> ColumnKeyIter<'_, K> {
-        let table_definition = Self::table_definition(column);
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> =
+            TableDefinition::new(column.into());
 
         let result = (|| {
             let open_db = self.shared.db.read();
@@ -335,7 +315,8 @@ impl Redb {
     }
 
     pub fn iter_column_from<K: Key>(&self, column: DBColumn, from: &[u8]) -> ColumnIter<'_, K> {
-        let table_definition = Self::table_definition(column);
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> =
+            TableDefinition::new(column.into());
 
         let result = (|| {
             let open_db = self.shared.db.read();
@@ -369,7 +350,8 @@ impl Redb {
         let open_db = self.shared.db.read();
         let tx = Self::begin_unflushed_write(&open_db)?;
 
-        let mut table = tx.open_table(Self::table_definition(col))?;
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> = TableDefinition::new(col.into());
+        let mut table = tx.open_table(table_definition)?;
         for key in ops {
             table.remove(key)?;
         }
@@ -386,7 +368,8 @@ impl Redb {
         let open_db = self.shared.db.read();
         let tx = Self::begin_unflushed_write(&open_db)?;
 
-        let table_definition = Self::table_definition(column);
+        let table_definition: TableDefinition<'_, &[u8], &[u8]> =
+            TableDefinition::new(column.into());
 
         let mut table = tx.open_table(table_definition)?;
         table.retain(|_, value| !f(value).unwrap_or(false))?;
@@ -398,9 +381,7 @@ impl Redb {
 
 impl Drop for Redb {
     fn drop(&mut self) {
-        // Flush, and remove this database so that flushes no longer hold a reference to it. It is
-        // then closed on this thread when `self.shared` is dropped, instead of possibly on the
-        // flush thread, which would leave the file locked after this returns.
+        // Unregister so the database is closed on this thread, not by a concurrent flush.
         let _flush_guard = FLUSH_LOCK.lock();
         if let Err(error) = flush_locked(None) {
             error!(?error, "Failed to flush redb databases");
@@ -411,27 +392,18 @@ impl Drop for Redb {
     }
 }
 
-/// Make the commits of every open redb database durable, as of a single point in time.
+/// Make every open database durable as of the same point in time, by taking a write transaction on
+/// all of them before committing any.
 ///
-/// Commits are not durable when they return, so that writes don't each wait for the disk. If each
-/// database were made durable separately, a crash could leave them at different points in time,
-/// for example with a block in the hot database but not its data columns in the blobs database.
-/// Instead, a write transaction is opened on every database first, which waits for in-progress
-/// writes and blocks new ones, so the databases are durable as of the same point in time.
-/// Lighthouse never holds write transactions on two databases at once, so this can't deadlock.
-///
-/// The first database opened, which `HotColdDB` opens as the hot database, is committed last, and
-/// only if the others were committed. A crash part-way through can then leave the hot database
-/// older than the others, but not newer. Block import writes the blobs database before the hot
-/// database, so it is safe. Deleting blobs syncs the hot database first.
+/// The first-opened (hot) database is committed last, so a crash part-way through can leave it
+/// behind the others but never ahead. Block import writes blobs before the hot database, and blob
+/// deletion syncs the hot database first.
 fn flush() -> Result<(), Error> {
     let _flush_guard = FLUSH_LOCK.lock();
     flush_locked(None)
 }
 
-/// `flush`, with `FLUSH_LOCK` held by the caller.
-///
-/// `held` is a database that the caller has write-locked, with its locked `redb::Database`.
+/// `flush` with `FLUSH_LOCK` held. `held` is a database the caller has write-locked.
 fn flush_locked(held: Option<(&Shared, &redb::Database)>) -> Result<(), Error> {
     let databases = {
         let mut open_databases = OPEN_DATABASES.lock();
@@ -448,68 +420,32 @@ fn flush_locked(held: Option<(&Shared, &redb::Database)>) -> Result<(), Error> {
             Some((held_shared, held_db)) if std::ptr::eq(held_shared, shared.as_ref()) => {
                 Redb::begin_write(held_db)?
             }
-            // A database being compacted has no commits to flush, and can't be written to.
+            // Flushed before compaction started.
             _ if shared.compacting.load(Ordering::Acquire) => continue,
             _ => Redb::begin_write(&shared.db.read())?,
         };
         txns.push((shared, tx));
     }
 
-    // Release the databases without commits to flush, by aborting their transactions, so that
-    // writes to them aren't blocked while the others are committed. An empty durable commit makes
-    // all earlier commits durable.
-    let mut dirty_txns = txns
+    // Abort transactions on clean databases so writes to them aren't blocked. An empty durable
+    // commit makes all earlier commits durable. The first-opened database is committed last.
+    let dirty_txns = txns
         .into_iter()
         .filter(|(shared, _)| shared.dirty.swap(false, Ordering::AcqRel))
         .collect::<Vec<_>>();
-    let Some((last_shared, last_tx)) = dirty_txns.pop() else {
-        return Ok(());
-    };
-
-    // Commit all but the last in parallel, since they are independent files.
-    let results = std::thread::scope(|scope| {
-        let mut handles = vec![];
-        let mut results = vec![];
-        for (shared, tx) in dirty_txns {
-            match std::thread::Builder::new().spawn_scoped(scope, move || commit_flush(shared, tx))
-            {
-                Ok(handle) => handles.push(handle),
-                Err(error) => {
-                    // `tx` was dropped with the closure, aborting it.
-                    shared.dirty.store(true, Ordering::Release);
-                    results.push(Err(Error::DBError {
-                        message: format!("failed to spawn redb flush thread: {error}"),
-                    }));
-                }
-            }
+    let mut result = Ok(());
+    for (shared, tx) in dirty_txns {
+        if result.is_ok() {
+            result = tx.commit().map_err(Into::into);
         }
-        for handle in handles {
-            results.push(handle.join().unwrap_or_else(|_| {
-                Err(Error::DBError {
-                    message: "redb flush thread panicked".into(),
-                })
-            }));
+        if result.is_err() {
+            shared.dirty.store(true, Ordering::Release);
         }
-        results
-    });
-
-    if let Some(error) = results.into_iter().find_map(Result::err) {
-        last_shared.dirty.store(true, Ordering::Release);
-        return Err(error);
     }
-    commit_flush(last_shared, last_tx)
-}
-
-fn commit_flush(shared: &Shared, tx: redb::WriteTransaction) -> Result<(), Error> {
-    tx.commit().map_err(|e| {
-        shared.dirty.store(true, Ordering::Release);
-        e.into()
-    })
+    result
 }
 
 /// Log a full repair's progress, at most once per percent.
-///
-/// A full repair re-reads the entire database file, which can take hours for large databases.
 fn log_repair_progress(path: &str, last_logged: &AtomicU64, progress: f64) {
     // Offset by one so that the first call is logged.
     let marker = (progress * 100.0) as u64 + 1;
@@ -528,8 +464,7 @@ fn builder(path: &Path) -> redb::Builder {
     builder
 }
 
-/// Open the database file at `path`, upgrading it from the v2 file format used by redb 2.x if
-/// necessary.
+/// Open the database, upgrading it from the redb 2.x file format if necessary.
 fn create_or_upgrade(path: &Path) -> Result<redb::Database, Error> {
     match builder(path).create(path) {
         Err(redb::DatabaseError::UpgradeRequired(version)) => {
@@ -572,10 +507,7 @@ mod tests {
     #[track_caller]
     fn copy_and_open_without_repair(dir: &Path) -> TempDir {
         let copy_dir = tempdir().unwrap();
-        // Prevent a background flush from writing to the file while it is copied.
-        let flush_guard = FLUSH_LOCK.lock();
         std::fs::copy(dir.join(DB_FILE_NAME), copy_dir.path().join(DB_FILE_NAME)).unwrap();
-        drop(flush_guard);
 
         // redb invokes the repair callback before starting a full repair (which re-reads the whole
         // file), and aborting it fails the open.
@@ -611,6 +543,7 @@ mod tests {
         .unwrap();
         copy_and_open_without_repair(dir.path());
 
+        // These deletes are non-durable, so they are persisted by the next durable commit.
         let (key_0, key_1, value_2) = (key(0), key(1), value(2));
         db.delete_batch(col, HashSet::from([key_0.as_slice(), key_1.as_slice()]))
             .unwrap();

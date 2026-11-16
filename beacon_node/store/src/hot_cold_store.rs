@@ -1615,8 +1615,7 @@ impl<E: EthSpec, Hot: ItemStore, Cold: ItemStore> HotColdDB<E, Hot, Cold> {
 
         if !blobs_delete_ops.is_empty() {
             let _span = debug_span!("delete_blobs_db").entered();
-            // Some backends don't make writes durable in order, so make the hot DB write durable
-            // before deleting.
+            // Some backends may persist the blobs DB ahead of the hot DB.
             self.hot_db.sync()?;
             self.blobs_db
                 .do_atomically(self.convert_to_kv_batch(blobs_delete_ops)?)?;

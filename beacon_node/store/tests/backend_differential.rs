@@ -1,7 +1,4 @@
-//! Differential tests for the database backends.
-//!
-//! Apply the same random operations to each backend and to an in-memory model, and check that
-//! every read agrees with the model.
+//! Apply random operations to each backend and to an in-memory model, and check they agree.
 
 use rand::{Rng, SeedableRng, rngs::SmallRng};
 use std::collections::{BTreeMap, HashSet};

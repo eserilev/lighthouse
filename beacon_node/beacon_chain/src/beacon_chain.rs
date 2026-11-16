@@ -8457,26 +8457,23 @@ impl<T: BeaconChainTypes> Drop for BeaconChain<T> {
     fn drop(&mut self) {
         if self.canonical_head.fork_choice_poisoned() {
             warn!("Skipping persistence on drop: fork choice is poisoned");
-        } else {
-            let drop = || -> Result<(), Error> {
-                self.persist_op_pool()?;
-                self.persist_custody_context()?;
-                self.persist_fork_choice()
-            };
-
-            if let Err(e) = drop() {
-                error!(
-                    error = ?e,
-                    "Failed to persist on BeaconChain drop"
-                )
-            } else {
-                info!("Saved beacon chain to disk")
-            }
+            return;
         }
 
-        // Make all writes durable, since some backends don't make every write durable immediately.
-        if let Err(e) = self.store.hot_db.sync() {
-            error!(error = ?e, "Failed to sync database on BeaconChain drop");
+        let drop = || -> Result<(), Error> {
+            self.persist_op_pool()?;
+            self.persist_custody_context()?;
+            self.persist_fork_choice()?;
+            Ok(self.store.hot_db.sync()?)
+        };
+
+        if let Err(e) = drop() {
+            error!(
+                error = ?e,
+                "Failed to persist on BeaconChain drop"
+            )
+        } else {
+            info!("Saved beacon chain to disk")
         }
     }
 }

@@ -172,7 +172,7 @@ build-release-tarballs:
 
 
 # Runs the full workspace tests in **release**, without downloading any additional
-# test vectors. The `store` redb backend is enabled alongside the default, so that its tests run.
+# test vectors.
 test-release:
 	cargo nextest run --workspace --release --features "store/redb,$(TEST_FEATURES)" \
 		--exclude ef_tests --exclude beacon_chain --exclude slasher --exclude network \

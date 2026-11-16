@@ -130,13 +130,6 @@ impl From<redb::CommitError> for Error {
 }
 
 #[cfg(feature = "redb")]
-impl From<redb::SetDurabilityError> for Error {
-    fn from(e: redb::SetDurabilityError) -> Self {
-        Error::DatabaseRedbError(e.into())
-    }
-}
-
-#[cfg(feature = "redb")]
 impl From<redb_v2::DatabaseError> for Error {
     fn from(e: redb_v2::DatabaseError) -> Self {
         Error::DatabaseRedbUpgradeError(Box::new(e.into()))
