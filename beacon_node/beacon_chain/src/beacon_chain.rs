@@ -8463,7 +8463,8 @@ impl<T: BeaconChainTypes> Drop for BeaconChain<T> {
         let drop = || -> Result<(), Error> {
             self.persist_op_pool()?;
             self.persist_custody_context()?;
-            self.persist_fork_choice()
+            self.persist_fork_choice()?;
+            Ok(self.store.hot_db.sync()?)
         };
 
         if let Err(e) = drop() {
