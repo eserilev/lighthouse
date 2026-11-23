@@ -40,7 +40,7 @@ pub fn initialize_beacon_state_from_eth1<E: EthSpec>(
         deposit_tree
             .push_leaf(deposit.data.tree_hash_root())
             .map_err(BlockProcessingError::MerkleTreeError)?;
-        state.eth1_data_mut().deposit_root = deposit_tree.root();
+        state.eth1_data_mut()?.deposit_root = deposit_tree.root();
         let Deposit { proof, data } = deposit;
         apply_deposit(&mut state, data, Some(proof), true, spec)?;
     }
@@ -151,6 +151,9 @@ pub fn initialize_beacon_state_from_eth1<E: EthSpec>(
 
         // Remove intermediate Electra fork from `state.fork`.
         state.fork_mut().previous_version = spec.fulu_fork_version;
+
+        // Mirrors `create_genesis_state` in the pyspec test helpers. `upgrade_to_heze` needs it.
+        *state.deposit_requests_start_index_mut()? = state.eth1_deposit_index()?;
 
         // Override latest execution payload header.
         if let Some(ExecutionPayloadHeader::Fulu(ref header)) = execution_payload_header {
